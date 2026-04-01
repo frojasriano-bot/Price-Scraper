@@ -1,0 +1,29 @@
+### Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+.venv/
+venv/
+.env
+.env/
+.env.*
+
+### SQLite / local data
+*.db
+blue_rental.db
+rates.db
+
+### Editor / OS
+.DS_Store
+.idea/
+.vscode/
+.claude/
+
+### Other
+.pytest_cache/
+*.log
+
+### Git (sandbox workaround)
+.git_data/
+.git/

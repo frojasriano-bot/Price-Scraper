@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Blue Rental Intelligence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css?v=__CSS_VERSION__" />
+  <!-- Chart.js via CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ── Sidebar ──────────────────────────────────────────────────── -->
+  <aside class="sidebar">
+
+    <div class="sidebar-logo">
+      <!-- Blue car icon -->
+      <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="40" height="40" rx="10" fill="#2563eb"/>
+        <path d="M8 24h24M10 24l2-6h16l2 6" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M12 18l2-4h12l2 4" stroke="#93c5fd" stroke-width="1.5" stroke-linecap="round"/>
+        <circle cx="14" cy="26" r="2.5" fill="#93c5fd"/>
+        <circle cx="26" cy="26" r="2.5" fill="#93c5fd"/>
+      </svg>
+      <div class="sidebar-logo-text">
+        <span class="brand">Blue Rental</span>
+        <span class="tagline">Intelligence</span>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="nav-section-label">Analytics</div>
+
+      <div class="nav-item active" data-tab="rates">
+        <!-- Bar chart icon -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="18" y="3" width="4" height="18"/><rect x="10" y="8" width="4" height="13"/><rect x="2" y="13" width="4" height="8"/>
+        </svg>
+        Rate Intelligence
+      </div>
+
+      <div class="nav-item" data-tab="seo">
+        <!-- Search icon -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        SEO Rank Tracker
+      </div>
+
+      <div class="nav-section-label" style="margin-top:12px">Configuration</div>
+
+      <div class="nav-item" data-tab="settings">
+        <!-- Gear icon -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+        Settings
+      </div>
+    </nav>
+
+    <div class="sidebar-footer">
+      Blue Rental Intelligence &copy; 2024
+    </div>
+  </aside>
+
+  <!-- ── Main Content ──────────────────────────────────────────────── -->
+  <div class="main">
+
+    <!-- Top bar -->
+    <header class="topbar">
+      <h1 class="topbar-title" id="page-title">Rate Intelligence</h1>
+      <div class="topbar-actions">
+        <span id="rates-source-badge" class="badge badge-gray" style="display:none">Mock Data</span>
+        <span id="seo-source-badge"   class="badge badge-gray" style="display:none">Mock Data</span>
+      </div>
+    </header>
+
+    <!-- Content area -->
+    <div class="content">
+
+      <!-- ══════════════════════════════════════════════════════════════
+           TAB: RATE INTELLIGENCE
+      ══════════════════════════════════════════════════════════════ -->
+      <div id="tab-rates" class="tab-panel">
+
+        <!-- Stat row -->
+        <div class="stats-row">
+          <div class="stat-card">
+            <div class="stat-label">Lowest Price</div>
+            <div class="stat-value" id="stat-min-price">—</div>
+            <div class="stat-change up" id="stat-cheapest" style="font-size:12px;color:#6b7280">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Highest Price</div>
+            <div class="stat-value" id="stat-max-price">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Market Average</div>
+            <div class="stat-value" id="stat-avg-price">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Competitors</div>
+            <div class="stat-value" id="stat-competitors">6</div>
+          </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="filters">
+          <div class="filter-group">
+            <label>Pickup Location</label>
+            <select id="filter-location">
+              <option value="">All Locations</option>
+              <option value="Keflavik Airport">Keflavik Airport</option>
+              <option value="Reykjavik">Reykjavik</option>
+              <option value="Akureyri">Akureyri</option>
+              <option value="Egilsstaðir">Egilsstaðir</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Pickup Date</label>
+            <input type="date" id="filter-pickup" />
+          </div>
+          <div class="filter-group">
+            <label>Return Date</label>
+            <input type="date" id="filter-return" />
+          </div>
+          <div class="filter-group">
+            <label>Car Category</label>
+            <select id="filter-category">
+              <option value="">All Categories</option>
+              <option value="Economy">Economy</option>
+              <option value="Compact">Compact</option>
+              <option value="SUV">SUV</option>
+              <option value="4x4">4x4</option>
+              <option value="Minivan">Minivan</option>
+            </select>
+          </div>
+          <div class="filter-group" style="justify-content:flex-end">
+            <label>&nbsp;</label>
+            <button class="btn btn-primary" id="btn-scrape">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+              </svg>
+              Scrape Now
+            </button>
+          </div>
+        </div>
+
+        <!-- Scheduler status bar -->
+        <div id="scheduler-bar" style="display:flex;align-items:center;gap:14px;padding:8px 14px;background:var(--blue-800);border:1px solid rgba(255,255,255,0.07);border-radius:var(--radius);margin-bottom:12px;font-size:12px;color:#9ca3af;flex-wrap:wrap">
+          <span style="display:flex;align-items:center;gap:6px">
+            <span id="scheduler-dot" style="width:7px;height:7px;border-radius:50%;background:#6b7280;flex-shrink:0;display:inline-block"></span>
+            Auto-scrape: <strong id="scheduler-schedule" style="color:#d1d5db">—</strong>
+          </span>
+          <span style="color:rgba(255,255,255,0.2)">|</span>
+          <span>Next run: <strong id="scheduler-next" style="color:#d1d5db">—</strong></span>
+          <span style="color:rgba(255,255,255,0.2)">|</span>
+          <span>Last run: <strong id="scheduler-last" style="color:#d1d5db">—</strong></span>
+        </div>
+
+        <!-- View toggle -->
+        <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center">
+          <button class="btn btn-secondary btn-sm view-toggle active" id="btn-list-view" onclick="setRatesView('list')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+            List View
+          </button>
+          <button class="btn btn-secondary btn-sm view-toggle" id="btn-matrix-view" onclick="setRatesView('matrix')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+            Car Model Matrix
+          </button>
+          <button class="btn btn-secondary btn-sm view-toggle" id="btn-history-view" onclick="setRatesView('history')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            Price History
+          </button>
+          <button class="btn btn-secondary btn-sm view-toggle" id="btn-seasonal-view" onclick="setRatesView('seasonal')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+            Seasonal Analysis
+          </button>
+        </div>
+
+        <!-- LIST VIEW: Two-column: table + chart -->
+        <div class="two-col" id="view-list">
+
+          <!-- Rate comparison table -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Competitor Rates</div>
+                <div class="card-subtitle">Green = lowest price &nbsp;|&nbsp; Red = highest price</div>
+              </div>
+              <span id="rates-source-badge" class="badge badge-gray">Mock Data</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Competitor</th>
+                    <th>Model</th>
+                    <th>Category</th>
+                    <th>Total (ISK)</th>
+                    <th>Per Day</th>
+                    <th>Δ vs Prev</th>
+                    <th>Location</th>
+                    <th>Last Scraped</th>
+                  </tr>
+                </thead>
+                <tbody id="rates-tbody">
+                  <tr><td colspan="8" style="padding:40px;text-align:center;color:#6b7280">Loading rates...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Bar chart -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Price Comparison</div>
+                <div class="card-subtitle">Average across all categories</div>
+              </div>
+            </div>
+            <div class="chart-container">
+              <canvas id="rate-chart"></canvas>
+            </div>
+          </div>
+
+        </div><!-- /view-list -->
+
+        <!-- MATRIX VIEW -->
+        <div id="view-matrix" style="display:none">
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Car Model Price Matrix</div>
+                <div class="card-subtitle">Per-model comparison across all competitors &nbsp;|&nbsp; Green = cheapest &nbsp;|&nbsp; Red = most expensive</div>
+              </div>
+              <span id="matrix-source-badge" class="badge badge-gray">Mock Data</span>
+            </div>
+            <div class="table-wrap" id="matrix-table-wrap">
+              <p style="padding:40px;text-align:center;color:#6b7280">Loading matrix...</p>
+            </div>
+          </div>
+        </div><!-- /view-matrix -->
+
+        <!-- HISTORY VIEW -->
+        <div id="view-history" style="display:none">
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-header" style="flex-wrap:wrap;gap:10px">
+              <div>
+                <div class="card-title">Price History by Car Model</div>
+                <div class="card-subtitle">Average daily price per model — grouped by category</div>
+              </div>
+              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                <select id="history-competitor" class="form-select" onchange="loadHistory()" style="min-width:160px">
+                  <option value="">All Competitors</option>
+                </select>
+                <select id="history-days" class="form-select" onchange="loadHistory()">
+                  <option value="7">Last 7 days</option>
+                  <option value="14">Last 14 days</option>
+                  <option value="30" selected>Last 30 days</option>
+                  <option value="90">Last 90 days</option>
+                </select>
+                <span id="history-source-badge" class="badge badge-gray">Mock Data</span>
+              </div>
+            </div>
+          </div>
+          <div id="history-charts"></div>
+        </div><!-- /view-history -->
+
+        <!-- SEASONAL VIEW -->
+        <div id="view-seasonal" style="display:none">
+
+          <!-- Controls -->
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-header" style="flex-wrap:wrap;gap:10px">
+              <div>
+                <div class="card-title">Seasonal Price Analysis</div>
+                <div class="card-subtitle">Per-day rates sampled on the 15th of each month — 7-night stay</div>
+              </div>
+              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                <select id="seasonal-category" class="form-select" onchange="renderSeasonalChart()" style="min-width:160px">
+                  <option value="">Overall Average</option>
+                  <option value="Economy">Economy</option>
+                  <option value="Compact">Compact</option>
+                  <option value="SUV">SUV</option>
+                  <option value="4x4">4x4</option>
+                  <option value="Minivan">Minivan</option>
+                </select>
+                <button class="btn btn-secondary btn-sm" id="btn-reload-seasonal" onclick="loadSeasonal(true)">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                  Refresh
+                </button>
+                <span id="seasonal-source-badge" class="badge badge-gray" style="display:none">Mock Data</span>
+              </div>
+            </div>
+
+            <!-- Season legend -->
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+              <span class="season-badge season-low">● Low Season (Nov–Mar)</span>
+              <span class="season-badge season-shoulder">● Shoulder (Apr–May, Sep–Oct)</span>
+              <span class="season-badge season-high">● High Season (Jun, Aug)</span>
+              <span class="season-badge season-peak">● Peak Season (Jul)</span>
+            </div>
+          </div>
+
+          <!-- Line chart -->
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-header">
+              <div class="card-title">Per-Day Price Across 12 Months</div>
+              <div id="seasonal-loading" style="font-size:12px;color:#6b7280;display:none">
+                <span class="spinner" style="border-color:rgba(0,0,0,.15);border-top-color:#2563eb;width:12px;height:12px"></span>
+                &nbsp;Loading…
+              </div>
+            </div>
+            <div style="position:relative;height:340px">
+              <canvas id="seasonal-chart"></canvas>
+            </div>
+          </div>
+
+          <!-- Season summary table -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Season Price Summary</div>
+              <div class="card-subtitle">Average per-day ISK across all locations and categories</div>
+            </div>
+            <div class="table-wrap">
+              <table id="seasonal-table">
+                <thead>
+                  <tr>
+                    <th>Competitor</th>
+                    <th class="season-th season-low-th">Low Season<div style="font-weight:400;font-size:10px;margin-top:1px">Nov–Mar</div></th>
+                    <th class="season-th season-shoulder-th">Shoulder<div style="font-weight:400;font-size:10px;margin-top:1px">Apr–May · Sep–Oct</div></th>
+                    <th class="season-th season-high-th">High Season<div style="font-weight:400;font-size:10px;margin-top:1px">Jun · Aug</div></th>
+                    <th class="season-th season-peak-th">Peak Season<div style="font-weight:400;font-size:10px;margin-top:1px">July</div></th>
+                    <th>Peak vs Low</th>
+                  </tr>
+                </thead>
+                <tbody id="seasonal-tbody">
+                  <tr><td colspan="6" style="padding:40px;text-align:center;color:#6b7280">Loading seasonal data…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Category season summary table -->
+          <div class="card" style="margin-top:16px">
+            <div class="card-header">
+              <div class="card-title">Season Price Summary by Category</div>
+              <div class="card-subtitle">Average market per-day ISK per car category (all competitors combined)</div>
+            </div>
+            <div class="table-wrap">
+              <table id="seasonal-category-table">
+                <thead>
+                  <tr>
+                    <th>Category</th>
+                    <th class="season-th season-low-th">Low Season<div style="font-weight:400;font-size:10px;margin-top:1px">Nov–Mar</div></th>
+                    <th class="season-th season-shoulder-th">Shoulder<div style="font-weight:400;font-size:10px;margin-top:1px">Apr–May · Sep–Oct</div></th>
+                    <th class="season-th season-high-th">High Season<div style="font-weight:400;font-size:10px;margin-top:1px">Jun · Aug</div></th>
+                    <th class="season-th season-peak-th">Peak Season<div style="font-weight:400;font-size:10px;margin-top:1px">July</div></th>
+                    <th>Peak vs Low</th>
+                  </tr>
+                </thead>
+                <tbody id="seasonal-category-tbody">
+                  <tr><td colspan="6" style="padding:40px;text-align:center;color:#6b7280">Loading…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div><!-- /view-seasonal -->
+
+      </div><!-- /tab-rates -->
+
+
+      <!-- ══════════════════════════════════════════════════════════════
+           TAB: SEO RANK TRACKER
+      ══════════════════════════════════════════════════════════════ -->
+      <div id="tab-seo" class="tab-panel" style="display:none">
+
+        <!-- No API key banner -->
+        <div id="seo-no-key-banner" class="banner banner-warning" style="display:none">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+          <div>
+            <strong>SerpAPI key not configured.</strong> Add your SerpAPI key in the
+            <a href="#" onclick="switchTab('settings')" style="color:#92400e;font-weight:600">Settings tab</a>
+            to enable live Google rank tracking. Currently showing demo data.
+          </div>
+        </div>
+
+        <!-- Stat row -->
+        <div class="stats-row">
+          <div class="stat-card">
+            <div class="stat-label">Keywords Tracked</div>
+            <div class="stat-value" id="stat-keywords-tracked">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Avg. Rank</div>
+            <div class="stat-value" id="stat-avg-rank">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Top 10</div>
+            <div class="stat-value" id="stat-top-10">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Not Ranked</div>
+            <div class="stat-value" id="stat-not-ranked" style="color:#ef4444">—</div>
+          </div>
+        </div>
+
+        <!-- Actions row -->
+        <div style="margin-bottom:20px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-primary" id="btn-check-seo">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            Check Rankings Now
+          </button>
+          <span style="font-size:12px;color:#6b7280">Requires SerpAPI key in Settings</span>
+          <span id="seo-last-checked" style="font-size:12px;color:#9ca3af;margin-left:4px"></span>
+          <span id="seo-source-badge" class="badge badge-gray" style="margin-left:auto">Mock Data</span>
+        </div>
+
+        <div class="two-col">
+
+          <!-- Rankings table -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Keyword Rankings</div>
+                <div class="card-subtitle">Click any column header to sort</div>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table id="rankings-table">
+                <thead>
+                  <tr>
+                    <th class="sort-header" onclick="setSeoSort('keyword')" data-col="keyword">Keyword</th>
+                    <th class="sort-header" onclick="setSeoSort('rank')"    data-col="rank">Rank</th>
+                    <th class="sort-header" onclick="setSeoSort('previous')" data-col="previous">Previous</th>
+                    <th class="sort-header" onclick="setSeoSort('change')"  data-col="change">Change</th>
+                    <th>URL Found</th>
+                    <th class="sort-header" onclick="setSeoSort('date')"    data-col="date">Checked</th>
+                  </tr>
+                </thead>
+                <tbody id="rankings-tbody">
+                  <tr><td colspan="6" style="padding:40px;text-align:center;color:#6b7280">Loading rankings...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Rank history chart -->
+          <div class="card">
+            <div class="card-header" style="flex-wrap:wrap;gap:8px">
+              <div>
+                <div class="card-title">Rank History</div>
+                <div class="card-subtitle">Lower = better (inverted axis)</div>
+              </div>
+              <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                <div style="display:flex;gap:3px">
+                  <button class="btn btn-secondary btn-sm active" id="seo-filter-all"  onclick="setSeoChartFilter('all')">All</button>
+                  <button class="btn btn-secondary btn-sm"        id="seo-filter-10"   onclick="setSeoChartFilter('10')">Top 10</button>
+                  <button class="btn btn-secondary btn-sm"        id="seo-filter-5"    onclick="setSeoChartFilter('5')">Top 5</button>
+                </div>
+                <select id="seo-history-days" class="form-select form-select-sm" onchange="loadRankingsHistory()" style="width:auto">
+                  <option value="7">7 days</option>
+                  <option value="14">14 days</option>
+                  <option value="30" selected>30 days</option>
+                  <option value="90">90 days</option>
+                </select>
+              </div>
+            </div>
+            <div class="chart-container">
+              <canvas id="seo-chart"></canvas>
+            </div>
+          </div>
+
+        </div><!-- /two-col -->
+
+        <!-- Keywords management -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Tracked Keywords</div>
+              <div class="card-subtitle">Up to 20 keywords — click × to remove</div>
+            </div>
+            <span id="kw-count-badge" class="badge badge-gray">0 / 20</span>
+          </div>
+          <div id="keywords-list" style="display:flex;flex-wrap:wrap;gap:8px;padding:4px 0 12px">
+            <!-- Populated by JS -->
+          </div>
+          <div class="divider"></div>
+          <div style="display:flex;gap:8px;margin-top:12px">
+            <input type="text" id="new-keyword-input" class="form-control"
+                   placeholder="e.g. car hire akureyri"
+                   style="flex:1"
+                   onkeydown="if(event.key==='Enter') addSeoKeyword()" />
+            <button class="btn btn-secondary btn-sm" onclick="addSeoKeyword()">+ Add</button>
+          </div>
+        </div>
+
+      </div><!-- /tab-seo -->
+
+
+      <!-- ══════════════════════════════════════════════════════════════
+           TAB: SETTINGS
+      ══════════════════════════════════════════════════════════════ -->
+      <div id="tab-settings" class="tab-panel" style="display:none">
+
+        <div class="two-col">
+
+          <!-- API Configuration -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-title">API Configuration</div>
+                <div class="card-subtitle">Keys and external integrations</div>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="setting-serpapi-key">SerpAPI Key</label>
+              <input type="password" class="form-control" id="setting-serpapi-key"
+                     placeholder="Enter your SerpAPI key" autocomplete="off" />
+              <div class="form-hint">
+                Get a free key at <a href="https://serpapi.com" target="_blank" style="color:#2563eb">serpapi.com</a>.
+                Required for live Google rank tracking.
+              </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="form-group">
+              <label for="setting-schedule">Auto-Scrape Schedule</label>
+              <select class="form-control" id="setting-schedule">
+                <option value="hourly">Hourly</option>
+                <option value="daily" selected>Daily (7:00 AM)</option>
+                <option value="weekly">Weekly (Monday 7:00 AM)</option>
+              </select>
+              <div class="form-hint">
+                Controls how often the app auto-scrapes competitor rates and checks SEO rankings.
+              </div>
+            </div>
+          </div>
+
+          <!-- Locations -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Tracked Locations</div>
+                <div class="card-subtitle">Pickup locations for rate comparison</div>
+              </div>
+            </div>
+
+            <div id="location-list" class="location-list">
+              <!-- Populated by JS -->
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="form-group">
+              <label>Add New Location</label>
+              <div class="form-row">
+                <input type="text" class="form-control" id="new-loc-name"
+                       placeholder="Name (e.g. Keflavik Airport)" />
+                <input type="text" class="form-control" id="new-loc-addr"
+                       placeholder="Address / City, Iceland" />
+              </div>
+              <button class="btn btn-secondary btn-sm" id="btn-add-location" style="margin-top:10px">
+                + Add Location
+              </button>
+            </div>
+          </div>
+
+        </div><!-- /two-col -->
+
+        <!-- Competitors info -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Tracked Competitors</div>
+            <div class="card-subtitle">Scrapers are pre-built for these competitors. Edit scraper files to activate live data.</div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Competitor</th>
+                  <th>Website</th>
+                  <th>Scraper File</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Go Car Rental</strong></td>
+                  <td><a href="https://gocarrental.is" target="_blank" style="color:#2563eb">gocarrental.is</a></td>
+                  <td><code>scrapers/gocarrental.py</code></td>
+                  <td><span class="badge badge-gray scraper-status-badge" data-competitor="Go Car Rental">…</span></td>
+                </tr>
+                <tr>
+                  <td><strong>Lava Car Rental</strong></td>
+                  <td><a href="https://lavacarrental.is" target="_blank" style="color:#2563eb">lavacarrental.is</a></td>
+                  <td><code>scrapers/lavacarrental.py</code></td>
+                  <td><span class="badge badge-gray scraper-status-badge" data-competitor="Lava Car Rental">…</span></td>
+                </tr>
+                <tr>
+                  <td><strong>Hertz Iceland</strong></td>
+                  <td><a href="https://hertz.is" target="_blank" style="color:#2563eb">hertz.is</a></td>
+                  <td><code>scrapers/hertz_is.py</code></td>
+                  <td><span class="badge badge-gray scraper-status-badge" data-competitor="Hertz Iceland">…</span></td>
+                </tr>
+                <tr>
+                  <td><strong>Lotus Car Rental</strong></td>
+                  <td><a href="https://lotuscarrental.is" target="_blank" style="color:#2563eb">lotuscarrental.is</a></td>
+                  <td><code>scrapers/lotus.py</code></td>
+                  <td><span class="badge badge-gray scraper-status-badge" data-competitor="Lotus Car Rental">…</span></td>
+                </tr>
+                <tr>
+                  <td><strong>Avis Iceland</strong></td>
+                  <td><a href="https://avis.is" target="_blank" style="color:#2563eb">avis.is</a></td>
+                  <td><code>scrapers/avis_is.py</code></td>
+                  <td><span class="badge badge-gray scraper-status-badge" data-competitor="Avis Iceland">…</span></td>
+                </tr>
+                <tr>
+                  <td><strong>Holdur</strong></td>
+                  <td><a href="https://holdur.is" target="_blank" style="color:#2563eb">holdur.is</a></td>
+                  <td><code>scrapers/holdur.py</code></td>
+                  <td><span class="badge badge-gray scraper-status-badge" data-competitor="Holdur">…</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Car Model Mappings -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Car Model Mappings</div>
+              <div class="card-subtitle">Map competitor model names to canonical names for matrix comparison</div>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Competitor</th>
+                  <th>Competitor Model Name</th>
+                  <th>Maps To (Canonical)</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="mappings-tbody">
+                <tr><td colspan="4" style="padding:20px;text-align:center;color:#6b7280">Loading mappings...</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="divider"></div>
+          <div class="form-group">
+            <label>Add New Mapping</label>
+            <div class="form-row" style="gap:8px;flex-wrap:wrap">
+              <select class="form-control" id="new-map-competitor" style="flex:1;min-width:140px">
+                <option value="">Select competitor…</option>
+                <option>Go Car Rental</option>
+                <option>Lava Car Rental</option>
+                <option>Hertz Iceland</option>
+                <option>Lotus Car Rental</option>
+                <option>Avis Iceland</option>
+                <option>Holdur</option>
+              </select>
+              <input type="text" class="form-control" id="new-map-model" placeholder="Competitor model name" style="flex:2;min-width:180px" />
+              <input type="text" class="form-control" id="new-map-canonical" placeholder="Canonical name (e.g. Toyota Land Cruiser)" style="flex:2;min-width:180px" />
+            </div>
+            <button class="btn btn-secondary btn-sm" id="btn-add-mapping" style="margin-top:10px">+ Add Mapping</button>
+          </div>
+        </div>
+
+        <!-- Save button -->
+        <div style="display:flex;justify-content:flex-end;margin-top:4px">
+          <button class="btn btn-primary" id="btn-save-settings">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+              <polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+            </svg>
+            Save Settings
+          </button>
+        </div>
+
+      </div><!-- /tab-settings -->
+
+    </div><!-- /content -->
+  </div><!-- /main -->
+</div><!-- /app -->
+
+<!-- Toast container -->
+<div id="toast-container"></div>
+
+<script src="/static/app.js?v=__JS_VERSION__"></script>
+</body>
+</html>
