@@ -633,6 +633,56 @@ async def get_rates_history_by_model(
     return result
 
 
+async def get_model_competitor_coverage(
+    location: str = None,
+    days: int = 30,
+) -> dict:
+    """
+    Return which competitors carry each canonical model in the given window.
+
+    Returns:
+        {
+          "Economy": {
+            "Toyota Yaris": ["Avis", "Blue Rental", "Hertz"],
+            ...
+          },
+          ...
+        }
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+
+        conditions = ["scraped_at >= datetime('now', ?)"]
+        params: list = [f"-{days} days"]
+        if location:
+            conditions.append("location = ?")
+            params.append(location)
+
+        where = "WHERE " + " AND ".join(conditions)
+        query = f"""
+            SELECT
+                car_category,
+                COALESCE(canonical_name, car_model, car_category) AS model_key,
+                competitor
+            FROM rates
+            {where}
+            GROUP BY car_category, model_key, competitor
+            ORDER BY car_category, model_key, competitor ASC
+        """
+        async with db.execute(query, params) as cursor:
+            rows = await cursor.fetchall()
+
+    result: dict = {}
+    for row in rows:
+        cat   = row["car_category"] or "Unknown"
+        model = row["model_key"]    or "Unknown"
+        comp  = row["competitor"]
+        result.setdefault(cat, {}).setdefault(model, [])
+        if comp not in result[cat][model]:
+            result[cat][model].append(comp)
+    return result
+
+
 async def get_latest_rankings(keyword: str = None, location: str = None) -> list[dict]:
     """Return the most recent ranking per (keyword, location)."""
     async with aiosqlite.connect(DB_PATH) as db:

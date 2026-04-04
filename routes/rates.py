@@ -24,6 +24,7 @@ from database import (
     set_config,
     get_seasonal_cache,
     set_seasonal_cache,
+    get_model_competitor_coverage,
 )
 from scrapers import ALL_SCRAPERS
 
@@ -262,6 +263,31 @@ async def get_history_by_model(
             mock_data[cat][model] = series
 
     return {"data": mock_data, "source": "mock"}
+
+
+@router.get("/history/coverage")
+async def get_history_coverage(
+    location: Optional[str] = Query(None),
+    days: int = Query(30, ge=1, le=365),
+):
+    """
+    Return which competitors carry each model for the selected window.
+    Used by the Price History coverage grid.
+    """
+    data = await get_model_competitor_coverage(location=location, days=days)
+    if data:
+        return {"coverage": data, "source": "database"}
+
+    # Mock fallback: assign random subsets of competitors to each model
+    import random
+    rng = random.Random(77)
+    mock_coverage: dict = {}
+    for cat, models in _MOCK_MODELS.items():
+        mock_coverage[cat] = {}
+        for model in models:
+            k = rng.randint(1, len(_COMPETITOR_NAMES))
+            mock_coverage[cat][model] = sorted(rng.sample(_COMPETITOR_NAMES, k))
+    return {"coverage": mock_coverage, "source": "mock"}
 
 
 @router.get("/matrix")

@@ -28,6 +28,7 @@ const state = {
   historySource: 'mock',
   historyCategory: '',
   historyModelSearch: '',
+  historyCoverage: null,
   seasonalData: null,
   seasonalChart: null,
   deltas: {},
@@ -209,10 +210,19 @@ async function loadHistory() {
   if (location)   params.set('location',   location);
   if (competitor) params.set('competitor', competitor);
 
+  // Coverage doesn't filter by competitor — we want all companies even when
+  // the chart is scoped to one, so the grid stays fully populated.
+  const coverageParams = new URLSearchParams({ days });
+  if (location) coverageParams.set('location', location);
+
   try {
-    const result = await apiFetch(`/api/rates/history/models?${params}`);
-    state.historyData   = result.data   || {};
-    state.historySource = result.source || 'mock';
+    const [result, coverageResult] = await Promise.all([
+      apiFetch(`/api/rates/history/models?${params}`),
+      apiFetch(`/api/rates/history/coverage?${coverageParams}`).catch(() => null),
+    ]);
+    state.historyData     = result.data       || {};
+    state.historySource   = result.source     || 'mock';
+    state.historyCoverage = coverageResult?.coverage || null;
     setSourceBadge('history-source-badge', state.historySource);
     renderHistoryCharts();
   } catch (e) {
@@ -234,6 +244,14 @@ function setHistoryCategory(cat) {
 function filterHistoryModels(query) {
   state.historyModelSearch = query.trim().toLowerCase();
   renderHistoryCharts();
+}
+
+function toggleCoverageGrid(cat, btn) {
+  const grid = document.getElementById(`coverage-${cat}`);
+  if (!grid) return;
+  const isHidden = grid.style.display === 'none';
+  grid.style.display = isHidden ? 'block' : 'none';
+  btn.textContent = isHidden ? '🏢 Hide coverage' : '🏢 Show coverage';
 }
 
 function renderHistoryCharts() {
@@ -308,12 +326,52 @@ function renderHistoryCharts() {
     const countLabel = shownModels < totalModels
       ? `${shownModels} of ${totalModels} models`
       : `${totalModels} models`;
+
+    // Build coverage grid HTML (model × competitor)
+    const coverageCat   = state.historyCoverage?.[cat] || {};
+    const covModelNames = Object.keys(models); // respect current model search
+    const allComps = [...new Set(Object.values(coverageCat).flat())].sort();
+    let coverageHtml = '';
+    if (allComps.length > 0 && covModelNames.length > 0) {
+      const headerCells = allComps
+        .map(c => `<th style="font-size:10px;font-weight:600;color:#9ca3af;padding:4px 8px;white-space:nowrap;text-align:center">${c}</th>`)
+        .join('');
+      const rows = covModelNames.map(m => {
+        const compSet = new Set(coverageCat[m] || []);
+        const cells = allComps.map(c =>
+          `<td style="text-align:center;padding:3px 8px">${
+            compSet.has(c)
+              ? '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#22c55e" title="' + c + '"></span>'
+              : '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:rgba(255,255,255,0.1)"></span>'
+          }</td>`
+        ).join('');
+        return `<tr><td style="font-size:11px;color:#d1d5db;padding:3px 8px;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis" title="${m}">${m}</td>${cells}</tr>`;
+      }).join('');
+      coverageHtml = `
+        <div id="coverage-${cat}" style="display:none;margin-top:16px;overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead>
+              <tr style="border-bottom:1px solid rgba(255,255,255,0.08)">
+                <th style="font-size:10px;font-weight:600;color:#9ca3af;padding:4px 8px;text-align:left">Model</th>
+                ${headerCells}
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+    }
+
+    const toggleId = `coverage-${CSS.escape(cat)}`;
     card.innerHTML = `
       <div class="card-header" style="margin-bottom:12px">
-        <div class="card-title">${icon} ${cat}</div>
-        <div class="card-subtitle" style="font-size:12px">${countLabel}</div>
+        <div>
+          <div class="card-title">${icon} ${cat}</div>
+          <div class="card-subtitle" style="font-size:12px">${countLabel}</div>
+        </div>
+        ${allComps.length > 0 ? `<button class="btn btn-secondary btn-sm" onclick="toggleCoverageGrid('${cat}', this)" style="font-size:11px;padding:3px 10px">🏢 Show coverage</button>` : ''}
       </div>
       <div class="history-chart-wrap"><canvas id="hchart-${cat}"></canvas></div>
+      ${coverageHtml}
     `;
     container.appendChild(card);
 
