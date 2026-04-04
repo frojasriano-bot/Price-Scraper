@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Blue Rental Intelligence</title>
+  <title>Car Rental Intelligence</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -19,16 +19,9 @@
   <aside class="sidebar">
 
     <div class="sidebar-logo">
-      <!-- Blue car icon -->
-      <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect width="40" height="40" rx="10" fill="#2563eb"/>
-        <path d="M8 24h24M10 24l2-6h16l2 6" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M12 18l2-4h12l2 4" stroke="#93c5fd" stroke-width="1.5" stroke-linecap="round"/>
-        <circle cx="14" cy="26" r="2.5" fill="#93c5fd"/>
-        <circle cx="26" cy="26" r="2.5" fill="#93c5fd"/>
-      </svg>
+      <span style="font-size:2rem;line-height:1;">🚙</span>
       <div class="sidebar-logo-text">
-        <span class="brand">Blue Rental</span>
+        <span class="brand">Car Rental</span>
         <span class="tagline">Intelligence</span>
       </div>
     </div>
@@ -65,7 +58,7 @@
     </nav>
 
     <div class="sidebar-footer">
-      Blue Rental Intelligence &copy; 2024
+      Car Rental Intelligence &copy; 2024
     </div>
   </aside>
 
@@ -241,6 +234,10 @@
                 <div class="card-title">Car Model Price Matrix</div>
                 <div class="card-subtitle">Per-model comparison across all competitors &nbsp;|&nbsp; Green = cheapest &nbsp;|&nbsp; Red = most expensive</div>
               </div>
+              <button class="btn btn-secondary btn-sm" onclick="exportMatrixCSV()" title="Export to CSV">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Export CSV
+              </button>
               <span id="matrix-source-badge" class="badge badge-gray">Mock Data</span>
             </div>
             <div class="table-wrap" id="matrix-table-wrap">
@@ -268,6 +265,24 @@
                   <option value="90">Last 90 days</option>
                 </select>
                 <span id="history-source-badge" class="badge badge-gray">Mock Data</span>
+              </div>
+            </div>
+            <!-- Filter row -->
+            <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding-top:12px;border-top:1px solid rgba(255,255,255,0.07);margin-top:4px">
+              <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
+                <span style="font-size:12px;color:#9ca3af;margin-right:2px">Category:</span>
+                <button class="btn btn-secondary btn-sm active" id="hcat-btn-" onclick="setHistoryCategory('')">All</button>
+                <button class="btn btn-secondary btn-sm" id="hcat-btn-Economy"  onclick="setHistoryCategory('Economy')">🚗 Economy</button>
+                <button class="btn btn-secondary btn-sm" id="hcat-btn-Compact"  onclick="setHistoryCategory('Compact')">🚙 Compact</button>
+                <button class="btn btn-secondary btn-sm" id="hcat-btn-SUV"      onclick="setHistoryCategory('SUV')">🛻 SUV</button>
+                <button class="btn btn-secondary btn-sm" id="hcat-btn-4x4"      onclick="setHistoryCategory('4x4')">🏔️ 4x4</button>
+                <button class="btn btn-secondary btn-sm" id="hcat-btn-Minivan"  onclick="setHistoryCategory('Minivan')">🚐 Minivan</button>
+              </div>
+              <div style="position:relative;flex:1;min-width:180px;max-width:280px">
+                <svg style="position:absolute;left:8px;top:50%;transform:translateY(-50%);width:14px;height:14px;color:#9ca3af;pointer-events:none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input id="history-model-search" type="text" class="form-select" placeholder="Filter models…"
+                  oninput="filterHistoryModels(this.value)"
+                  style="padding-left:28px;height:32px;font-size:13px" />
               </div>
             </div>
           </div>
@@ -327,8 +342,14 @@
           <!-- Season summary table -->
           <div class="card">
             <div class="card-header">
-              <div class="card-title">Season Price Summary</div>
-              <div class="card-subtitle">Average per-day ISK across all locations and categories</div>
+              <div>
+                <div class="card-title">Season Price Summary</div>
+                <div class="card-subtitle">Average per-day ISK across all locations and categories</div>
+              </div>
+              <button class="btn btn-secondary btn-sm" onclick="exportSeasonalCSV()" title="Export seasonal summary to CSV">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Export CSV
+              </button>
             </div>
             <div class="table-wrap">
               <table id="seasonal-table">
@@ -582,6 +603,44 @@
           </div>
 
         </div><!-- /two-col -->
+
+        <!-- Price Alerts -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Price Alerts</div>
+              <div class="card-subtitle">Get notified on Slack when a competitor undercuts your rates</div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="alert-webhook-url">Slack Webhook URL</label>
+            <input type="password" class="form-control" id="alert-webhook-url"
+                   placeholder="https://hooks.slack.com/services/..." autocomplete="off" />
+            <div class="form-hint">
+              Create an incoming webhook at <a href="https://api.slack.com/messaging/webhooks" target="_blank" style="color:#2563eb">api.slack.com</a>.
+              Alerts are also sent automatically after each scheduled scrape.
+            </div>
+          </div>
+
+          <div class="form-group" style="max-width:260px">
+            <label for="alert-threshold">Alert Threshold (%)</label>
+            <input type="number" class="form-control" id="alert-threshold"
+                   min="1" max="50" step="1" value="10" />
+            <div class="form-hint">Fire an alert when a competitor is cheaper by at least this percentage.</div>
+          </div>
+
+          <div style="display:flex;gap:10px;margin-top:4px">
+            <button class="btn btn-secondary btn-sm" id="btn-save-alerts" onclick="saveAlertConfig()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+              Save Alerts Config
+            </button>
+            <button class="btn btn-secondary btn-sm" id="btn-test-alert" onclick="checkAlerts()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+              Check Now
+            </button>
+          </div>
+        </div>
 
         <!-- Competitors info -->
         <div class="card">

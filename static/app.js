@@ -26,6 +26,8 @@ const state = {
   historyData: null,
   historyCharts: {},
   historySource: 'mock',
+  historyCategory: '',
+  historyModelSearch: '',
   seasonalData: null,
   seasonalChart: null,
   deltas: {},
@@ -218,6 +220,22 @@ async function loadHistory() {
   }
 }
 
+// ── HISTORY FILTER HANDLERS ────────────────────────────────────────────────
+function setHistoryCategory(cat) {
+  state.historyCategory = cat;
+  // Update pill button active state
+  ['', 'Economy', 'Compact', 'SUV', '4x4', 'Minivan'].forEach(c => {
+    const btn = document.getElementById(`hcat-btn-${c}`);
+    if (btn) btn.classList.toggle('active', c === cat);
+  });
+  renderHistoryCharts();
+}
+
+function filterHistoryModels(query) {
+  state.historyModelSearch = query.trim().toLowerCase();
+  renderHistoryCharts();
+}
+
 function renderHistoryCharts() {
   // Destroy previous charts
   Object.values(state.historyCharts).forEach(c => c.destroy());
@@ -229,7 +247,13 @@ function renderHistoryCharts() {
 
   const CATEGORY_ORDER = ['Economy', 'Compact', 'SUV', '4x4', 'Minivan'];
   const data = state.historyData || {};
-  const categories = CATEGORY_ORDER.filter(c => data[c] && Object.keys(data[c]).length > 0);
+  const modelSearch = state.historyModelSearch || '';
+
+  // Apply category filter
+  let categories = CATEGORY_ORDER.filter(c => data[c] && Object.keys(data[c]).length > 0);
+  if (state.historyCategory) {
+    categories = categories.filter(c => c === state.historyCategory);
+  }
 
   if (categories.length === 0) {
     container.innerHTML = '<p style="padding:40px;text-align:center;color:#6b7280">No history data available.</p>';
@@ -237,7 +261,19 @@ function renderHistoryCharts() {
   }
 
   categories.forEach(cat => {
-    const models = data[cat];
+    const allModels = data[cat];
+
+    // Apply model search filter
+    const models = modelSearch
+      ? Object.fromEntries(
+          Object.entries(allModels).filter(([name]) =>
+            name.toLowerCase().includes(modelSearch)
+          )
+        )
+      : allModels;
+
+    if (Object.keys(models).length === 0) return; // nothing matches — skip card
+
     // Collect all unique dates across models
     const dateSet = new Set();
     Object.values(models).forEach(series => series.forEach(pt => dateSet.add(pt.date)));
@@ -267,10 +303,15 @@ function renderHistoryCharts() {
     card.className = 'history-category-card';
 
     const icon = CATEGORY_ICONS[cat] || '🚗';
+    const totalModels = Object.keys(allModels).length;
+    const shownModels = Object.keys(models).length;
+    const countLabel = shownModels < totalModels
+      ? `${shownModels} of ${totalModels} models`
+      : `${totalModels} models`;
     card.innerHTML = `
       <div class="card-header" style="margin-bottom:12px">
         <div class="card-title">${icon} ${cat}</div>
-        <div class="card-subtitle" style="font-size:12px">${Object.keys(models).length} models</div>
+        <div class="card-subtitle" style="font-size:12px">${countLabel}</div>
       </div>
       <div class="history-chart-wrap"><canvas id="hchart-${cat}"></canvas></div>
     `;
@@ -312,6 +353,15 @@ function renderHistoryCharts() {
       },
     });
   });
+
+  // If every category was skipped (model search matched nothing), show hint
+  if (container.children.length === 0) {
+    container.innerHTML = `
+      <p style="padding:40px;text-align:center;color:#6b7280">
+        No models match <strong style="color:#d1d5db">"${modelSearch}"</strong>.
+        <a href="#" style="color:#60a5fa;margin-left:6px" onclick="document.getElementById('history-model-search').value='';filterHistoryModels('');return false">Clear filter</a>
+      </p>`;
+  }
 }
 
 // ── SEASONAL ANALYSIS ──────────────────────────────────────────────────────
@@ -337,8 +387,12 @@ async function loadSeasonal(force = false) {
   const loadingEl = document.getElementById('seasonal-loading');
   if (loadingEl) loadingEl.style.display = 'flex';
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 90000);
+
   try {
-    const data = await apiFetch('/api/rates/seasonal');
+    const data = await apiFetch('/api/rates/seasonal', { signal: controller.signal });
+    clearTimeout(timeoutId);
     state.seasonalData = data;
 
     setSourceBadge('seasonal-source-badge', data.source);
@@ -1234,6 +1288,7 @@ async function loadSettings() {
     renderLocationList();
     renderMappingsTable();
     await loadScraperStatus();
+    loadAlertConfig();
   } catch (e) {
     showToast(`Failed to load settings: ${e.message}`, 'error');
   }
@@ -1385,6 +1440,114 @@ async function saveSettings() {
     btn.innerHTML = origHtml;
     btn.classList.remove('loading');
   }
+}
+
+// ── PRICE ALERTS ───────────────────────────────────────────────────────────
+async function loadAlertConfig() {
+  try {
+    const data = await apiFetch('/api/alerts/config');
+    const webhookEl   = document.getElementById('alert-webhook-url');
+    const thresholdEl = document.getElementById('alert-threshold');
+    if (webhookEl)   webhookEl.placeholder = data.webhook_set ? '(webhook configured)' : 'https://hooks.slack.com/services/...';
+    if (thresholdEl) thresholdEl.value = data.threshold_pct ?? 10;
+  } catch (_) { /* silent — alerts are optional */ }
+}
+
+async function saveAlertConfig() {
+  const webhookEl   = document.getElementById('alert-webhook-url');
+  const thresholdEl = document.getElementById('alert-threshold');
+  const btn = document.getElementById('btn-save-alerts');
+
+  const webhook   = webhookEl?.value?.trim() || '';
+  const threshold = parseFloat(thresholdEl?.value) || 10;
+
+  const payload = { threshold_pct: threshold };
+  if (webhook) payload.webhook_url = webhook;
+
+  const origText = btn?.innerHTML;
+  if (btn) { btn.innerHTML = '<span class="spinner"></span> Saving...'; btn.disabled = true; }
+
+  try {
+    await apiFetch('/api/alerts/config', { method: 'POST', body: JSON.stringify(payload) });
+    showToast('Alert config saved.', 'success');
+    if (webhookEl) webhookEl.value = '';
+    await loadAlertConfig();
+  } catch (e) {
+    showToast(`Failed to save alert config: ${e.message}`, 'error');
+  } finally {
+    if (btn) { btn.innerHTML = origText; btn.disabled = false; }
+  }
+}
+
+async function checkAlerts() {
+  const btn = document.getElementById('btn-test-alert');
+  const origHtml = btn?.innerHTML;
+  if (btn) { btn.innerHTML = '<span class="spinner"></span> Checking...'; btn.disabled = true; }
+
+  try {
+    const result = await apiFetch('/api/alerts/check', { method: 'POST' });
+    if (result.alerts_fired > 0) {
+      const slackNote = result.webhook_sent ? ' — Slack notified!' : ' (no webhook configured)';
+      showToast(`⚠️ ${result.alerts_fired} competitor(s) undercutting your rates${slackNote}`, 'error');
+    } else {
+      showToast('✓ No undercutting detected — your rates are competitive!', 'success');
+    }
+  } catch (e) {
+    showToast(`Alert check failed: ${e.message}`, 'error');
+  } finally {
+    if (btn) { btn.innerHTML = origHtml; btn.disabled = false; }
+  }
+}
+
+// ── CSV EXPORT ──────────────────────────────────────────────────────────────
+function downloadCSV(filename, rows) {
+  const content = rows
+    .map(row => row.map(cell => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(','))
+    .join('\n');
+  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportMatrixCSV() {
+  const data = state.matrix;
+  if (!data || !data.cars || !data.cars.length) {
+    return showToast('No matrix data to export. Scrape first.', 'error');
+  }
+  const { cars, competitors } = data;
+  const shortName = c => c.replace(' Car Rental', '').replace(' Iceland', '');
+  const headers = ['Category', 'Model', ...competitors.map(shortName), 'Cheapest Competitor'];
+  const rows = cars.map(car => [
+    car.category,
+    car.canonical_name,
+    ...competitors.map(c => car.prices[c] ? car.prices[c].price_isk : ''),
+    car.cheapest_competitor || '',
+  ]);
+  downloadCSV(`rate_matrix_${new Date().toISOString().slice(0,10)}.csv`, [headers, ...rows]);
+  showToast('Rate matrix exported!', 'success');
+}
+
+function exportSeasonalCSV() {
+  const data = state.seasonalData;
+  if (!data) return showToast('No seasonal data to export. Load seasonal analysis first.', 'error');
+
+  const { season_summary } = data;
+  const SEASON_ORDER  = ['low', 'shoulder', 'high', 'peak'];
+  const competitors   = [...new Set(SEASON_ORDER.flatMap(s => Object.keys(season_summary[s] || {})))].sort();
+
+  const headers = ['Competitor', 'Low Season (ISK/day)', 'Shoulder (ISK/day)', 'High Season (ISK/day)', 'Peak Season (ISK/day)', 'Peak vs Low Uplift %'];
+  const rows = competitors.map(comp => {
+    const prices = SEASON_ORDER.map(s => season_summary[s]?.[comp] ?? '');
+    const low  = season_summary['low']?.[comp];
+    const peak = season_summary['peak']?.[comp];
+    const uplift = (low && peak) ? `${Math.round(((peak - low) / low) * 100)}%` : '';
+    return [comp, ...prices, uplift];
+  });
+
+  downloadCSV(`seasonal_summary_${new Date().toISOString().slice(0,10)}.csv`, [headers, ...rows]);
+  showToast('Seasonal summary exported!', 'success');
 }
 
 // ── Security helper ────────────────────────────────────────────────────────
