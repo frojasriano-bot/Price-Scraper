@@ -14,6 +14,21 @@ function setSourceBadge(id, source) {
   });
 }
 
+// ── Theme ──────────────────────────────────────────────────────────────────
+function toggleTheme() {
+  const isDark = document.body.classList.toggle('dark-mode');
+  document.getElementById('theme-icon').textContent = isDark ? '☀️' : '🌙';
+  localStorage.setItem('theme', isDark ? 'dark' : 'light');
+}
+
+(function applyStoredTheme() {
+  if (localStorage.getItem('theme') === 'dark') {
+    document.body.classList.add('dark-mode');
+    const icon = document.getElementById('theme-icon');
+    if (icon) icon.textContent = '☀️';
+  }
+})();
+
 // ── State ──────────────────────────────────────────────────────────────────
 const state = {
   currentTab: 'rates',
@@ -29,6 +44,7 @@ const state = {
   historyCategory: '',
   historyModelSearch: '',
   historyCoverage: null,
+  ratesSort: { col: null, dir: 'asc' },
   seasonalData: null,
   seasonalChart: null,
   deltas: {},
@@ -575,22 +591,46 @@ function renderSeasonalTable() {
   const tbody = document.getElementById('seasonal-tbody');
   if (!tbody || !state.seasonalData) return;
 
-  const { season_summary } = state.seasonalData;
+  const { season_summary, months } = state.seasonalData;
   const SEASON_ORDER = ['low', 'shoulder', 'high', 'peak'];
   const SEASON_LABELS = { low: 'Low', shoulder: 'Shoulder', high: 'High', peak: 'Peak' };
+  const catFilter = document.getElementById('seasonal-category')?.value || '';
+
+  // If a category is selected, build a filtered season_summary from monthly data
+  let activeSummary = season_summary;
+  if (catFilter && months?.length) {
+    const buckets = {};
+    months.forEach(m => {
+      const s = m.season;
+      Object.entries(m.competitors || {}).forEach(([comp, cats]) => {
+        const price = cats[catFilter];
+        if (price == null) return;
+        buckets[s] = buckets[s] || {};
+        buckets[s][comp] = buckets[s][comp] || [];
+        buckets[s][comp].push(price);
+      });
+    });
+    activeSummary = {};
+    Object.entries(buckets).forEach(([s, comps]) => {
+      activeSummary[s] = {};
+      Object.entries(comps).forEach(([comp, vals]) => {
+        activeSummary[s][comp] = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+      });
+    });
+  }
 
   // Collect all competitor names across all seasons
   const compNames = [...new Set(
-    Object.values(season_summary).flatMap(s => Object.keys(s))
+    Object.values(activeSummary).flatMap(s => Object.keys(s))
   )].sort();
 
   if (!compNames.length) {
-    tbody.innerHTML = `<tr><td colspan="6" style="padding:30px;text-align:center;color:#6b7280">No data</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" style="padding:30px;text-align:center;color:#6b7280">No data${catFilter ? ` for ${catFilter}` : ''}</td></tr>`;
     return;
   }
 
   tbody.innerHTML = compNames.map(comp => {
-    const prices = SEASON_ORDER.map(s => season_summary[s]?.[comp] ?? null);
+    const prices = SEASON_ORDER.map(s => activeSummary[s]?.[comp] ?? null);
     const lowPrice  = prices[0];
     const peakPrice = prices[3];
     const uplift    = (lowPrice && peakPrice)
@@ -729,33 +769,75 @@ async function loadMatrix() {
   }
 }
 
+function setRateSort(col) {
+  const s = state.ratesSort;
+  if (s.col === col) {
+    s.dir = s.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    s.col = col;
+    s.dir = 'asc';
+  }
+  // Update sort icons in header
+  document.querySelectorAll('.sort-icon').forEach(el => {
+    if (el.dataset.col === col) {
+      el.textContent = s.dir === 'asc' ? ' ↑' : ' ↓';
+    } else {
+      el.textContent = '';
+    }
+  });
+  renderRatesTable();
+}
+
 function renderRatesTable() {
   const tbody = document.getElementById('rates-tbody');
-  const rates = state.rates;
+  let rates = [...state.rates];
 
   if (!rates.length) {
     tbody.innerHTML = `<tr><td colspan="8" class="empty-state" style="padding:40px;text-align:center;color:#6b7280">No rate data available. Click "Scrape Now" to fetch rates.</td></tr>`;
     return;
   }
 
-  // Find min/max prices for highlighting
-  const prices = rates.map(r => r.price_isk);
-  const minPrice = Math.min(...prices);
-  const maxPrice = Math.max(...prices);
-
-  // Calculate days
+  // Calculate days + per_day for each row (needed for sorting)
   function getDays(pickup, ret) {
     try {
       const diff = new Date(ret) - new Date(pickup);
       return Math.max(1, Math.round(diff / 86400000));
     } catch { return 1; }
   }
+  rates = rates.map(r => ({
+    ...r,
+    _days:    getDays(r.pickup_date, r.return_date),
+    _per_day: Math.round(r.price_isk / Math.max(1, getDays(r.pickup_date, r.return_date))),
+  }));
+
+  // Sort
+  const { col, dir } = state.ratesSort;
+  if (col) {
+    const key = col === 'per_day' ? '_per_day' : col;
+    rates.sort((a, b) => {
+      const av = a[key] ?? '';
+      const bv = b[key] ?? '';
+      const cmp = typeof av === 'number' ? av - bv : String(av).localeCompare(String(bv));
+      return dir === 'asc' ? cmp : -cmp;
+    });
+  }
+
+  // Cheapest per canonical model (across all competitors in current view)
+  const cheapestPerModel = {};
+  state.rates.forEach(r => {
+    const key = r.canonical_name || r.car_model || r.car_category;
+    if (cheapestPerModel[key] === undefined || r.price_isk < cheapestPerModel[key]) {
+      cheapestPerModel[key] = r.price_isk;
+    }
+  });
+
+  // Global max for "most expensive" highlight
+  const maxPrice = Math.max(...state.rates.map(r => r.price_isk));
 
   tbody.innerHTML = rates.map(r => {
-    const days = getDays(r.pickup_date, r.return_date);
-    const perDay = Math.round(r.price_isk / days);
+    const modelKey = r.canonical_name || r.car_model || r.car_category;
     let priceClass = '';
-    if (r.price_isk === minPrice) priceClass = 'price-low';
+    if (r.price_isk === cheapestPerModel[modelKey]) priceClass = 'price-low';
     else if (r.price_isk === maxPrice) priceClass = 'price-high';
 
     const modelName = r.car_model || r.car_category;
@@ -781,7 +863,7 @@ function renderRatesTable() {
       <td>${escHtml(modelName)}${canonicalNote}</td>
       <td><span class="badge badge-blue">${escHtml(r.car_category)}</span></td>
       <td class="${priceClass}">${formatISK(r.price_isk)}</td>
-      <td>${formatISK(perDay)}/day</td>
+      <td>${formatISK(r._per_day)}/day</td>
       <td style="text-align:center;font-size:12px;font-weight:600">${deltaHtml}</td>
       <td><span class="badge badge-gray">${escHtml(r.location)}</span></td>
       <td style="color:#6b7280;font-size:12px">${timeAgo(r.scraped_at)}</td>
@@ -1355,14 +1437,38 @@ async function loadSettings() {
 async function loadScraperStatus() {
   try {
     const data = await apiFetch('/api/rates/scraper-status');
-    const statusMap = {};
-    for (const s of (data.scrapers || [])) statusMap[s.name] = s.source;
+    const scraperMap = {};
+    for (const s of (data.scrapers || [])) scraperMap[s.name] = s;
+
     document.querySelectorAll('.scraper-status-badge').forEach(badge => {
-      const source = statusMap[badge.dataset.competitor] || 'mock';
+      const s = scraperMap[badge.dataset.competitor];
+      const source = s?.source || 'mock';
       badge.textContent = source === 'live' ? 'Live Data' : 'Mock Data';
       badge.className = `badge ${source === 'live' ? 'badge-green' : 'badge-gray'} scraper-status-badge`;
     });
+
+    document.querySelectorAll('.scraper-ts').forEach(el => {
+      const s = scraperMap[el.dataset.competitor];
+      el.textContent = s?.last_scraped ? timeAgo(s.last_scraped) : '';
+    });
   } catch (_) { /* leave badges as-is on failure */ }
+}
+
+async function testWebhook() {
+  const btn = document.getElementById('btn-test-webhook');
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+  try {
+    const res = await apiFetch('/api/alerts/test-webhook', { method: 'POST' });
+    if (res.sent) {
+      showToast('Test webhook sent! Check your Slack channel.', 'success');
+    } else {
+      showToast(`Webhook test failed: ${res.error || 'Unknown error'}`, 'error');
+    }
+  } catch (e) {
+    showToast(`Webhook test failed: ${e.message}`, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Test Webhook'; btn.prepend((() => { const s = document.createElementNS('http://www.w3.org/2000/svg','svg'); s.setAttribute('viewBox','0 0 24 24'); s.setAttribute('fill','none'); s.setAttribute('stroke','currentColor'); s.setAttribute('stroke-width','2'); s.setAttribute('stroke-linecap','round'); s.setAttribute('stroke-linejoin','round'); s.style.cssText='width:13px;height:13px;margin-right:4px'; s.innerHTML='<path d="M22 2L11 13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>'; return s; })()); }
+  }
 }
 
 function renderMappingsTable() {

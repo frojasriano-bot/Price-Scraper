@@ -552,10 +552,15 @@ async def get_scraper_status():
         ) as cursor:
             rows = await cursor.fetchall()
 
-    live_set = {row["competitor"] for row in rows if row["row_count"] > 0}
+    live_set          = {row["competitor"] for row in rows if row["row_count"] > 0}
+    last_scraped_map  = {row["competitor"]: row["last_scraped"] for row in rows if row["last_scraped"]}
 
     scrapers = [
-        {"name": name, "source": "live" if name in live_set else "mock"}
+        {
+            "name":         name,
+            "source":       "live" if name in live_set else "mock",
+            "last_scraped": last_scraped_map.get(name),
+        }
         for name in _COMPETITOR_NAMES
     ]
     return {"scrapers": scrapers}

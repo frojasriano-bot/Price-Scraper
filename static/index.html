@@ -71,6 +71,9 @@
       <div class="topbar-actions">
         <span id="rates-source-badge" class="badge badge-gray" style="display:none">Mock Data</span>
         <span id="seo-source-badge"   class="badge badge-gray" style="display:none">Mock Data</span>
+        <button class="btn btn-secondary btn-sm" id="theme-toggle" onclick="toggleTheme()" title="Toggle dark/light mode" style="padding:5px 8px">
+          <span id="theme-icon">🌙</span>
+        </button>
       </div>
     </header>
 
@@ -186,7 +189,7 @@
             <div class="card-header">
               <div>
                 <div class="card-title">Competitor Rates</div>
-                <div class="card-subtitle">Green = lowest price &nbsp;|&nbsp; Red = highest price</div>
+                <div class="card-subtitle">Green = cheapest for model &nbsp;|&nbsp; Red = most expensive &nbsp;|&nbsp; Click column headers to sort</div>
               </div>
               <span id="rates-source-badge" class="badge badge-gray">Mock Data</span>
             </div>
@@ -194,13 +197,13 @@
               <table>
                 <thead>
                   <tr>
-                    <th>Competitor</th>
+                    <th class="sortable" onclick="setRateSort('competitor')">Competitor <span class="sort-icon" data-col="competitor"></span></th>
                     <th>Model</th>
-                    <th>Category</th>
-                    <th>Total (ISK)</th>
-                    <th>Per Day</th>
+                    <th class="sortable" onclick="setRateSort('car_category')">Category <span class="sort-icon" data-col="car_category"></span></th>
+                    <th class="sortable" onclick="setRateSort('price_isk')">Total (ISK) <span class="sort-icon" data-col="price_isk"></span></th>
+                    <th class="sortable" onclick="setRateSort('per_day')">Per Day <span class="sort-icon" data-col="per_day"></span></th>
                     <th>Δ vs Prev</th>
-                    <th>Location</th>
+                    <th class="sortable" onclick="setRateSort('location')">Location <span class="sort-icon" data-col="location"></span></th>
                     <th>Last Scraped</th>
                   </tr>
                 </thead>
@@ -300,7 +303,7 @@
                 <div class="card-subtitle">Per-day rates sampled on the 15th of each month — 7-night stay</div>
               </div>
               <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-                <select id="seasonal-category" class="form-select" onchange="renderSeasonalChart()" style="min-width:160px">
+                <select id="seasonal-category" class="form-select" onchange="renderSeasonalChart(); renderSeasonalTable();" style="min-width:160px">
                   <option value="">Overall Average</option>
                   <option value="Economy">Economy</option>
                   <option value="Compact">Compact</option>
@@ -639,6 +642,10 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
               Check Now
             </button>
+            <button class="btn btn-secondary btn-sm" id="btn-test-webhook" onclick="testWebhook()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M22 2L11 13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              Test Webhook
+            </button>
           </div>
         </div>
 
@@ -663,37 +670,37 @@
                   <td><strong>Go Car Rental</strong></td>
                   <td><a href="https://gocarrental.is" target="_blank" style="color:#2563eb">gocarrental.is</a></td>
                   <td><code>scrapers/gocarrental.py</code></td>
-                  <td><span class="badge badge-gray scraper-status-badge" data-competitor="Go Car Rental">…</span></td>
+                  <td><span class="badge badge-gray scraper-status-badge" data-competitor="Go Car Rental">…</span><br><span class="scraper-ts" data-competitor="Go Car Rental" style="font-size:11px;color:#9ca3af"></span></td>
                 </tr>
                 <tr>
                   <td><strong>Lava Car Rental</strong></td>
                   <td><a href="https://lavacarrental.is" target="_blank" style="color:#2563eb">lavacarrental.is</a></td>
                   <td><code>scrapers/lavacarrental.py</code></td>
-                  <td><span class="badge badge-gray scraper-status-badge" data-competitor="Lava Car Rental">…</span></td>
+                  <td><span class="badge badge-gray scraper-status-badge" data-competitor="Lava Car Rental">…</span><br><span class="scraper-ts" data-competitor="Lava Car Rental" style="font-size:11px;color:#9ca3af"></span></td>
                 </tr>
                 <tr>
                   <td><strong>Hertz Iceland</strong></td>
                   <td><a href="https://hertz.is" target="_blank" style="color:#2563eb">hertz.is</a></td>
                   <td><code>scrapers/hertz_is.py</code></td>
-                  <td><span class="badge badge-gray scraper-status-badge" data-competitor="Hertz Iceland">…</span></td>
+                  <td><span class="badge badge-gray scraper-status-badge" data-competitor="Hertz Iceland">…</span><br><span class="scraper-ts" data-competitor="Hertz Iceland" style="font-size:11px;color:#9ca3af"></span></td>
                 </tr>
                 <tr>
                   <td><strong>Lotus Car Rental</strong></td>
                   <td><a href="https://lotuscarrental.is" target="_blank" style="color:#2563eb">lotuscarrental.is</a></td>
                   <td><code>scrapers/lotus.py</code></td>
-                  <td><span class="badge badge-gray scraper-status-badge" data-competitor="Lotus Car Rental">…</span></td>
+                  <td><span class="badge badge-gray scraper-status-badge" data-competitor="Lotus Car Rental">…</span><br><span class="scraper-ts" data-competitor="Lotus Car Rental" style="font-size:11px;color:#9ca3af"></span></td>
                 </tr>
                 <tr>
                   <td><strong>Avis Iceland</strong></td>
                   <td><a href="https://avis.is" target="_blank" style="color:#2563eb">avis.is</a></td>
                   <td><code>scrapers/avis_is.py</code></td>
-                  <td><span class="badge badge-gray scraper-status-badge" data-competitor="Avis Iceland">…</span></td>
+                  <td><span class="badge badge-gray scraper-status-badge" data-competitor="Avis Iceland">…</span><br><span class="scraper-ts" data-competitor="Avis Iceland" style="font-size:11px;color:#9ca3af"></span></td>
                 </tr>
                 <tr>
                   <td><strong>Holdur</strong></td>
                   <td><a href="https://holdur.is" target="_blank" style="color:#2563eb">holdur.is</a></td>
                   <td><code>scrapers/holdur.py</code></td>
-                  <td><span class="badge badge-gray scraper-status-badge" data-competitor="Holdur">…</span></td>
+                  <td><span class="badge badge-gray scraper-status-badge" data-competitor="Holdur">…</span><br><span class="scraper-ts" data-competitor="Holdur" style="font-size:11px;color:#9ca3af"></span></td>
                 </tr>
               </tbody>
             </table>

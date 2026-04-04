@@ -31,6 +31,34 @@
   --transition: 0.2s ease;
 }
 
+/* ── Dark Mode ───────────────────────────────────── */
+body.dark-mode {
+  --gray-900: #f3f4f6;
+  --gray-700: #d1d5db;
+  --gray-500: #9ca3af;
+  --gray-300: #374151;
+  --gray-100: #111827;
+  --white:    #1f2937;
+}
+body.dark-mode .main        { background: #0f172a; }
+body.dark-mode .card        { background: #1e293b; border-color: rgba(255,255,255,0.07); }
+body.dark-mode .topbar      { background: #1e293b; border-color: rgba(255,255,255,0.07); }
+body.dark-mode table        { background: transparent; }
+body.dark-mode th           { background: #1e293b; color: #9ca3af; border-color: rgba(255,255,255,0.07); }
+body.dark-mode td           { border-color: rgba(255,255,255,0.05); color: #d1d5db; }
+body.dark-mode tr:hover td  { background: rgba(255,255,255,0.04); }
+body.dark-mode .form-control,
+body.dark-mode .form-select { background: #1e293b; border-color: rgba(255,255,255,0.12); color: #d1d5db; }
+body.dark-mode .btn-secondary { background: #1e293b; border-color: rgba(255,255,255,0.12); color: #d1d5db; }
+body.dark-mode .btn-secondary:hover { background: #334155; }
+body.dark-mode .table-wrap  { border-color: rgba(255,255,255,0.07); }
+body.dark-mode code         { background: rgba(255,255,255,0.08); color: #93c5fd; }
+
+/* ── Sortable headers ────────────────────────────── */
+th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+th.sortable:hover { color: var(--blue-500); }
+.sort-icon { font-style: normal; color: var(--blue-400); }
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body {

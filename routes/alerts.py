@@ -109,3 +109,37 @@ async def check_alerts():
         "webhook_error": webhook_error,
         "threshold_pct": threshold_pct,
     }
+
+
+@router.post("/test-webhook")
+async def test_webhook():
+    """Send a realistic sample alert payload to the configured webhook."""
+    webhook_url = await get_config("alert_webhook_url", "")
+    if not webhook_url or not webhook_url.strip():
+        return {"sent": False, "error": "No webhook URL configured. Save one in Settings first."}
+
+    sample_alerts = [
+        {"category": "Economy",  "competitor": "Hertz Iceland",   "blue_price": 52000, "comp_price": 44200, "diff_pct": 15.0},
+        {"category": "Compact",  "competitor": "Avis Iceland",    "blue_price": 68000, "comp_price": 59500, "diff_pct": 12.5},
+        {"category": "SUV",      "competitor": "Go Car Rental",   "blue_price": 95000, "comp_price": 85500, "diff_pct": 10.0},
+    ]
+    lines = [f"🧪 *[TEST] Car Rental Price Alert* — {len(sample_alerts)} sample undercutting issue(s)\n"]
+    for a in sample_alerts:
+        lines.append(
+            f"• *{a['category']}*: {a['competitor']} is {a['diff_pct']}% cheaper "
+            f"({a['comp_price']:,} ISK vs your {a['blue_price']:,} ISK/week)"
+        )
+    lines.append("\n_This is a test message — no real data was used._")
+    message = {"text": "\n".join(lines)}
+
+    webhook_error: str | None = None
+    sent = False
+    async with httpx.AsyncClient(timeout=10) as client:
+        try:
+            resp = await client.post(webhook_url, json=message)
+            resp.raise_for_status()
+            sent = True
+        except Exception as e:
+            webhook_error = str(e)
+
+    return {"sent": sent, "error": webhook_error}
