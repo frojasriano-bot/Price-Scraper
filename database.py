@@ -5,7 +5,7 @@ Uses aiosqlite for async SQLite access.
 
 import aiosqlite
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 DB_PATH = Path(__file__).parent / "blue_rental.db"
@@ -174,6 +174,29 @@ async def init_db():
             )
         """)
 
+        # Seasonal analysis cache
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS seasonal_cache (
+                cache_key TEXT PRIMARY KEY,
+                cached_at TEXT NOT NULL,
+                data_json TEXT NOT NULL
+            )
+        """)
+
+        # Indexes for query performance (safe to re-run — IF NOT EXISTS)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_rates_scraped_at ON rates(scraped_at)"
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_rates_competitor ON rates(competitor)"
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_rates_lookup ON rates(competitor, location, car_model, scraped_at)"
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_rankings_keyword ON rankings(keyword, serp_date)"
+        )
+
         await db.commit()
 
         # Seed car catalog
@@ -196,6 +219,8 @@ async def init_db():
         defaults = {
             "serpapi_key": "",
             "scrape_schedule": "daily",
+            "alert_webhook_url": "",
+            "alert_threshold_pct": "10",
             "locations": json.dumps([
                 {"name": "Keflavik Airport", "address": "Keflavíkurflugvöllur, 235 Reykjanesbær, Iceland"},
                 {"name": "Reykjavik", "address": "Reykjavík, Iceland"},
@@ -209,7 +234,7 @@ async def init_db():
                 INSERT OR IGNORE INTO config (key, value, updated_at)
                 VALUES (?, ?, ?)
                 """,
-                (key, value, datetime.utcnow().isoformat()),
+                (key, value, datetime.now(timezone.utc).isoformat()),
             )
         await db.commit()
 
@@ -234,7 +259,7 @@ async def set_config(key: str, value: str):
             VALUES (?, ?, ?)
             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
             """,
-            (key, value, datetime.utcnow().isoformat()),
+            (key, value, datetime.now(timezone.utc).isoformat()),
         )
         await db.commit()
 
@@ -716,3 +741,37 @@ async def delete_rankings_for_keywords(keywords: list[str]) -> int:
         )
         await db.commit()
         return cursor.rowcount
+
+
+async def get_seasonal_cache(cache_key: str, max_age_hours: int = 6):
+    """Return (data_dict, cached_at_iso) if cache exists and is fresh, else None."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT data_json, cached_at FROM seasonal_cache WHERE cache_key = ?",
+            (cache_key,),
+        ) as cursor:
+            row = await cursor.fetchone()
+        if not row:
+            return None
+        cached_at = datetime.fromisoformat(row["cached_at"])
+        age_hours = (datetime.now(timezone.utc) - cached_at).total_seconds() / 3600
+        if age_hours > max_age_hours:
+            return None
+        return json.loads(row["data_json"]), row["cached_at"]
+
+
+async def set_seasonal_cache(cache_key: str, data: dict):
+    """Upsert the seasonal cache for the given key."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """
+            INSERT INTO seasonal_cache (cache_key, cached_at, data_json)
+            VALUES (?, ?, ?)
+            ON CONFLICT(cache_key) DO UPDATE SET
+                cached_at = excluded.cached_at,
+                data_json = excluded.data_json
+            """,
+            (cache_key, datetime.now(timezone.utc).isoformat(), json.dumps(data)),
+        )
+        await db.commit()

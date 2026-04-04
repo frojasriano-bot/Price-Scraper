@@ -28,6 +28,7 @@ from database import init_db, get_config, set_config
 from routes.rates import router as rates_router
 from routes.seo import router as seo_router
 from routes.settings import router as settings_router
+from routes.alerts import router as alerts_router
 
 # Load environment variables from .env if present
 load_dotenv()
@@ -67,6 +68,29 @@ async def scheduled_scrape():
         logger.info(f"Scheduled scrape complete: {len(all_rates)} rate records stored.")
     else:
         logger.warning("Scheduled scrape returned no results.")
+
+
+async def scheduled_alert_check():
+    """Run price alert check after scrape — called by APScheduler."""
+    from routes.alerts import check_alerts
+
+    webhook_url = await get_config("alert_webhook_url", "")
+    if not webhook_url:
+        logger.info("Scheduled alert check skipped: no webhook URL configured.")
+        return
+
+    logger.info("Scheduled alert check starting...")
+    try:
+        result = await check_alerts()
+        if result["alerts_fired"]:
+            logger.info(
+                f"Alert check: {result['alerts_fired']} alert(s) fired, "
+                f"webhook_sent={result['webhook_sent']}"
+            )
+        else:
+            logger.info("Alert check: no undercutting detected.")
+    except Exception as e:
+        logger.warning(f"Alert check failed: {e}")
 
 
 async def scheduled_seo_check():
@@ -126,6 +150,21 @@ def setup_scheduler(schedule: str = "daily"):
         replace_existing=True,
         name="SEO Rank Check",
     )
+
+    if schedule == "hourly":
+        alert_trigger = CronTrigger(minute=45)
+    elif schedule == "weekly":
+        alert_trigger = CronTrigger(day_of_week="mon", hour=7, minute=45)
+    else:
+        alert_trigger = CronTrigger(hour=7, minute=45)
+
+    scheduler.add_job(
+        scheduled_alert_check,
+        trigger=alert_trigger,
+        id="alert_check",
+        replace_existing=True,
+        name="Price Alert Check",
+    )
     logger.info(f"Scheduler configured: {schedule} schedule active.")
 
 
@@ -175,6 +214,7 @@ app.add_middleware(
 app.include_router(rates_router)
 app.include_router(seo_router)
 app.include_router(settings_router)
+app.include_router(alerts_router)
 
 # Serve static files (the SPA dashboard)
 static_dir = Path(__file__).parent / "static"

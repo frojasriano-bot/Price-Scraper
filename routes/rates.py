@@ -10,6 +10,7 @@ from fastapi import APIRouter, Query, HTTPException
 from pydantic import BaseModel
 
 from database import (
+    DB_PATH,
     get_latest_rates,
     get_rates_history,
     get_rates_history_by_model,
@@ -21,10 +22,46 @@ from database import (
     delete_car_mapping,
     insert_rates,
     set_config,
+    get_seasonal_cache,
+    set_seasonal_cache,
 )
 from scrapers import ALL_SCRAPERS
 
 router = APIRouter(prefix="/api/rates", tags=["rates"])
+
+# Module-level constants (avoid rebuilding on every request)
+_RENTAL_DAYS = 7
+
+_SEASON_MAP: dict[int, tuple[str, str]] = {
+    1:  ("low",      "Low Season"),
+    2:  ("low",      "Low Season"),
+    3:  ("low",      "Low Season"),
+    4:  ("shoulder", "Shoulder"),
+    5:  ("shoulder", "Shoulder"),
+    6:  ("high",     "High Season"),
+    7:  ("peak",     "Peak Season"),
+    8:  ("high",     "High Season"),
+    9:  ("shoulder", "Shoulder"),
+    10: ("shoulder", "Shoulder"),
+    11: ("low",      "Low Season"),
+    12: ("low",      "Low Season"),
+}
+
+_MOCK_MODELS: dict[str, list[str]] = {
+    "Economy":  ["Toyota Aygo", "Toyota Yaris", "Hyundai i10", "Kia Ceed", "Suzuki Swift"],
+    "Compact":  ["Skoda Octavia", "Kia Ceed Sportswagon", "Toyota Corolla", "Renault Captur"],
+    "SUV":      ["Suzuki Jimny", "Dacia Duster", "Kia Sportage", "Hyundai Tucson", "Toyota RAV4", "Tesla Model Y"],
+    "4x4":      ["Kia Sorento", "Toyota Land Cruiser 150", "Toyota Land Cruiser 250",
+                 "Land Rover Defender", "Land Rover Discovery"],
+    "Minivan":  ["VW Caravelle", "Renault Trafic", "Toyota Proace"],
+}
+
+_BASE_PRICES: dict[str, int] = {
+    "Economy": 9000, "Compact": 12000, "SUV": 16000, "4x4": 28000, "Minivan": 22000,
+}
+
+# Read-only competitor names directly from class attributes — no instantiation needed
+_COMPETITOR_NAMES: list[str] = [cls.competitor_name for cls in ALL_SCRAPERS]
 
 
 @router.get("")
@@ -54,11 +91,10 @@ async def get_rates(
 
         mock_rates = []
         for ScraperClass in ALL_SCRAPERS:
-            scraper = ScraperClass()
-            mock_rates.extend(
-                scraper.get_mock_rates(mock_location, mock_pickup, mock_return)
-            )
-            await scraper.client.aclose()
+            async with ScraperClass() as scraper:
+                mock_rates.extend(
+                    scraper.get_mock_rates(mock_location, mock_pickup, mock_return)
+                )
 
         # Filter mock data by car_category if requested
         if car_category:
@@ -150,7 +186,6 @@ async def get_history(
 
     # If no history, return synthetic history for chart demo
     if not history:
-        from datetime import datetime
         import random
 
         history = []
@@ -159,21 +194,18 @@ async def get_history(
         mock_category = car_category or "Economy"
         rng = random.Random(42)
 
-        for ScraperClass in ALL_SCRAPERS:
-            scraper = ScraperClass()
+        for name in _COMPETITOR_NAMES:
             base_price = rng.randint(8000, 14000)
             for i in range(min(days, 14)):
                 day = today - timedelta(days=days - i)
-                # Slight daily variation
                 price = base_price + rng.randint(-500, 500)
                 history.append({
-                    "competitor": scraper.competitor_name,
+                    "competitor": name,
                     "location": mock_location,
                     "car_category": mock_category,
                     "price_isk": price,
                     "scraped_at": day.isoformat() + "T07:00:00",
                 })
-            await scraper.client.aclose()
 
         if competitor:
             history = [h for h in history if h["competitor"] == competitor]
@@ -204,28 +236,15 @@ async def get_history_by_model(
 
     # ── Mock fallback: synthetic 14-day price series ─────────────────────────
     import random
-    from datetime import datetime
 
     rng = random.Random(99)
     today = date.today()
     mock_data: dict = {}
 
-    MOCK_MODELS: dict = {
-        "Economy":  ["Toyota Aygo", "Toyota Yaris", "Hyundai i10", "Kia Ceed", "Suzuki Swift"],
-        "Compact":  ["Skoda Octavia", "Kia Ceed Sportswagon", "Toyota Corolla", "Renault Captur"],
-        "SUV":      ["Suzuki Jimny", "Dacia Duster", "Kia Sportage", "Hyundai Tucson", "Toyota RAV4", "Tesla Model Y"],
-        "4x4":      ["Kia Sorento", "Toyota Land Cruiser 150", "Toyota Land Cruiser 250",
-                     "Land Rover Defender", "Land Rover Discovery"],
-        "Minivan":  ["VW Caravelle", "Renault Trafic", "Toyota Proace"],
-    }
-    BASE_PRICES: dict = {
-        "Economy": 9000, "Compact": 12000, "SUV": 16000, "4x4": 28000, "Minivan": 22000,
-    }
-
     points = min(days, 14)
-    for cat, models in MOCK_MODELS.items():
+    for cat, models in _MOCK_MODELS.items():
         mock_data[cat] = {}
-        base = BASE_PRICES.get(cat, 10000)
+        base = _BASE_PRICES.get(cat, 10000)
         for i, model in enumerate(models):
             price_base = base + i * 1500
             series = []
@@ -273,19 +292,14 @@ async def get_matrix(
 
     mock_rates = []
     for ScraperClass in ALL_SCRAPERS:
-        scraper = ScraperClass()
-        mock_rates.extend(scraper.get_mock_rates(mock_location, mock_pickup, mock_return))
-        await scraper.client.aclose()
+        async with ScraperClass() as scraper:
+            mock_rates.extend(scraper.get_mock_rates(mock_location, mock_pickup, mock_return))
 
     if category:
         mock_rates = [r for r in mock_rates if r["car_category"] == category]
 
     # Build matrix from mock rates
     from database import CATEGORY_ORDER
-    competitors = [s().competitor_name for s in ALL_SCRAPERS]
-    for s in ALL_SCRAPERS:
-        sc = s()
-        await sc.client.aclose()
 
     matrix: dict = {}
     cat_map: dict = {}
@@ -309,11 +323,6 @@ async def get_matrix(
         idx = CATEGORY_ORDER.index(cat) if cat in CATEGORY_ORDER else 99
         return (idx, name)
 
-    all_competitors = [ScraperClass().competitor_name for ScraperClass in ALL_SCRAPERS]
-    for sc in ALL_SCRAPERS:
-        s = sc()
-        await s.client.aclose()
-
     cars = []
     for canonical_name in sorted(matrix.keys(), key=sort_key):
         prices_by_comp = matrix[canonical_name]
@@ -321,44 +330,38 @@ async def get_matrix(
         cars.append({
             "canonical_name": canonical_name,
             "category": cat_map.get(canonical_name, ""),
-            "prices": {comp: prices_by_comp.get(comp) for comp in all_competitors},
+            "prices": {comp: prices_by_comp.get(comp) for comp in _COMPETITOR_NAMES},
             "min_price": min(available_prices) if available_prices else None,
             "max_price": max(available_prices) if available_prices else None,
             "cheapest_competitor": min(prices_by_comp, key=lambda c: prices_by_comp[c]["price_isk"]) if prices_by_comp else None,
             "available_at": len(prices_by_comp),
         })
 
-    return {"cars": cars, "competitors": all_competitors, "source": "mock"}
+    return {"cars": cars, "competitors": _COMPETITOR_NAMES, "source": "mock"}
 
 
 @router.get("/seasonal")
 async def get_seasonal_rates(
     category: Optional[str] = Query(None, description="Filter to one car category"),
     location: Optional[str] = Query(None, description="Filter to one pickup location"),
+    force: bool = Query(False, description="Bypass cache and re-scrape"),
 ):
     """
     Sweep the next 12 months (mid-month, 7-night stay) and return per-day
     pricing for each competitor and category across the year.
     Reveals low / shoulder / high / peak season price bands.
     """
+    # --- Cache check ---
+    cache_key = f"seasonal:{category or 'all'}:{location or 'kef'}"
+    if not force:
+        cached = await get_seasonal_cache(cache_key)
+        if cached:
+            data, cached_at = cached
+            data["source"] = "cached"
+            data["cached_at"] = cached_at
+            return data
+
     from scrapers.base import LOCATIONS as ALL_LOCATIONS
-
-    RENTAL_DAYS = 7
-
-    SEASON_MAP: dict[int, tuple[str, str]] = {
-        1:  ("low",      "Low Season"),
-        2:  ("low",      "Low Season"),
-        3:  ("low",      "Low Season"),
-        4:  ("shoulder", "Shoulder"),
-        5:  ("shoulder", "Shoulder"),
-        6:  ("high",     "High Season"),
-        7:  ("peak",     "Peak Season"),
-        8:  ("high",     "High Season"),
-        9:  ("shoulder", "Shoulder"),
-        10: ("shoulder", "Shoulder"),
-        11: ("low",      "Low Season"),
-        12: ("low",      "Low Season"),
-    }
 
     today = date.today()
     target_locs = [location] if location else ALL_LOCATIONS
@@ -370,8 +373,8 @@ async def get_seasonal_rates(
         year = today.year + (total_month - 1) // 12
         month = (total_month - 1) % 12 + 1
         pickup = date(year, month, 15)
-        ret = pickup + timedelta(days=RENTAL_DAYS)
-        season, season_label = SEASON_MAP[month]
+        ret = pickup + timedelta(days=_RENTAL_DAYS)
+        season, season_label = _SEASON_MAP[month]
         sweep_months.append({
             "month_str":    pickup.strftime("%Y-%m"),
             "month_label":  pickup.strftime("%b %Y"),
@@ -389,18 +392,16 @@ async def get_seasonal_rates(
 
     async def _scrape(ScraperClass, loc, m_info):
         async with semaphore:
-            scraper = ScraperClass()
-            try:
-                rates = await asyncio.wait_for(
-                    scraper.scrape_rates(loc, m_info["pickup"], m_info["return"]),
-                    timeout=30,
-                )
-                return rates, m_info["month_str"], "live"
-            except Exception:
-                rates = scraper.get_mock_rates(loc, m_info["pickup"], m_info["return"])
-                return rates, m_info["month_str"], "mock"
-            finally:
-                await scraper.client.aclose()
+            async with ScraperClass() as scraper:
+                try:
+                    rates = await asyncio.wait_for(
+                        scraper.scrape_rates(loc, m_info["pickup"], m_info["return"]),
+                        timeout=10,
+                    )
+                    return rates, m_info["month_str"], "live"
+                except Exception:
+                    rates = scraper.get_mock_rates(loc, m_info["pickup"], m_info["return"])
+                    return rates, m_info["month_str"], "mock"
 
     tasks = [
         _scrape(Cls, loc, m)
@@ -408,7 +409,11 @@ async def get_seasonal_rates(
         for Cls in ALL_SCRAPERS
         for loc in scrape_locs
     ]
-    raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+    # Overall 90s timeout so a hung scraper batch can't block the endpoint indefinitely
+    raw_results = await asyncio.wait_for(
+        asyncio.gather(*tasks, return_exceptions=True),
+        timeout=90,
+    )
 
     # Bucket all rate dicts by month_str, tracking whether any live data came through
     month_rates: dict[str, list[dict]] = {m["month_str"]: [] for m in sweep_months}
@@ -431,7 +436,7 @@ async def get_seasonal_rates(
                 continue
             comp = r["competitor"]
             cat  = r["car_category"]
-            per_day = round(r["price_isk"] / RENTAL_DAYS)
+            per_day = round(r["price_isk"] / _RENTAL_DAYS)
             comp_data.setdefault(comp, {}).setdefault(cat, []).append(per_day)
 
         competitors: dict = {
@@ -491,14 +496,18 @@ async def get_seasonal_rates(
 
     source = "live" if live_months else "mock"
 
-    return {
+    # --- Store to cache ---
+    result_payload = {
         "months":                  results,
         "season_summary":          season_summary,
         "category_season_summary": category_season_summary,
         "season_months":           season_months,
         "source":                  source,
-        "rental_days":             RENTAL_DAYS,
+        "rental_days":             _RENTAL_DAYS,
     }
+    await set_seasonal_cache(cache_key, result_payload)
+
+    return result_payload
 
 
 @router.get("/scraper-status")
@@ -507,10 +516,9 @@ async def get_scraper_status():
     Return live-vs-mock status for each scraper by checking the DB for recent data.
     A competitor is 'live' if it has any scraped rows in the database.
     """
-    from database import get_db
     import aiosqlite
 
-    async with aiosqlite.connect("blue_rental.db") as db:
+    async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
             "SELECT competitor, MAX(scraped_at) as last_scraped, COUNT(*) as row_count "
@@ -520,16 +528,10 @@ async def get_scraper_status():
 
     live_set = {row["competitor"] for row in rows if row["row_count"] > 0}
 
-    scrapers = []
-    for ScraperClass in ALL_SCRAPERS:
-        s = ScraperClass()
-        await s.client.aclose()
-        live = s.competitor_name in live_set
-        scrapers.append({
-            "name":   s.competitor_name,
-            "source": "live" if live else "mock",
-        })
-
+    scrapers = [
+        {"name": name, "source": "live" if name in live_set else "mock"}
+        for name in _COMPETITOR_NAMES
+    ]
     return {"scrapers": scrapers}
 
 
