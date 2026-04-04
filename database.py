@@ -754,7 +754,7 @@ async def get_seasonal_cache(cache_key: str, max_age_hours: int = 6):
             row = await cursor.fetchone()
         if not row:
             return None
-        cached_at = datetime.fromisoformat(row["cached_at"])
+        cached_at = datetime.fromisoformat(row["cached_at"]).replace(tzinfo=timezone.utc)
         age_hours = (datetime.now(timezone.utc) - cached_at).total_seconds() / 3600
         if age_hours > max_age_hours:
             return None
