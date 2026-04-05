@@ -171,8 +171,8 @@ class BlueCarRentalScraper(BaseScraper):
         pickup_date / return_date must be ISO-format strings: "YYYY-MM-DD"
         """
         if location not in _LOCATION_IDS:
-            # Akureyri, Egilsstaðir etc. — no live data available
-            raise NotImplementedError(f"No live data for location: {location}")
+            # Blue Car Rental only operates from KEF and Reykjavik
+            return []
 
         pickup_id, dropoff_id = _LOCATION_IDS[location]
 
