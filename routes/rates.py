@@ -383,7 +383,8 @@ async def get_seasonal_rates(
         cached = await get_seasonal_cache(cache_key)
         if cached:
             data, cached_at = cached
-            data["source"] = "cached"
+            # Preserve the original source ("live" / "mock") so the badge
+            # reflects reality. Add cached_at so the UI can show the age.
             data["cached_at"] = cached_at
             return data
 

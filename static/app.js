@@ -8,9 +8,10 @@
 // ── Helpers ────────────────────────────────────────────────────────────────
 /** Update every element sharing a given ID (the HTML has duplicates in top-bar + tab). */
 function setSourceBadge(id, source) {
+  const isLive = source === 'live' || source === 'database' || source === 'cached';
   document.querySelectorAll(`#${id}`).forEach(el => {
-    el.textContent = source === 'live' || source === 'database' ? 'Live Data' : 'Mock Data';
-    el.className = `badge ${source === 'live' || source === 'database' ? 'badge-green' : 'badge-gray'}`;
+    el.textContent = isLive ? 'Live Data' : 'Mock Data';
+    el.className = `badge ${isLive ? 'badge-green' : 'badge-gray'}`;
   });
 }
 
