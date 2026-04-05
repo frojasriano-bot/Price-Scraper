@@ -446,9 +446,23 @@ const SEASON_COLORS = {
   peak:     'rgba(239,68,68,0.15)',
 };
 
+// Brand colours — keyed by competitor name (case-sensitive, must match DB values)
+const BRAND_COLORS = {
+  'Avis Iceland':    '#e3001b',   // Avis red
+  'Blue Car Rental': '#2563eb',   // Blue blue
+  'Go Car Rental':   '#f97316',   // Go orange
+  'Hertz Iceland':   '#f5c400',   // Hertz yellow
+  'Holdur':          '#22c55e',   // Holdur green
+  'Lava Car Rental': '#7c3aed',   // Lava purple
+  'Lotus Car Rental':'#881337',   // Lotus maroon
+};
 const COMP_PALETTE = [
-  '#2563eb','#0ea5e9','#22c55e','#f59e0b','#8b5cf6','#f97316','#ec4899',
+  '#2563eb','#e3001b','#22c55e','#f5c400','#7c3aed','#f97316','#881337',
 ];
+
+function compColor(name, fallbackIndex = 0) {
+  return BRAND_COLORS[name] || COMP_PALETTE[fallbackIndex % COMP_PALETTE.length];
+}
 
 async function loadSeasonal(force = false) {
   if (state.seasonalData && !force) {
@@ -521,7 +535,7 @@ function renderSeasonalChart() {
       }
       return m.comp_overall[comp] ?? null;
     });
-    const color = COMP_PALETTE[i % COMP_PALETTE.length];
+    const color = compColor(comp, i);
     return {
       label: comp,
       data,

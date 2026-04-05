@@ -38,11 +38,12 @@ body.dark-mode {
   --gray-500: #9ca3af;
   --gray-300: #374151;
   --gray-100: #111827;
-  --white:    #1f2937;
+  /* Do NOT override --white here — sidebar uses it for text and is always dark */
 }
 body.dark-mode .main        { background: #0f172a; }
 body.dark-mode .card        { background: #1e293b; border-color: rgba(255,255,255,0.07); }
-body.dark-mode .topbar      { background: #1e293b; border-color: rgba(255,255,255,0.07); }
+body.dark-mode .topbar      { background: #1e293b; border-color: rgba(255,255,255,0.07); color: #f3f4f6; }
+body.dark-mode .topbar-title { color: #f3f4f6; }
 body.dark-mode table        { background: transparent; }
 body.dark-mode th           { background: #1e293b; color: #9ca3af; border-color: rgba(255,255,255,0.07); }
 body.dark-mode td           { border-color: rgba(255,255,255,0.05); color: #d1d5db; }
@@ -51,8 +52,39 @@ body.dark-mode .form-control,
 body.dark-mode .form-select { background: #1e293b; border-color: rgba(255,255,255,0.12); color: #d1d5db; }
 body.dark-mode .btn-secondary { background: #1e293b; border-color: rgba(255,255,255,0.12); color: #d1d5db; }
 body.dark-mode .btn-secondary:hover { background: #334155; }
+body.dark-mode .btn-secondary.active { background: var(--blue-500); color: #ffffff; border-color: var(--blue-500); }
 body.dark-mode .table-wrap  { border-color: rgba(255,255,255,0.07); }
 body.dark-mode code         { background: rgba(255,255,255,0.08); color: #93c5fd; }
+/* Filters bar */
+body.dark-mode .filters     { background: #1e293b; box-shadow: none; border: 1px solid rgba(255,255,255,0.07); }
+body.dark-mode .filter-group label { color: #9ca3af; }
+/* Cards and general text in dark mode */
+body.dark-mode .card-title  { color: #f3f4f6; }
+body.dark-mode .card-subtitle { color: #9ca3af; }
+body.dark-mode label        { color: #d1d5db; }
+body.dark-mode .form-hint   { color: #6b7280; }
+body.dark-mode .stat-card   { background: #1e293b; border-color: rgba(255,255,255,0.07); }
+body.dark-mode .stat-label  { color: #9ca3af; }
+body.dark-mode .stat-value  { color: #f3f4f6; }
+body.dark-mode .stat-sub    { color: #6b7280; }
+/* Any other white-background containers */
+body.dark-mode [style*="background:#fff"],
+body.dark-mode [style*="background: #fff"],
+body.dark-mode [style*="background:white"],
+body.dark-mode [style*="background: white"] { background: #1e293b !important; }
+
+/* ── Seasonal table dark mode ────────────────────── */
+body.dark-mode .season-low-th      { background: rgba(29,78,216,0.25) !important; color: #93c5fd !important; }
+body.dark-mode .season-shoulder-th { background: rgba(146,64,14,0.25) !important; color: #fcd34d !important; }
+body.dark-mode .season-high-th     { background: rgba(153,27,27,0.20) !important; color: #fca5a5 !important; }
+body.dark-mode .season-peak-th     { background: rgba(127,29,29,0.35) !important; color: #f87171 !important; }
+body.dark-mode .season-cell-low      { background: rgba(29,78,216,0.08); }
+body.dark-mode .season-cell-shoulder { background: rgba(146,64,14,0.08); }
+body.dark-mode .season-cell-high     { background: rgba(153,27,27,0.08); }
+body.dark-mode .season-low      { background: rgba(29,78,216,0.3);  color: #93c5fd; }
+body.dark-mode .season-shoulder { background: rgba(146,64,14,0.3);  color: #fcd34d; }
+body.dark-mode .season-high     { background: rgba(153,27,27,0.3);  color: #fca5a5; }
+body.dark-mode .season-peak     { background: rgba(127,29,29,0.5);  color: #f87171; }
 
 /* ── Sortable headers ────────────────────────────── */
 th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
