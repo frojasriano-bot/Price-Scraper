@@ -11,6 +11,8 @@ from typing import Optional
 import httpx
 from bs4 import BeautifulSoup
 
+from canonical import canonicalize
+
 
 LOCATIONS = [
     "Keflavik Airport",
@@ -162,7 +164,7 @@ class BaseScraper(ABC):
                     "return_date": return_date,
                     "car_category": category,
                     "car_model": car["model"],
-                    "canonical_name": car.get("canonical_name", car["model"]),
+                    "canonical_name": canonicalize(car.get("canonical_name", car["model"])),
                     "price_isk": price_per_day * days,
                     "currency": "ISK",
                     "scraped_at": now,

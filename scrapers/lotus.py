@@ -7,6 +7,7 @@ import re
 from datetime import datetime
 
 from .base import BaseScraper
+from canonical import canonicalize
 
 
 # Lotus only operates at Keflavik Airport.
@@ -74,7 +75,7 @@ class LotusCarRentalScraper(BaseScraper):
         ],
         "Compact": [
             {"model": "Kia XCeed",        "canonical_name": "Kia XCeed",            "price_range": (10000, 13500)},
-            {"model": "Kia Ceed Wagon",   "canonical_name": "Kia Ceed Sportswagon", "price_range": (10500, 14000)},
+            {"model": "Kia Ceed Wagon",   "canonical_name": "Kia Ceed Wagon",       "price_range": (10500, 14000)},
             {"model": "Tesla Model 3 Long Range 4x4", "canonical_name": "Tesla Model 3", "price_range": (15000, 20000)},
         ],
         "SUV": [
@@ -87,7 +88,7 @@ class LotusCarRentalScraper(BaseScraper):
             {"model": "Kia Sportage 4x4",     "canonical_name": "Kia Sportage",    "price_range": (15500, 20000)},
             {"model": "Toyota RAV4 4x4",      "canonical_name": "Toyota RAV4",     "price_range": (17000, 22000)},
             {"model": "Subaru Forester 4x4",  "canonical_name": "Subaru Forester", "price_range": (16000, 21000)},
-            {"model": "Lexus UX250H 4x4",     "canonical_name": "Lexus UX",        "price_range": (18000, 24000)},
+            {"model": "Lexus UX250H 4x4",     "canonical_name": "Lexus UX250H",    "price_range": (18000, 24000)},
             {"model": "Tesla Model Y",                                              "price_range": (20000, 26000)},
         ],
         "4x4": [
@@ -141,8 +142,8 @@ class LotusCarRentalScraper(BaseScraper):
                 continue
 
             car_name = car.get("Name", "Unknown")
-            # Strip trailing " (automatic)" / " (manual)" suffixes for canonical name
-            canonical = re.sub(r"\s*\((?:automatic|manual)\)\s*$", "", car_name, flags=re.IGNORECASE).strip()
+            # Normalise to canonical name (strips transmission suffixes + applies mapping)
+            canonical = canonicalize(car_name)
 
             group = car.get("GroupName", "")
             for_highland = bool(car.get("ForHighland", False))

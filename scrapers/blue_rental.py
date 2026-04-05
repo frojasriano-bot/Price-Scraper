@@ -8,6 +8,7 @@ Falls back to the FLEET mock data if the live request fails for any reason.
 
 from datetime import datetime
 from .base import BaseScraper
+from canonical import canonicalize
 
 
 # Caren location IDs for Blue Car Rental pickup / drop-off points.
@@ -234,7 +235,7 @@ class BlueCarRentalScraper(BaseScraper):
                 "return_date":     return_date,
                 "car_category":    category,
                 "car_model":       name,
-                "canonical_name":  name,
+                "canonical_name":  canonicalize(name),
                 "price_isk":       round(total_price),
                 "currency":        car.get("Currency", "ISK"),
                 "scraped_at":      now,

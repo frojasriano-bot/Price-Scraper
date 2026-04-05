@@ -8,86 +8,148 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from canonical import canonicalize
+
 DB_PATH = Path(__file__).parent / "blue_rental.db"
 
 # Canonical car catalog: (canonical_name, category)
+# This is the master list of all recognised models and their primary category.
 CAR_CATALOG = [
     # Economy
-    ("Toyota Aygo", "Economy"),
-    ("Toyota Yaris", "Economy"),
-    ("Kia Rio", "Economy"),
-    ("Hyundai i10", "Economy"),
-    ("Hyundai i20", "Economy"),
-    ("Suzuki Swift", "Economy"),
-    ("VW Polo", "Economy"),
-    ("Dacia Sandero", "Economy"),
-    ("Dacia Jogger", "Economy"),
-    ("Renault Zoe", "Economy"),
+    ("Toyota Aygo",        "Economy"),
+    ("Toyota Yaris",       "Economy"),
+    ("Kia Rio",            "Economy"),
+    ("Kia Ceed",           "Economy"),
+    ("Hyundai i10",        "Economy"),
+    ("Hyundai i20",        "Economy"),
+    ("Suzuki Swift",       "Economy"),
+    ("Renault Clio",       "Economy"),
+    ("VW Polo",            "Economy"),
+    ("VW ID.4",            "Economy"),
+    ("Dacia Sandero",      "Economy"),
+    ("Opel Corsa",         "Economy"),
+    ("Tesla Model 3",      "Economy"),
+    ("BYD Dolphin",        "Economy"),
+    ("Kia EV3",            "Economy"),
+    ("Smart #5",           "Economy"),
+    ("Renault Zoe",        "Economy"),
     # Compact
-    ("VW Golf", "Compact"),
-    ("Toyota Corolla", "Compact"),
-    ("Hyundai i30", "Compact"),
-    ("Kia Ceed", "Compact"),
-    ("Kia Ceed Sportswagon", "Compact"),
-    ("Kia Stonic", "Compact"),
-    ("Kia XCeed", "Compact"),
-    ("Skoda Octavia", "Compact"),
+    ("Dacia Jogger",       "Compact"),
+    ("Kia Stonic",         "Compact"),
+    ("Kia XCeed",          "Compact"),
+    ("Kia Ceed Wagon",     "Compact"),
+    ("VW Golf",            "Compact"),
+    ("Toyota Corolla",     "Compact"),
+    ("Toyota Corolla Wagon","Compact"),
     ("Toyota Yaris Cross", "Compact"),
-    ("Mazda CX-30", "Compact"),
+    ("Hyundai i30",        "Compact"),
+    ("Hyundai i20",        "Compact"),
+    ("Skoda Octavia",      "Compact"),
+    ("Skoda Octavia Wagon","Compact"),
+    ("Renault Captur",     "Compact"),
+    ("Renault Megane Wagon","Compact"),
+    ("Mazda CX-30",        "Compact"),
     # SUV
-    ("Dacia Duster", "SUV"),
-    ("Dacia Bigster", "SUV"),
-    ("Suzuki Vitara", "SUV"),
-    ("Suzuki Jimny", "SUV"),
-    ("Kia Sportage", "SUV"),
-    ("Toyota RAV4", "SUV"),
-    ("Hyundai Tucson", "SUV"),
-    ("Nissan Qashqai", "SUV"),
-    ("Jeep Renegade", "SUV"),
-    ("Jeep Compass", "SUV"),
-    ("Subaru Forester", "SUV"),
+    ("Dacia Duster",       "SUV"),
+    ("Dacia Bigster",      "SUV"),
+    ("Suzuki Vitara",      "SUV"),
+    ("Suzuki Jimny",       "SUV"),
+    ("Kia Sportage",       "SUV"),
+    ("Toyota RAV4",        "SUV"),
+    ("Hyundai Tucson",     "SUV"),
+    ("Nissan Qashqai",     "SUV"),
+    ("Nissan Ariya",       "SUV"),
+    ("Jeep Renegade",      "SUV"),
+    ("Jeep Compass",       "SUV"),
+    ("Subaru Forester",    "SUV"),
+    ("Subaru XV",          "SUV"),
     ("Mitsubishi Eclipse Cross", "SUV"),
-    ("Renault Koleos", "SUV"),
-    ("Tesla Model Y", "SUV"),
+    ("Lexus UX250H",       "SUV"),
+    ("MG ZS",              "SUV"),
+    ("MG EHS",             "SUV"),
+    ("Kia EV6",            "SUV"),
+    ("Tesla Model Y",      "SUV"),
+    ("Renault Koleos",     "SUV"),
     # 4x4
     ("Toyota Land Cruiser 150", "4x4"),
     ("Toyota Land Cruiser 250", "4x4"),
-    ("Toyota Hilux", "4x4"),
-    ("Toyota Highlander", "4x4"),
-    ("Kia Sorento", "4x4"),
-    ("Hyundai Santa Fe", "4x4"),
-    ("Nissan X-Trail", "4x4"),
-    ("Land Rover Defender", "4x4"),
-    ("Land Rover Discovery", "4x4"),
-    ("Land Rover Discovery Sport", "4x4"),
-    ("Honda CR-V", "4x4"),
-    ("Jeep Wrangler", "4x4"),
-    ("Skoda Kodiaq", "4x4"),
-    ("BMW X3", "4x4"),
-    ("BMW X5", "4x4"),
-    ("Mitsubishi Outlander", "4x4"),
+    ("Toyota Hilux",       "4x4"),
+    ("Toyota Highlander",  "4x4"),
+    ("Kia Sorento",        "4x4"),
+    ("Hyundai Santa Fe",   "4x4"),
+    ("Nissan X-Trail",     "4x4"),
+    ("Land Rover Defender","4x4"),
+    ("Land Rover Discovery","4x4"),
+    ("Land Rover Discovery Sport","4x4"),
+    ("Range Rover Sport",  "4x4"),
+    ("Honda CR-V",         "4x4"),
+    ("Jeep Wrangler",      "4x4"),
+    ("Skoda Kodiaq",       "4x4"),
+    ("BMW X3",             "4x4"),
+    ("BMW X5",             "4x4"),
+    ("Mercedes GLE",       "4x4"),
+    ("Mitsubishi Outlander","4x4"),
     # Minivan
-    ("VW Caravelle", "Minivan"),
-    ("VW Caddy Maxi", "Minivan"),
-    ("Ford Tourneo", "Minivan"),
-    ("Toyota Proace", "Minivan"),
-    ("Renault Trafic", "Minivan"),
-    ("Mercedes Vito", "Minivan"),
-    ("Mercedes Sprinter", "Minivan"),
+    ("VW Caravelle",       "Minivan"),
+    ("VW Caddy Maxi",      "Minivan"),
+    ("Ford Tourneo",       "Minivan"),
+    ("Toyota Proace",      "Minivan"),
+    ("Renault Trafic",     "Minivan"),
+    ("Mercedes Vito",      "Minivan"),
+    ("Mercedes Sprinter",  "Minivan"),
 ]
 
 # Maps (competitor, competitor_model_name) → canonical_name
+# Used to seed the car_mappings DB table (informational reference).
+# The runtime normalisation is handled by canonical.canonicalize() applied
+# in insert_rates() — so this list no longer needs to be exhaustive.
 CAR_NAME_MAPPINGS = [
-    ("Lava Car Rental", "Dacia Sandero Stepway", "Dacia Sandero"),
-    ("Lotus Car Rental", "Toyota Land Cruiser 150 4x4", "Toyota Land Cruiser 150"),
-    ("Lotus Car Rental", "Toyota Land Cruiser 250 4x4", "Toyota Land Cruiser 250"),
-    ("Holdur", "Toyota Landcruiser 150", "Toyota Land Cruiser 150"),
-    ("Holdur", "Toyota Landcruiser 250", "Toyota Land Cruiser 250"),
-    ("Holdur", "Mercedes Benz 350 GLE PHEV", "Mitsubishi Outlander"),
-    ("Hertz Iceland", "Toyota Corolla Wagon", "Toyota Corolla"),
-    ("Hertz Iceland", "Hyundai i30 Wagon", "Hyundai i30"),
+    # Lava
+    ("Lava Car Rental", "Dacia Sandero Stepway",         "Dacia Sandero"),
+    # Lotus
+    ("Lotus Car Rental", "Toyota Land Cruiser 150 4x4",  "Toyota Land Cruiser 150"),
+    ("Lotus Car Rental", "Toyota Land Cruiser 250 4x4",  "Toyota Land Cruiser 250"),
+    ("Lotus Car Rental", "Kia Ceed Wagon",               "Kia Ceed Wagon"),
+    ("Lotus Car Rental", "Volkswagen Caravelle 4x4",     "VW Caravelle"),
+    ("Lotus Car Rental", "Mercedes Benz Vito",           "Mercedes Vito"),
+    ("Lotus Car Rental", "Lexus UX250H 4x4",             "Lexus UX250H"),
+    ("Lotus Car Rental", "Dacia Duster 4x4",             "Dacia Duster"),
+    ("Lotus Car Rental", "Suzuki Vitara 4x4",            "Suzuki Vitara"),
+    ("Lotus Car Rental", "Jeep Renegade 4x4",            "Jeep Renegade"),
+    ("Lotus Car Rental", "Jeep Compass 4x4",             "Jeep Compass"),
+    ("Lotus Car Rental", "Kia Sportage 4x4",             "Kia Sportage"),
+    ("Lotus Car Rental", "Toyota RAV4 4x4",              "Toyota RAV4"),
+    ("Lotus Car Rental", "Subaru Forester 4x4",          "Subaru Forester"),
+    ("Lotus Car Rental", "Toyota Yaris Cross 4x4",       "Toyota Yaris Cross"),
+    ("Lotus Car Rental", "Honda CR-V 4x4",               "Honda CR-V"),
+    ("Lotus Car Rental", "Kia Sorento 4x4",              "Kia Sorento"),
+    ("Lotus Car Rental", "Toyota Highlander GX 4x4",     "Toyota Highlander"),
+    ("Lotus Car Rental", "Toyota Hilux 4x4",             "Toyota Hilux"),
+    ("Lotus Car Rental", "Tesla Model 3 Long Range 4x4", "Tesla Model 3"),
+    # Holdur
+    ("Holdur", "Toyota Landcruiser 150",                 "Toyota Land Cruiser 150"),
+    ("Holdur", "Toyota Landcruiser 250",                 "Toyota Land Cruiser 250"),
+    ("Holdur", "Mercedes Benz 350 GLE PHEV",             "Mercedes GLE"),
+    ("Holdur", "Mercedes GLE PHEV",                     "Mercedes GLE"),
+    ("Holdur", "Mitsubishi Outlander PHEV",              "Mitsubishi Outlander"),
+    ("Holdur", "Skoda Octavia Combi",                    "Skoda Octavia Wagon"),
+    ("Holdur", "Kia Ceed Sportswagon",                   "Kia Ceed Wagon"),
+    ("Holdur", "VW Caravelle",                           "VW Caravelle"),
+    # Hertz
+    ("Hertz Iceland", "Toyota Corolla Wagon",            "Toyota Corolla Wagon"),
+    ("Hertz Iceland", "Hyundai i30 Wagon",               "Hyundai i30"),
+    ("Hertz Iceland", "Skoda Octavia Wagon",             "Skoda Octavia Wagon"),
+    ("Hertz Iceland", "VW Caravelle",                    "VW Caravelle"),
+    # Blue Car Rental
     ("Blue Car Rental", "Toyota Land Cruiser 150 (7 seater)", "Toyota Land Cruiser 150"),
-    ("Blue Car Rental", "Toyota Land Cruiser Adventure", "Toyota Land Cruiser 250"),
+    ("Blue Car Rental", "Toyota Land Cruiser 150, 7 seater",  "Toyota Land Cruiser 150"),
+    ("Blue Car Rental", "Toyota Land Cruiser Adventure",      "Toyota Land Cruiser 250"),
+    ("Blue Car Rental", "Jeep Wrangler RUBICON",              "Jeep Wrangler"),
+    ("Blue Car Rental", "Opel Corsa Electric",                "Opel Corsa"),
+    # Go Car Rental
+    ("Go Car Rental", "Kia Ceed Wagon",                  "Kia Ceed Wagon"),
+    ("Go Car Rental", "Volkswagen Caravelle",            "VW Caravelle"),
+    ("Go Car Rental", "Jeep Wrangler Rubicon",           "Jeep Wrangler"),
 ]
 
 CATEGORY_ORDER = ["Economy", "Compact", "SUV", "4x4", "Minivan"]
@@ -265,14 +327,24 @@ async def set_config(key: str, value: str):
 
 
 async def insert_rates(rates: list[dict]):
-    """Bulk insert rate records."""
+    """
+    Bulk insert rate records, normalising canonical_name via canonicalize()
+    so that name variants from different scrapers are unified before storage.
+    """
+    normalised = []
+    for r in rates:
+        row = dict(r)
+        raw = row.get("canonical_name") or row.get("car_model") or ""
+        row["canonical_name"] = canonicalize(raw)
+        normalised.append(row)
+
     async with aiosqlite.connect(DB_PATH) as db:
         await db.executemany(
             """
             INSERT INTO rates (competitor, location, pickup_date, return_date, car_category, car_model, canonical_name, price_isk, currency, scraped_at)
             VALUES (:competitor, :location, :pickup_date, :return_date, :car_category, :car_model, :canonical_name, :price_isk, :currency, :scraped_at)
             """,
-            rates,
+            normalised,
         )
         await db.commit()
 

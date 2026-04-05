@@ -10,6 +10,7 @@ from datetime import datetime
 from bs4 import BeautifulSoup
 
 from .base import BaseScraper
+from canonical import canonicalize
 
 
 # Holdur station codes and their Icelandic display names
@@ -167,7 +168,7 @@ class HoldurScraper(BaseScraper):
                 "return_date":   return_date,
                 "car_category":  category,
                 "car_model":     car_name,
-                "canonical_name": car_name,
+                "canonical_name": canonicalize(car_name),
                 "price_isk":     price_isk,
                 "currency":      "ISK",
                 "scraped_at":    now,
