@@ -32,24 +32,58 @@ HOLDUR_CATEGORY_PARAMS = [
     ("M1", ["Minivan"]),              # Minibus/van
 ]
 
-# Keyword-based category refinement within each vehicle type
-_4X4_KEYWORDS     = ["4x4", "highland", "land cruiser", "defender", "sorento",
-                      "santa fe", "discovery", "outlander", "mercedes gle"]
-_MINIVAN_KEYWORDS = ["caravelle", "vito", "trafic", "proace", "tourneo", "caddy", "transit"]
-_SUV_KEYWORDS     = ["suv", "rav4", "tucson", "sportage", "vitara", "duster", "bigster",
-                      "jimny", "forester", "model y", "id.4"]
-_COMPACT_KEYWORDS = ["octavia", "jogger", "sportswagon", "ceed", "model 3"]
+# Keyword-based category refinement. Applied to ALL Holdur results regardless
+# of which vehicleCategoryId was requested — Holdur sometimes returns SUVs and
+# minivans in the FO (regular cars) bucket, so we can't rely on the param alone.
+_MINIVAN_KEYWORDS = ["trafic", "caravelle", "vito", "proace", "tourneo", "caddy", "transit", "sprinter"]
+_4X4_KEYWORDS     = ["land cruiser", "landcruiser", "defender", "discovery", "santa fe",
+                      "hilux", "highlander", "outlander", "mercedes gle", "wrangler"]
+_SUV_KEYWORDS     = ["rav4", "tucson", "sportage", "vitara", "duster", "bigster",
+                      "jimny", "forester", "model y", "id.4", "qashqai", "ariya",
+                      "x-trail", "eclipse", "kodiaq", "cr-v", "honda cr"]
+_COMPACT_KEYWORDS = ["octavia", "jogger", "sportswagon", "ceed", "model 3", "captur", "megane"]
+
+# Holdur car names contain a vehicle code prefix and an Icelandic "or similar" suffix.
+# Example: "FFG- Dacia Duster 4x4 sjálfskiptur - eða sambærilegur"
+# Strip both to get the clean car name for keyword matching and display.
+_HOLDUR_PREFIX = re.compile(r"^[A-Z0-9]+[-–]\s*", re.UNICODE)
+_HOLDUR_SUFFIX = re.compile(r"\s*-\s*eða\s+sambærilegur\s*$", re.IGNORECASE | re.UNICODE)
+
+
+def _clean_holdur_name(raw: str) -> str:
+    """Strip Holdur's vehicle code prefix and Icelandic 'or similar' suffix."""
+    name = _HOLDUR_PREFIX.sub("", raw.strip())
+    name = _HOLDUR_SUFFIX.sub("", name).strip()
+    return name
 
 
 def _refine_category(name: str, param_cats: list[str]) -> str:
+    """
+    Keyword-first category assignment. Checks all keyword lists regardless of
+    which param_cats bucket Holdur placed the car in, so SUVs and minivans are
+    never mis-categorised as Economy just because they appeared in the FO bucket.
+    Falls back to param_cats hint only when no keyword matches.
+    """
     n = name.lower()
-    if "JE" in str(param_cats) or any(c in ["SUV", "4x4"] for c in param_cats):
-        for kw in _4X4_KEYWORDS:
-            if kw in n:
-                return "4x4"
+    # Minivan always wins first (Trafic is never an SUV)
+    for kw in _MINIVAN_KEYWORDS:
+        if kw in n:
+            return "Minivan"
+    # True 4x4 / F-road vehicles
+    for kw in _4X4_KEYWORDS:
+        if kw in n:
+            return "4x4"
+    # Also treat anything with "4x4" in its name from the JE/SUV bucket as 4x4
+    if "4x4" in n and any(c in ["SUV", "4x4"] for c in param_cats):
+        return "4x4"
+    # Mid-size SUVs
+    for kw in _SUV_KEYWORDS:
+        if kw in n:
+            return "SUV"
+    # Any result from JE bucket that didn't match a specific keyword → SUV
+    if any(c in ["SUV", "4x4"] for c in param_cats):
         return "SUV"
-    if any(c == "Minivan" for c in param_cats):
-        return "Minivan"
+    # Compact keyword check
     for kw in _COMPACT_KEYWORDS:
         if kw in n:
             return "Compact"
@@ -142,9 +176,10 @@ class HoldurScraper(BaseScraper):
 
         results = []
         for entry in soup.select(".vehicle__entry"):
-            # Car name
+            # Car name — strip Icelandic code prefix and "or similar" suffix
             title_el = entry.select_one(".entry__title")
-            car_name = title_el.get_text(strip=True) if title_el else "Unknown"
+            raw_name = title_el.get_text(strip=True) if title_el else "Unknown"
+            car_name = _clean_holdur_name(raw_name)
 
             # Price — ".price__total" contains e.g. "Samtals ISK 92.425"
             # Icelandic uses period (.) as thousands separator
