@@ -1017,10 +1017,7 @@ function renderRateChart() {
     competitorMap[c].reduce((a, b) => a + b, 0) / competitorMap[c].length
   ));
 
-  const colors = [
-    '#2563eb', '#0ea5e9', '#6366f1', '#8b5cf6',
-    '#ec4899', '#f59e0b', '#10b981',
-  ];
+  const colors = labels.map((name, i) => compColor(name, i));
 
   if (state.rateChart) state.rateChart.destroy();
 
@@ -1031,7 +1028,7 @@ function renderRateChart() {
       datasets: [{
         label: 'Avg. Price (ISK)',
         data,
-        backgroundColor: colors.slice(0, labels.length),
+        backgroundColor: colors,
         borderRadius: 6,
         borderSkipped: false,
       }],
