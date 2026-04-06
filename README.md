@@ -1,227 +1,311 @@
 # Blue Rental Intelligence
 
-Competitor car rental **rate intelligence** + **local SEO rank tracking** for an Icelandic car rental company.
+Competitor pricing intelligence + insurance comparison + local SEO rank tracking for **Blue Car Rental Iceland**.
 
-This repo is a FastAPI backend that serves a single-page dashboard from the `static/` folder and exposes a JSON API under `/api/*`.
+A FastAPI backend serving a single-page dashboard from `static/` with a JSON API under `/api/*`. Uses SQLite for storage and APScheduler for automated scraping.
 
-## Demo
+---
 
-After starting the server, open:
+## Dashboard Tabs
 
-- `http://localhost:8000`
+| Tab | Description |
+|-----|-------------|
+| **Rate Intelligence** | Latest competitor rates, sortable table, cross-competitor matrix, price history charts, seasonal analysis |
+| **Insurance Comparison** | Full coverage matrix, per-company package breakdowns, deductible comparison across all 7 competitors |
+| **SEO Rank Tracker** | Keyword ranking history for bluecarrental.is via SerpAPI |
+| **Settings** | Scraper status, schedule config, SerpAPI key, location management, car model mappings, Slack alerts |
 
-## Features
+---
 
-- Rate intelligence
-  - Pull latest competitor rates (or mock data if scraping is not implemented)
-  - Cross-competitor price matrix (canonical model -> competitor cheapest price)
-  - Price history (trend charts)
-  - Price deltas (latest scrape date vs previous scrape date)
-  - Seasonal sweep (12-month price bands)
-  - Car catalog + competitor model mapping management
-  - Manual scrape trigger via API
+## Quickstart
 
-- SEO rank tracking (optional SerpAPI integration)
-  - Track keyword rankings for `bluecarrental.is`
-  - Keyword CRUD (add/remove up to a limit)
-  - Ranking history (trend charts)
-  - Manual live rank check (requires `SERPAPI_KEY`)
-  - Scheduler jobs for periodic scrape and SEO checks
-  - Mock ranking fallback when `SERPAPI_KEY` is not configured
-
-## Quickstart (local)
-
-1. Install dependencies
+### 1. Install dependencies
 
 ```bash
 python -m pip install -r requirements.txt
 ```
 
-2. Configure environment variables
-
-Copy the example env:
+### 2. Configure environment (optional)
 
 ```bash
 cp .env.example .env
 ```
 
-Optional:
-- Set `SERPAPI_KEY` for live SEO checks.
+Set `SERPAPI_KEY` to enable live SEO rank checks. All other features work without any API keys.
 
-3. Start the server
+### 3. Start the server
+
+```bash
+uvicorn main:app --reload
+```
+
+Or:
 
 ```bash
 python main.py
 ```
 
-By default it binds to:
-- `http://localhost:8000`
+Open **http://localhost:8000**
 
-## Run options
+### Environment variables
 
-The server reads:
-- `APP_HOST` (default: `0.0.0.0`)
-- `APP_PORT` (default: `8000`)
-- `DEBUG` (default: `true`) – enables `uvicorn` reload in dev mode
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `APP_HOST` | `0.0.0.0` | Bind address |
+| `APP_PORT` | `8000` | Port |
+| `DEBUG` | `true` | Enables uvicorn `--reload` |
+| `SERPAPI_KEY` | — | Required for live SEO rank checks |
 
-## API Reference
+---
 
-### Health / scheduler
+## Architecture
 
-- `GET /api/health`
-  - Returns `{ "status": "ok", "app": "Blue Rental Intelligence" }`
+```
+main.py                  FastAPI app, APScheduler, lifespan setup
+canonical.py             Car name normalisation (canonicalize() function)
+database.py              SQLite schema, CAR_CATALOG, all DB helpers
 
-- `GET /api/scheduler/status`
-  - Returns scheduler state, last scrape time, and next run time.
+routes/
+  rates.py               /api/rates/* — scraper trigger, history, matrix, seasonal
+  insurance.py           /api/insurance  — static insurance comparison data
+  seo.py                 /api/seo/*  — rankings, keyword management
+  settings.py            /api/settings — config, locations, scraper status
+  alerts.py              /api/alerts/* — Slack webhook config & test
 
-- `POST /api/scheduler/reconfigure?schedule=daily|hourly|weekly`
-  - Updates the APScheduler cron schedule without restarting the app.
+scrapers/
+  base.py                BaseScraper abstract class + mock data fallback
+  blue_rental.py         ✅ Live — Caren API (bluecarrental.is)
+  holdur.py              ✅ Live — HTML scraper (holdur.is)
+  lotus.py               ✅ Live — Caren API (lotuscarrental.is)
+  avis_is.py             🔶 Mock data only
+  gocarrental.py         🔶 Mock data only
+  hertz_is.py            🔶 Mock data only
+  lavacarrental.py       🔶 Mock data only
 
-### Rate Intelligence (`/api/rates`)
+static/
+  index.html             Single-page dashboard shell
+  app.js                 All frontend logic (Chart.js, tabs, dark mode)
+  style.css              Styles + dark mode CSS vars
+```
 
-- `GET /api/rates`
-  - Query params (all optional):
-    - `location`: pickup location filter
-    - `pickup_date`: `YYYY-MM-DD`
-    - `return_date`: `YYYY-MM-DD`
-    - `car_category`: `Economy|Compact|SUV|4x4|Minivan`
-  - Response:
-    - `{ "rates": [...], "source": "database" | "mock" }`
-
-- `POST /api/rates/scrape`
-  - Optional JSON/query params: `location`, `pickup_date`, `return_date`
-  - Triggers live scrapes (currently scrapers fall back to mock data unless live scraping is implemented).
-
-- `GET /api/rates/deltas`
-  - Query params:
-    - `location` (optional)
-    - `category` (optional)
-  - Response:
-    - `{ "deltas": {...}, "available": boolean }`
-
-- `GET /api/rates/history`
-  - Query params:
-    - `location` (optional)
-    - `car_category` (optional)
-    - `competitor` (optional)
-    - `days` (default: `30`, range enforced in API)
-
-- `GET /api/rates/history/models`
-  - Query params:
-    - `location` (optional)
-    - `competitor` (optional)
-    - `days` (default: `30`)
-  - Used by the “price history by model” view.
-
-- `GET /api/rates/matrix`
-  - Query params:
-    - `location` (optional)
-    - `pickup_date` (optional)
-    - `return_date` (optional)
-    - `category` (optional)
-
-- `GET /api/rates/seasonal`
-  - Query params:
-    - `category` (optional)
-    - `location` (optional)
-  - Sweeps the next 12 months (mid-month 7-night stay) and returns per-day pricing bands.
-  - Response includes:
-    - `months`: per-month competitor × category pricing
-    - `season_summary`: avg per-day per competitor per season (Low/Shoulder/High/Peak)
-    - `category_season_summary`: avg per-day per car category per season (all competitors combined)
-    - `season_months`, `source`, `rental_days`
-
-- Car catalog
-  - `GET /api/rates/car-catalog`
-    - `{ "catalog": [...] }`
-  - Car mappings (competitor model name -> canonical model)
-    - `GET /api/rates/car-mappings`
-    - `POST /api/rates/car-mappings` with body:
-      - `{ "competitor": "...", "competitor_model": "...", "canonical_name": "..." }`
-    - `DELETE /api/rates/car-mappings/{mapping_id}`
-
-### SEO Rank Tracking (`/api/seo`)
-
-- `GET /api/seo/rankings`
-  - Query params:
-    - `keyword` (optional)
-    - `location` (optional)
-  - Response:
-    - `{ "rankings": [...], "has_api_key": boolean, "source": "database" | "mock" }`
-
-- `POST /api/seo/check`
-  - Query params:
-    - `location` (optional)
-  - Requires `SERPAPI_KEY` to be configured; otherwise returns `400`.
-
-- `GET /api/seo/history`
-  - Query params:
-    - `keyword` (optional)
-    - `location` (optional)
-    - `days` (default: `30`)
-
-- Keyword management
-  - `GET /api/seo/keywords`
-  - `POST /api/seo/keywords` with query/body param `keyword`
-  - `DELETE /api/seo/keywords/{keyword}`
-
-### Settings (`/api/settings`)
-
-- `GET /api/settings`
-- `POST /api/settings` with body:
-  - `serpapi_key` (optional)
-  - `scrape_schedule` (optional, one of `hourly|daily|weekly`)
-  - `locations` (optional list of `{ "name": "...", "address": "..." }`)
+---
 
 ## Scrapers
 
-Scrapers live in `scrapers/`.
+All scrapers inherit from `BaseScraper` (`scrapers/base.py`) and implement `scrape_rates(pickup_date, return_date, location)`. On failure, or when not yet implemented, the base class falls back to deterministic mock pricing from each scraper's `FLEET` definition.
 
-All competitor scrapers inherit from `BaseScraper` (`scrapers/base.py`):
-- They define a `competitor_name`
-- They define a `FLEET` mapping by car category
-- They implement `scrape_rates(...)` to attempt live scraping
+### Live scrapers
 
-### Mock fallback (current state)
+**Blue Car Rental** and **Lotus Car Rental** both use the [Caren](https://www.caren.is) booking API:
 
-In the current code, each scraper’s `scrape_rates()` raises `NotImplementedError`, and the framework automatically falls back to deterministic mock pricing from each scraper’s `FLEET`.
+```
+POST /_carenapix/class/
+Params: dateFrom, dateTo (YYYY-MM-DD HH:MM format)
+```
 
-This means:
-- The dashboard is immediately testable end-to-end.
-- Live competitor scraping is intentionally left as a TODO.
+**Holdur** is scraped via HTTP POST to their booking form and BeautifulSoup HTML parsing.
 
-### Implementing live scraping
+### Supported locations
 
-To add/enable live scraping for a competitor:
-1. Open that scraper file in `scrapers/` (example: `scrapers/gocarrental.py`)
-2. Replace `raise NotImplementedError(...)` with real `scrape_rates()` logic
-3. Return a list of dicts matching the database schema keys used by the app:
-   - `competitor`, `location`, `pickup_date`, `return_date`
-   - `car_category`, `car_model`, `canonical_name`
-   - `price_isk`, `currency`, `scraped_at`
+| Location | Blue | Holdur | Lotus | Mock competitors |
+|----------|------|--------|-------|-----------------|
+| Keflavik Airport | ✅ | ✅ | ✅ | ✅ |
+| Reykjavik | ✅ | ✅ | ✅ | ✅ |
+| Akureyri | — | ✅ | ✅ | ✅ |
+| Egilsstaðir | — | ✅ | ✅ | ✅ |
 
-See `BaseScraper.get_mock_rates()` for the exact shape.
+Blue Car Rental returns an empty list for Akureyri and Egilsstaðir (no branches there).
+
+### Adding a live scraper
+
+1. Open the scraper file (e.g. `scrapers/gocarrental.py`)
+2. Implement `scrape_rates(self, pickup_date, return_date, location)` — replace `raise NotImplementedError`
+3. Return a list of dicts with these keys:
+
+```python
+{
+    "competitor":     str,   # e.g. "Go Car Rental"
+    "location":       str,   # e.g. "Keflavik Airport"
+    "pickup_date":    str,   # YYYY-MM-DD
+    "return_date":    str,   # YYYY-MM-DD
+    "car_category":   str,   # Economy | Compact | SUV | 4x4 | Minivan
+    "car_model":      str,   # raw model name from source
+    "canonical_name": str,   # normalised via canonicalize() from canonical.py
+    "price_isk":      int,
+    "currency":       str,   # "ISK"
+    "scraped_at":     str,   # ISO datetime
+}
+```
+
+### Car name normalisation
+
+`canonical.py` exposes a `canonicalize(name)` function that maps variant spellings to a standard canonical name used across all scrapers and the database (e.g. `"Toyota Landcruiser 150"` → `"Toyota Land Cruiser 150"`). Add new entries to the `_EXACT` dict in that file.
+
+`insert_rates()` in `database.py` applies `canonicalize()` automatically on every insert.
+
+---
 
 ## Database
 
-The app uses SQLite via `aiosqlite` and initializes schema on startup (`database.py`).
+SQLite via `aiosqlite`. Schema is initialised automatically on startup by `init_db()` in `database.py`. Local file: `blue_rental.db`
 
-Local DB file:
-- `blue_rental.db`
+| Table | Purpose |
+|-------|---------|
+| `rates` | Scraped rental rates — one row per competitor/location/model/scrape |
+| `car_catalog` | Master list of canonical car names and categories |
+| `car_mappings` | Competitor model name → canonical name mapping (editable via UI) |
+| `rankings` | SEO keyword rankings (from SerpAPI) |
+| `config` | Key-value store: SerpAPI key, schedule, webhook URL, locations, etc. |
+| `seasonal_cache` | 6-hour cached seasonal analysis results |
 
-Tables:
-- `rates`
-- `rankings`
-- `car_catalog`
-- `car_mappings`
-- `config`
+`rates` table columns: `competitor`, `location`, `pickup_date`, `return_date`, `car_category`, `car_model`, `canonical_name`, `price_isk`, `currency`, `scraped_at`
 
-## Best Practices / Repo Hygiene
+---
 
-- Secrets and local DB files are excluded via `.gitignore`
-- Use `.env.example` as the template for environment setup
+## Scheduler
 
-## License
+APScheduler (`AsyncIOScheduler`) runs three jobs:
 
-Add your chosen license here (e.g., MIT). If you tell me which license you prefer, I can add it.
+| Job | Default schedule | Description |
+|-----|-----------------|-------------|
+| `scrape_rates` | Daily 07:00 | Scrapes all competitors and inserts to DB |
+| `seo_check` | Daily 07:30 | Checks keyword rankings via SerpAPI |
+| `alert_check` | Daily 07:45 | Fires Slack alerts if competitors undercut Blue's rates |
 
+Schedule can be changed to `hourly` or `weekly` via Settings → Auto-scrape schedule, or via:
+
+```
+POST /api/scheduler/reconfigure?schedule=weekly
+```
+
+---
+
+## Insurance Comparison
+
+The Insurance tab (`GET /api/insurance`) contains static, researched data for all 7 competitors — no scraping, no DB required. Data lives in `routes/insurance.py`.
+
+**Covered protection types:** TPL, CDW, SCDW, TP, GP (Gravel/Glass), SAAP (Sand & Ash), TIP (Tire & Wheel), PAI, Roadside Assistance, F-Road Protection, River Crossing, Zero Excess
+
+**Per-company data includes:**
+- Which protections are included in the base rental (with deductible amounts)
+- All available packages/tiers with daily price and deductible summary
+- Individual product pricing where applicable (Hertz uses an unbundled model)
+
+**Key findings surfaced in the UI:**
+- **Lava Car Rental** has the most comprehensive base bundle (7 protections included by default)
+- **Hertz Iceland** is the only company where CDW is **not** included in the base price
+- **Lotus Car Rental** is the only company offering river crossing protection (Platinum, 4x4 only)
+- **Go Car Rental** uniquely prices all insurance in EUR rather than ISK
+
+Data sourced April 2025 from publicly available company websites. To update, edit the `INSURANCE_DATA` dict in `routes/insurance.py`.
+
+---
+
+## API Reference
+
+### Health & Scheduler
+
+```
+GET  /api/health
+GET  /api/scheduler/status
+POST /api/scheduler/reconfigure?schedule=daily|hourly|weekly
+```
+
+### Rate Intelligence
+
+```
+GET  /api/rates
+     ?location=  &pickup_date=  &return_date=  &car_category=
+
+POST /api/rates/scrape
+     ?location=  &pickup_date=  &return_date=
+
+GET  /api/rates/deltas
+     ?location=  &category=
+
+GET  /api/rates/history
+     ?location=  &car_category=  &competitor=  &days=30
+
+GET  /api/rates/history/models
+     ?location=  &competitor=  &days=30
+
+GET  /api/rates/history/coverage
+     ?location=  &days=30
+
+GET  /api/rates/matrix
+     ?location=  &pickup_date=  &return_date=  &category=
+
+GET  /api/rates/seasonal                 (cached 6h)
+     ?category=  &location=
+
+GET  /api/rates/scraper-status
+GET  /api/rates/car-catalog
+GET  /api/rates/car-mappings
+POST /api/rates/car-mappings
+DELETE /api/rates/car-mappings/{id}
+```
+
+### Insurance
+
+```
+GET  /api/insurance
+```
+
+### SEO Rank Tracking
+
+```
+GET  /api/seo/rankings
+     ?keyword=  &location=
+
+POST /api/seo/check                      Requires SERPAPI_KEY
+     ?location=
+
+GET  /api/seo/history
+     ?keyword=  &location=  &days=30
+
+GET    /api/seo/keywords
+POST   /api/seo/keywords?keyword=
+DELETE /api/seo/keywords/{keyword}
+```
+
+### Settings & Alerts
+
+```
+GET  /api/settings
+POST /api/settings                       serpapi_key, schedule, locations
+
+POST /api/alerts/test-webhook
+POST /api/alerts/check
+```
+
+---
+
+## Brand Colours
+
+Used in charts and the insurance comparison UI:
+
+| Competitor | Colour |
+|-----------|--------|
+| Blue Car Rental | `#2563eb` |
+| Holdur | `#22c55e` |
+| Lotus Car Rental | `#881337` |
+| Avis Iceland | `#ef4444` |
+| Go Car Rental | `#f97316` |
+| Hertz Iceland | `#eab308` |
+| Lava Car Rental | `#a855f7` |
+
+---
+
+## Dark Mode
+
+Toggle via the moon/sun icon in the top bar. Preference is persisted to `localStorage`. Implemented via `body.dark-mode` class + CSS custom property overrides in `style.css`.
+
+> **Note:** Do not override the `--white` CSS variable in dark mode overrides — the sidebar uses it for text colour and is intentionally always dark regardless of theme.
+
+---
+
+## Repo Hygiene
+
+- `blue_rental.db` and `.env` are excluded via `.gitignore`
+- Copy `.env.example` to `.env` for local setup
+- Secrets (SerpAPI key, Slack webhook URL) are stored in the `config` DB table at runtime, not in env files
