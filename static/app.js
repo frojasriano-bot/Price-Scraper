@@ -452,16 +452,16 @@ const SEASON_COLORS = {
 
 // Brand colours — keyed by competitor name (case-sensitive, must match DB values)
 const BRAND_COLORS = {
-  'Avis Iceland':    '#e3001b',   // Avis red
+  'Avis Iceland':    '#ef4444',   // Avis red
   'Blue Car Rental': '#2563eb',   // Blue blue
   'Go Car Rental':   '#f97316',   // Go orange
-  'Hertz Iceland':   '#f5c400',   // Hertz yellow
+  'Hertz Iceland':   '#eab308',   // Hertz yellow
   'Holdur':          '#22c55e',   // Holdur green
-  'Lava Car Rental': '#7c3aed',   // Lava purple
+  'Lava Car Rental': '#a855f7',   // Lava purple
   'Lotus Car Rental':'#881337',   // Lotus maroon
 };
 const COMP_PALETTE = [
-  '#2563eb','#e3001b','#22c55e','#f5c400','#7c3aed','#f97316','#881337',
+  '#2563eb','#ef4444','#22c55e','#eab308','#a855f7','#f97316','#881337',
 ];
 
 function compColor(name, fallbackIndex = 0) {
