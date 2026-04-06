@@ -77,10 +77,10 @@ scrapers/
   blue_rental.py         ✅ Live — Caren API (bluecarrental.is)
   holdur.py              ✅ Live — HTML scraper (holdur.is)
   lotus.py               ✅ Live — Caren API (lotuscarrental.is)
-  avis_is.py             🔶 Mock data only
-  gocarrental.py         🔶 Mock data only
-  hertz_is.py            🔶 Mock data only
-  lavacarrental.py       🔶 Mock data only
+  avis_is.py             ✅ Live — HTML scraper (avis.is)
+  gocarrental.py         ✅ Live — GoRentals JSON API + Sanity CMS
+  hertz_is.py            ✅ Live — WordPress/CarCloud ajax + HTML (hertz.is)
+  lavacarrental.py       ✅ Live — Caren API (lavacarrental.is)
 
 static/
   index.html             Single-page dashboard shell
@@ -92,29 +92,37 @@ static/
 
 ## Scrapers
 
-All scrapers inherit from `BaseScraper` (`scrapers/base.py`) and implement `scrape_rates(pickup_date, return_date, location)`. On failure, or when not yet implemented, the base class falls back to deterministic mock pricing from each scraper's `FLEET` definition.
-
-### Live scrapers
-
-**Blue Car Rental** and **Lotus Car Rental** both use the [Caren](https://www.caren.is) booking API:
-
-```
-POST /_carenapix/class/
-Params: dateFrom, dateTo (YYYY-MM-DD HH:MM format)
-```
-
-**Holdur** is scraped via HTTP POST to their booking form and BeautifulSoup HTML parsing.
+All scrapers inherit from `BaseScraper` (`scrapers/base.py`) and implement `scrape_rates(pickup_date, return_date, location)`. On failure, the base class falls back to deterministic mock pricing from each scraper's `FLEET` definition so the dashboard always has data to display.
 
 ### Supported locations
 
-| Location | Blue | Holdur | Lotus | Mock competitors |
-|----------|------|--------|-------|-----------------|
-| Keflavik Airport | ✅ | ✅ | ✅ | ✅ |
-| Reykjavik | ✅ | ✅ | ✅ | ✅ |
-| Akureyri | — | ✅ | ✅ | ✅ |
-| Egilsstaðir | — | ✅ | ✅ | ✅ |
+Scraping runs for **Keflavik Airport** and **Reykjavik** only. These are the only two locations Blue Car Rental operates from, and the only locations relevant for direct competitor comparison.
 
-Blue Car Rental returns an empty list for Akureyri and Egilsstaðir (no branches there).
+| Competitor | KEF Airport | Reykjavik | Notes |
+|------------|------------|-----------|-------|
+| Blue Car Rental | ✅ | ✅ | Caren API |
+| Holdur | ✅ | ✅ | HTML form |
+| Avis Iceland | ✅ | ✅ | HTML form |
+| Go Car Rental | ✅ | ✅ | GoRentals JSON API |
+| Hertz Iceland | ✅ | ✅ | WordPress ajax + HTML |
+| Lava Car Rental | ✅ | — | Caren API (KEF only) |
+| Lotus Car Rental | ✅ | — | Caren API (KEF only) |
+
+### Live scraper details
+
+**Blue Car Rental**, **Lotus Car Rental**, and **Lava Car Rental** all use the [Caren](https://www.caren.is) booking management API:
+
+```
+Blue/Lotus: POST /_carenapix/class/
+Lava:       GET  /_plugins/carenapi/class
+Params: dateFrom, dateTo (YYYY-MM-DD HH:MM format)
+```
+
+**Holdur** (Europcar Iceland) and **Avis Iceland** are scraped via HTTP POST to their booking form with BeautifulSoup HTML parsing.
+
+**Go Car Rental** uses two requests: the GoRentals JSON API for pricing, and the public Sanity CMS API for car name/category lookup by class ID.
+
+**Hertz Iceland** uses a three-step flow: GET homepage → extract WordPress nonce → POST to `wp-admin/admin-ajax.php` → GET results page.
 
 ### Adding a live scraper
 
@@ -139,9 +147,24 @@ Blue Car Rental returns an empty list for Akureyri and Egilsstaðir (no branches
 
 ### Car name normalisation
 
-`canonical.py` exposes a `canonicalize(name)` function that maps variant spellings to a standard canonical name used across all scrapers and the database (e.g. `"Toyota Landcruiser 150"` → `"Toyota Land Cruiser 150"`). Add new entries to the `_EXACT` dict in that file.
+`canonical.py` exposes a `canonicalize(name)` function that maps variant spellings to a standard canonical name used across all scrapers and the database. The function:
 
-`insert_rates()` in `database.py` applies `canonicalize()` automatically on every insert.
+1. Strips surrounding whitespace
+2. Strips trailing transmission/fuel suffixes (e.g. `(Automatic)`, `Plug-In Hybrid`, `PHEV`)
+3. Looks up the cleaned name in the `_EXACT` dict (case-insensitive)
+4. Returns the cleaned name unchanged if no mapping exists
+
+Examples:
+```
+"Toyota Landcruiser 150"          → "Toyota Land Cruiser 150"
+"BMW X5 Plug-In Hybrid"           → "BMW X5"
+"KIA Sorento"                     → "Kia Sorento"
+"VW Transporter 4WD Passenger Van"→ "VW Transporter"
+"Volkswagen Caravelle"            → "VW Caravelle"
+"Kia Ceed Sportswagon"            → "Kia Ceed Wagon"
+```
+
+Add new entries to the `_EXACT` dict in `canonical.py`. `insert_rates()` in `database.py` applies `canonicalize()` automatically on every insert.
 
 ---
 
@@ -168,7 +191,7 @@ APScheduler (`AsyncIOScheduler`) runs three jobs:
 
 | Job | Default schedule | Description |
 |-----|-----------------|-------------|
-| `scrape_rates` | Daily 07:00 | Scrapes all competitors and inserts to DB |
+| `scrape_rates` | Daily 07:00 | Scrapes all competitors for KEF + Reykjavik, inserts to DB |
 | `seo_check` | Daily 07:30 | Checks keyword rankings via SerpAPI |
 | `alert_check` | Daily 07:45 | Fires Slack alerts if competitors undercut Blue's rates |
 

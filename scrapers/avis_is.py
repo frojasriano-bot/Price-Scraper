@@ -4,20 +4,21 @@ Uses the ABG (Avis Budget Group) global booking platform.
 Server-rendered HTML via POST — no JS or API key required.
 """
 
+from __future__ import annotations
+
 import re
 from datetime import datetime
 
 from bs4 import BeautifulSoup
 
 from .base import BaseScraper
+from canonical import canonicalize
 
 
 # Avis Iceland location codes (IATA-style 3-char codes)
 AVIS_LOCATION_CODES: dict[str, str | None] = {
     "Keflavik Airport": "KEF",
     "Reykjavik":        "RKV",   # Reykjavik Domestic Airport
-    "Akureyri":         "AEY",
-    "Egilsstaðir":      "EGS",
 }
 
 AVIS_RESULTS_URL = "https://secure.avis.is/car-results"
@@ -36,14 +37,19 @@ _COMPACT_KEYWORDS = ["golf", "octavia", "i30", "ceed", "megane", "captur", "jogg
 
 
 def _infer_category_from_name(name: str) -> str:
-    """Classify Avis car from model name — Icelandic category labels are too coarse."""
+    """Classify Avis car from model name — Icelandic category labels are too coarse.
+
+    Minivan check must come before 4x4 so that e.g. "VW Transporter 4WD Passenger Van"
+    is correctly classified as Minivan rather than 4x4 (which the "4wd" keyword would
+    otherwise trigger).
+    """
     n = name.lower()
-    for kw in _4X4_KEYWORDS:
-        if kw in n:
-            return "4x4"
     for kw in _MINIVAN_KEYWORDS:
         if kw in n:
             return "Minivan"
+    for kw in _4X4_KEYWORDS:
+        if kw in n:
+            return "4x4"
     for kw in _SUV_KEYWORDS:
         if kw in n:
             return "SUV"
@@ -178,7 +184,7 @@ class AvisIsScraper(BaseScraper):
                 "return_date":   return_date,
                 "car_category":  category,
                 "car_model":     car_name,
-                "canonical_name": car_name,
+                "canonical_name": canonicalize(car_name),
                 "price_isk":     price_isk,
                 "currency":      "ISK",
                 "scraped_at":    now,

@@ -141,6 +141,77 @@ _EXACT: dict[str, str] = {
 
     # ── Nissan ──────────────────────────────────────────────────────────────
     "nissan x-trail":                           "Nissan X-Trail",
+
+    # ── Toyota Land Cruiser (additional variants) ────────────────────────────
+    "toyota landcruiser":                        "Toyota Land Cruiser 150",
+    "5 seats toyota land cruiser":               "Toyota Land Cruiser 150",
+    "5 seat toyota land cruiser":                "Toyota Land Cruiser 150",
+    "toyota land cruiser 250 adventure":         "Toyota Land Cruiser 250",
+
+    # ── Land Rover (additional variants) ────────────────────────────────────
+    "land rover defender":                       "Land Rover Defender",
+    "land rover defender 110":                   "Land Rover Defender",
+    "land rover defender plug-in hybrid":        "Land Rover Defender",
+    "land rover discovery":                      "Land Rover Discovery",
+    "land rover discovery 5":                    "Land Rover Discovery",
+
+    # ── BMW ─────────────────────────────────────────────────────────────────
+    "bmw x3":                                    "BMW X3",
+    "bmw x3 m sport":                            "BMW X3",
+    "bmw x5":                                    "BMW X5",
+    "bmw x5 plug-in hybrid":                     "BMW X5",
+
+    # ── Kia (additional variants) ────────────────────────────────────────────
+    "kia sportage":                              "Kia Sportage",
+    "kia sorento":                               "Kia Sorento",
+    "kia sorento plug-in hybrid":                "Kia Sorento",
+
+    # ── Hyundai (additional variants) ───────────────────────────────────────
+    "hyundai i30 station":                       "Hyundai i30",
+    "hyundai tucson":                            "Hyundai Tucson",
+    "hyundai tucson plug-in hybrid":             "Hyundai Tucson",
+
+    # ── Dacia (additional variants) ──────────────────────────────────────────
+    "dacia duster":                              "Dacia Duster",
+    "dacia duster (older model)":                "Dacia Duster",
+    "dacia duster (new model)":                  "Dacia Duster",
+    "dacia duster (2022-2023) older model":      "Dacia Duster",
+    "dacia bigster":                             "Dacia Bigster",
+
+    # ── Honda ───────────────────────────────────────────────────────────────
+    "honda cr-v":                                "Honda CR-V",
+
+    # ── MG ──────────────────────────────────────────────────────────────────
+    "mg ehs":                                    "MG EHS",
+
+    # ── VW / Volkswagen (additional variants) ───────────────────────────────
+    "vw transporter":                            "VW Transporter",
+    "volkswagen transporter":                    "VW Transporter",
+    "volkswagen transporter passenger van":      "VW Transporter",
+    "vw transporter passenger van":              "VW Transporter",
+    "vw transporter 4wd passenger van":          "VW Transporter",
+    "volkswagen transporter 4wd passenger van":  "VW Transporter",
+    "vw caravelle 9 seater":                     "VW Caravelle",
+    "volkswagen caravelle 9 seater":             "VW Caravelle",
+
+    # ── Ford ────────────────────────────────────────────────────────────────
+    "ford transit":                              "Ford Transit",
+    "ford transit 9 seater":                     "Ford Transit",
+    "ford transit 12 seater":                    "Ford Transit",
+    "ford transit 17 seater":                    "Ford Transit",
+
+    # ── Mercedes (additional variants) ──────────────────────────────────────
+    "mercedes sprinter":                         "Mercedes Sprinter",
+    "mercedes-benz sprinter":                    "Mercedes Sprinter",
+    "mercedes-benz sprinter 15 seater":          "Mercedes Sprinter",
+    "mercedes benz sprinter":                    "Mercedes Sprinter",
+    "mercedes-benz sprinter 4wd":                "Mercedes Sprinter",
+    "mercedes sprinter 4wd passenger van":       "Mercedes Sprinter",
+    "mercedes-benz sprinter 4wd passenger van":  "Mercedes Sprinter",
+    "mercedes benz sprinter 4wd passenger van":  "Mercedes Sprinter",
+
+    # ── Renault Trafic ──────────────────────────────────────────────────────
+    "renault trafic":                            "Renault Trafic",
 }
 
 # ---------------------------------------------------------------------------
@@ -153,7 +224,7 @@ import re as _re
 
 _STRIP_SUFFIXES = _re.compile(
     r"\s*[\(\[]?\s*"
-    r"(?:automatic|manual|auto|petrol|diesel|hybrid|electric)"
+    r"(?:plug-in hybrid|plug in hybrid|phev|plug-in|automatic|manual|auto|petrol|diesel|hybrid|electric)"
     r"\s*[\)\]]?\s*$",
     _re.IGNORECASE,
 )

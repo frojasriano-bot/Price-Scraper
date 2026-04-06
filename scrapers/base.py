@@ -17,8 +17,6 @@ from canonical import canonicalize
 LOCATIONS = [
     "Keflavik Airport",
     "Reykjavik",
-    "Akureyri",
-    "Egilsstaðir",
 ]
 
 # Iceland car rental seasonality multipliers (applied to mock per-day prices).

@@ -4,6 +4,8 @@ Holdur is the Icelandic trading name for Europcar Iceland.
 Uses a server-rendered HTML POST form — no API or JS required.
 """
 
+from __future__ import annotations
+
 import re
 from datetime import datetime
 
@@ -18,8 +20,6 @@ from canonical import canonicalize
 HOLDUR_STATIONS: dict[str, tuple[str, str] | None] = {
     "Keflavik Airport": ("KEFT01", "Keflavík flugstöð"),
     "Reykjavik":        ("REKC01", "Reykjavík Skútuvogur 8"),
-    "Akureyri":         ("AEYC01", "Akureyri Tryggvabraut 12"),
-    "Egilsstaðir":      ("EGSC01", "Egilsstaðir Lagarbraut 4"),
 }
 
 HOLDUR_RESULTS_URL = "https://www.holdur.is/boka/veldu-bil"

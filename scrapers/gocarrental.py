@@ -4,21 +4,22 @@ Uses the GoRentals JSON API: POST https://api.gorentals.is/functions/v1/public/c
 Returns total-trip prices by class ID. Car names come from the SSR page HTML.
 """
 
+from __future__ import annotations
+
 import re
 from datetime import datetime
 
 from bs4 import BeautifulSoup
 
 from .base import BaseScraper
+from canonical import canonicalize
 
 
 # Go Car Rental only operates in the Reykjavik/KEF area.
-GOCAR_LOCATION_IDS: dict[str, tuple[int, int]] = {
+GOCAR_LOCATION_IDS: dict[str, tuple[int, int] | None] = {
     # (pickupLocationId, dropoffLocationId)
     "Keflavik Airport": (10, 11),
     "Reykjavik":        (614, 614),
-    "Akureyri":         None,         # not served
-    "Egilsstaðir":      None,         # not served
 }
 
 GOCAR_API_URL = "https://api.gorentals.is/functions/v1/public/classes"
@@ -35,7 +36,7 @@ _COMPACT_KEYWORDS = ["captur", "megane", "octavia", "sportswagon", "ceed wagon",
                      "jogger", "model 3"]
 _SUV_KEYWORDS     = ["duster", "jimny", "vitara", "qashqai", "tucson", "sportage",
                      "rav4", "x-trail", "forester", "eclipse", "kodiaq", "ariya",
-                     "subaru xv", "model y"]
+                     "subaru xv", "model y", "cr-v", "honda cr", "mg ehs", "mg "]
 _4X4_KEYWORDS     = ["santa fe", "sorento", "discovery", "bmw x", "land cruiser",
                      "defender", "wrangler", "jeep"]
 _MINIVAN_KEYWORDS = ["trafic", "caravelle", "vito", "proace", "tourneo", "transit"]
@@ -205,7 +206,7 @@ class GoCarRentalScraper(BaseScraper):
                 "return_date":   return_date,
                 "car_category":  category,
                 "car_model":     name,
-                "canonical_name": name,
+                "canonical_name": canonicalize(name),
                 "price_isk":     int(price_isk),
                 "currency":      "ISK",
                 "scraped_at":    now,

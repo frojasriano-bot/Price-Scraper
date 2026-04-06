@@ -6,6 +6,8 @@ verify that the prices displayed on your website match your internal system.
 Falls back to the FLEET mock data if the live request fails for any reason.
 """
 
+from __future__ import annotations
+
 from datetime import datetime
 from .base import BaseScraper
 from canonical import canonicalize

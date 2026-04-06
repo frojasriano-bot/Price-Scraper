@@ -3,6 +3,8 @@ Scraper for Lotus Car Rental Iceland (lotuscarrental.is).
 Uses the Caren booking platform JSON API — direct GET, no auth required.
 """
 
+from __future__ import annotations
+
 import re
 from datetime import datetime
 
@@ -13,9 +15,7 @@ from canonical import canonicalize
 # Lotus only operates at Keflavik Airport.
 LOTUS_LOCATION_IDS: dict[str, tuple[int, int] | None] = {
     "Keflavik Airport": (486, 487),
-    "Reykjavik":        None,
-    "Akureyri":         None,
-    "Egilsstaðir":      None,
+    "Reykjavik":        None,   # Lotus operates at KEF only
 }
 
 LOTUS_API_URL = "https://www.lotuscarrental.is/_carenapix/class/"

@@ -5,20 +5,21 @@ Flow: GET homepage → extract nonce → POST to wp-admin/admin-ajax.php (ccw_se
       → GET /?step=search-results → parse server-rendered HTML.
 """
 
+from __future__ import annotations
+
 import re
 from datetime import datetime
 
 from bs4 import BeautifulSoup
 
 from .base import BaseScraper
+from canonical import canonicalize
 
 
 # Hertz depot IDs for each canonical location
 HERTZ_DEPOT_IDS: dict[str, int | None] = {
     "Keflavik Airport": 926,
     "Reykjavik":        956,   # Reykjavik Downtown
-    "Akureyri":         969,   # Akureyri Airport (AEY)
-    "Egilsstaðir":      970,   # Egilsstaðir Airport (EGS)
 }
 
 # Hertz CSS category classes → our canonical categories
@@ -32,6 +33,46 @@ HERTZ_CLASS_CATEGORY: dict[str, str] = {
     "passengervans":    "Minivan",
     "green-collection": "Economy",
 }
+
+
+# Keyword overrides that take priority over the CSS-class based category.
+# Hertz's CSS classes are too coarse (e.g. "compact" includes Duster/Sportage,
+# "suv" includes Land Cruiser/Defender, "special-vehicles" includes motorhomes).
+_HERTZ_MINIVAN_OVERRIDE = [
+    "caravelle", "transporter", "trafic", "transit", "sprinter",
+    "proace", "vito", "tourneo", "benivan", "motorhome", "camper",
+]
+_HERTZ_4X4_OVERRIDE = [
+    "land cruiser", "landcruiser", "defender", "discovery", "sorento",
+    "santa fe", "highlander", "hilux", "bmw x5", "bmw x3", "mercedes gle",
+    "range rover", "wrangler", "outlander",
+]
+_HERTZ_SUV_OVERRIDE = [
+    "duster", "bigster", "sportage", "tucson", "qashqai", "vitara",
+    "ariya", "model y", "cx-30", "captur", "cx-5", "cx-60",
+    "eclipse cross", "rav4", "kodiaq", "forester", "cr-v", "honda cr",
+]
+
+
+def _override_category(name: str, css_category: str) -> str:
+    """
+    Apply model-name keyword overrides on top of the CSS-class category.
+    Returns the corrected category string.
+    """
+    n = name.lower()
+    # Minivan first — a Transit/Sprinter is never a 4x4 regardless of CSS class
+    for kw in _HERTZ_MINIVAN_OVERRIDE:
+        if kw in n:
+            return "Minivan"
+    # True 4x4 / F-road vehicles
+    for kw in _HERTZ_4X4_OVERRIDE:
+        if kw in n:
+            return "4x4"
+    # Mid-size SUVs that Hertz CSS lumps into "compact"
+    for kw in _HERTZ_SUV_OVERRIDE:
+        if kw in n:
+            return "SUV"
+    return css_category
 
 
 class HertzIsScraper(BaseScraper):
@@ -162,7 +203,8 @@ class HertzIsScraper(BaseScraper):
             # Strip "or similar| Manual | 4×4" suffix
             car_name = re.split(r"\s*\||\s+or similar", raw_name)[0].strip()
 
-            category = self._get_category(mix)
+            css_category = self._get_category(mix)
+            category = _override_category(car_name, css_category)
 
             results.append({
                 "competitor":    self.competitor_name,
@@ -171,7 +213,7 @@ class HertzIsScraper(BaseScraper):
                 "return_date":   return_date,
                 "car_category":  category,
                 "car_model":     car_name,
-                "canonical_name": car_name,
+                "canonical_name": canonicalize(car_name),
                 "price_isk":     price_isk,
                 "currency":      "ISK",
                 "scraped_at":    now,

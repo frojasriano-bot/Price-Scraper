@@ -4,18 +4,19 @@ Uses the Caren booking API: GET /_plugins/carenapi/class
 No authentication or JS execution required.
 """
 
+from __future__ import annotations
+
 import re
 from datetime import datetime
 
 from .base import BaseScraper
+from canonical import canonicalize
 
 
 # Lava only operates at Keflavik Airport.
 LAVA_LOCATION_IDS: dict[str, int | None] = {
     "Keflavik Airport": 239,
-    "Reykjavik":        None,
-    "Akureyri":         None,
-    "Egilsstaðir":      None,
+    "Reykjavik":        None,   # Lava operates at KEF only
 }
 
 LAVA_API_URL = "https://www.lavacarrental.is/_plugins/carenapi/class"
@@ -37,25 +38,57 @@ LAVA_GROUP_CATEGORY: dict[str, str] = {
 }
 
 
+# Keywords that always map to Minivan, regardless of the API group name
+_LAVA_MINIVAN_KW = [
+    "trafic", "caravelle", "vito", "proace", "transit", "sprinter",
+    "transporter", "tourneo", "campervan",
+]
+# Keywords for genuine 4x4 / F-road vehicles (used to control ForHighland promotion)
+_LAVA_TRUE_4X4_KW = [
+    "land cruiser", "landcruiser", "defender", "discovery", "santa fe",
+    "hilux", "highlander", "hilux", "wrangler",
+]
+# Keywords for SUVs that should NOT be promoted to 4x4 even if ForHighland is set
+_LAVA_SUV_KW = [
+    "duster", "bigster", "vitara", "jimny", "qashqai", "tucson",
+    "sportage", "rav4", "eclipse", "model y", "mg ehs", "mg ",
+    "ariya", "x-trail", "sorento", "subaru",
+]
+
+
 def _infer_category(name: str, group: str, for_highland: bool, drive: str) -> str:
-    if group in LAVA_GROUP_CATEGORY:
-        cat = LAVA_GROUP_CATEGORY[group]
-        # Promote to 4x4 if F-road capable
-        if cat == "SUV" and (for_highland or "4wd" in drive.lower() or "awd" in drive.lower()):
-            return "4x4"
-        return cat
     n = name.lower()
-    if for_highland:
-        return "4x4"
-    for kw in ["land cruiser", "defender", "discovery", "sorento", "santa fe",
-                "x-trail", "hilux", "highlander", "trafic"]:
-        if kw in n:
-            return "4x4"
-    for kw in ["caravelle", "vito", "proace", "trafic", "campervan"]:
+
+    # Minivan check is highest priority — always overrides group labels
+    for kw in _LAVA_MINIVAN_KW:
         if kw in n:
             return "Minivan"
-    for kw in ["duster", "bigster", "vitara", "jimny", "qashqai", "tucson",
-                "sportage", "rav4", "eclipse", "model y", "mg ehs"]:
+
+    if group in LAVA_GROUP_CATEGORY:
+        cat = LAVA_GROUP_CATEGORY[group]
+        if cat == "SUV":
+            # Only promote to 4x4 for vehicles that are genuine F-road capable
+            if for_highland or "4wd" in drive.lower() or "awd" in drive.lower():
+                for kw in _LAVA_TRUE_4X4_KW:
+                    if kw in n:
+                        return "4x4"
+            return "SUV"
+        if cat == "Economy":
+            # Group says Economy but name may reveal a true category
+            for kw in _LAVA_SUV_KW:
+                if kw in n:
+                    return "SUV"
+        return cat
+
+    # Fallback: keyword-based inference
+    if for_highland:
+        for kw in _LAVA_TRUE_4X4_KW:
+            if kw in n:
+                return "4x4"
+    for kw in _LAVA_TRUE_4X4_KW + ["x-trail", "sorento"]:
+        if kw in n:
+            return "4x4"
+    for kw in _LAVA_SUV_KW:
         if kw in n:
             return "SUV"
     return "Economy"
@@ -154,7 +187,7 @@ class LavaCarRentalScraper(BaseScraper):
                 "return_date":   return_date,
                 "car_category":  category,
                 "car_model":     car_name,
-                "canonical_name": canonical,
+                "canonical_name": canonicalize(canonical),
                 "price_isk":     int(price_isk),
                 "currency":      "ISK",
                 "scraped_at":    now,
