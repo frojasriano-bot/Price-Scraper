@@ -64,6 +64,7 @@ const state = {
   scraping: false,
   checkingSeo: false,
   savingSettings: false,
+  insuranceData: null,
 };
 
 // ── API helpers ────────────────────────────────────────────────────────────
@@ -110,6 +111,7 @@ function switchTab(tab) {
   const titles = {
     rates: 'Rate Intelligence',
     seo: 'SEO Rank Tracker',
+    insurance: 'Insurance Comparison',
     settings: 'Settings',
   };
   document.getElementById('page-title').textContent = titles[tab] || tab;
@@ -117,6 +119,7 @@ function switchTab(tab) {
   if (tab === 'rates') loadRates();
   if (tab === 'seo') loadRankings();
   if (tab === 'settings') loadSettings();
+  if (tab === 'insurance') loadInsurance();
 }
 
 // ── Utility ────────────────────────────────────────────────────────────────
@@ -1727,6 +1730,295 @@ function exportSeasonalCSV() {
 
   downloadCSV(`seasonal_summary_${new Date().toISOString().slice(0,10)}.csv`, [headers, ...rows]);
   showToast('Seasonal summary exported!', 'success');
+}
+
+// ── INSURANCE TAB ─────────────────────────────────────────────────────────
+
+const COVERAGE_STATUS = {
+  included:    { label: '✓ Included',  cls: 'ins-cell-included',    order: 0 },
+  optional:    { label: '+ Optional',  cls: 'ins-cell-optional',    order: 1 },
+  zero:        { label: '◎ In Zero',   cls: 'ins-cell-zero',        order: 2 },
+  unavailable: { label: '—',           cls: 'ins-cell-unavailable', order: 3 },
+};
+
+function setInsuranceView(view) {
+  ['comparison', 'company', 'deductibles'].forEach(v => {
+    document.getElementById(`ins-view-${v}`).style.display = (v === view) ? '' : 'none';
+    document.getElementById(`btn-ins-${v}`).classList.toggle('active', v === view);
+  });
+}
+
+async function loadInsurance() {
+  if (state.insuranceData) { renderInsurance(state.insuranceData); return; }
+  try {
+    const data = await apiFetch('/api/insurance');
+    state.insuranceData = data;
+    renderInsurance(data);
+  } catch (e) {
+    showToast(`Failed to load insurance data: ${e.message}`, 'error');
+  }
+}
+
+function renderInsurance(data) {
+  const { companies, protection_types, key_insights, disclaimer, last_updated } = data;
+  const companyNames = Object.keys(companies);
+
+  // Last updated label
+  const upEl = document.getElementById('insurance-last-updated');
+  if (upEl) upEl.textContent = `Data current as of ${last_updated}`;
+
+  // Disclaimer
+  const discEl = document.getElementById('insurance-disclaimer');
+  const discTextEl = document.getElementById('insurance-disclaimer-text');
+  if (discEl && discTextEl) { discTextEl.textContent = disclaimer; discEl.style.display = ''; }
+
+  // Key insight cards
+  renderInsuranceInsights(key_insights, companies);
+
+  // Build per-company coverage lookup
+  const coverageMap = buildCoverageMap(companies, protection_types);
+
+  renderCoverageMatrix(companies, protection_types, companyNames, coverageMap);
+  renderCompanyCards(companies);
+  renderDeductiblesTable(companies, companyNames);
+  renderZeroExcessCards(companies);
+}
+
+function renderInsuranceInsights(insights, companies) {
+  const row = document.getElementById('insurance-insights-row');
+  if (!row) return;
+  row.innerHTML = insights.map(ins => `
+    <div class="stat-card" style="border-top:3px solid ${escHtml(ins.color)}">
+      <div class="stat-label" style="font-size:12px">${escHtml(ins.icon)} ${escHtml(ins.company)}</div>
+      <div class="stat-value" style="font-size:15px;line-height:1.3">${escHtml(ins.title)}</div>
+      <div class="stat-sub" style="font-size:12px;margin-top:4px;line-height:1.4">${escHtml(ins.text)}</div>
+    </div>
+  `).join('');
+}
+
+function buildCoverageMap(companies, protection_types) {
+  // Returns: { companyName: { protectionId: 'included'|'optional'|'zero'|'unavailable' } }
+  const map = {};
+  for (const [name, co] of Object.entries(companies)) {
+    map[name] = {};
+    for (const pt of protection_types) {
+      map[name][pt.id] = getCoverageStatus(co, pt.id);
+    }
+  }
+  return map;
+}
+
+function getCoverageStatus(company, protectionId) {
+  // Check if in included_base
+  if ((company.included_base || []).some(p => p.type === protectionId)) return 'included';
+
+  // Check packages
+  let foundInOptional = false;
+  let foundInZero = false;
+  for (const pkg of (company.packages || [])) {
+    if (pkg.tier === 'base') continue;
+    if ((pkg.covers || []).includes(protectionId)) {
+      if (pkg.tier === 'zero') foundInZero = true;
+      else foundInOptional = true;
+    }
+  }
+  // Also check individual_products for Hertz
+  if ((company.individual_products || []).some(p => p.type === protectionId)) foundInOptional = true;
+
+  if (foundInOptional) return 'optional';
+  if (foundInZero) return 'zero';
+  return 'unavailable';
+}
+
+function renderCoverageMatrix(companies, protection_types, companyNames, coverageMap) {
+  const table = document.getElementById('insurance-matrix-table');
+  if (!table) return;
+
+  // Header
+  const thead = table.querySelector('thead');
+  thead.innerHTML = `<tr>
+    <th style="min-width:180px">Protection Type</th>
+    ${companyNames.map(n => {
+      const co = companies[n];
+      return `<th style="text-align:center;min-width:100px">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:3px">
+          <span style="width:10px;height:10px;border-radius:50%;background:${escHtml(co.color)};display:inline-block"></span>
+          <span style="font-size:11px;line-height:1.2">${escHtml(shortCompanyName(n))}</span>
+        </div>
+      </th>`;
+    }).join('')}
+  </tr>`;
+
+  // Body
+  const tbody = table.querySelector('tbody');
+  tbody.innerHTML = protection_types.map(pt => {
+    const cells = companyNames.map(n => {
+      const status = coverageMap[n][pt.id];
+      const s = COVERAGE_STATUS[status];
+      return `<td class="ins-cell ${s.cls}" style="text-align:center;font-size:12px">${s.label}</td>`;
+    }).join('');
+    return `<tr>
+      <td>
+        <strong style="font-size:13px">${escHtml(pt.acronym)}</strong>
+        <div style="font-size:11px;color:#6b7280;margin-top:2px">${escHtml(pt.name)}</div>
+      </td>
+      ${cells}
+    </tr>`;
+  }).join('');
+}
+
+function renderCompanyCards(companies) {
+  const container = document.getElementById('insurance-company-cards');
+  if (!container) return;
+
+  container.innerHTML = Object.entries(companies).map(([name, co]) => {
+    const packagesHtml = (co.packages || []).map(pkg => {
+      const tierLabel = { base: 'Base', addon: 'Add-on', zero: 'Zero Excess' }[pkg.tier] || pkg.tier;
+      const tierCls   = { base: 'ins-tier-base', addon: 'ins-tier-addon', zero: 'ins-tier-zero' }[pkg.tier] || '';
+      const coversHtml = (pkg.covers || []).map(c => `<span class="ins-cover-pill">${escHtml(c.toUpperCase())}</span>`).join('');
+      return `
+        <div class="ins-package ${tierCls}">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px">
+            <strong style="font-size:13px">${escHtml(pkg.name)}</strong>
+            <span class="ins-tier-badge ${tierCls}">${escHtml(tierLabel)}</span>
+          </div>
+          <div style="font-size:12px;color:#6b7280;margin-bottom:6px">
+            ${escHtml(pkg.price_note || (pkg.price_isk ? formatISK(pkg.price_isk) + '/day' : 'Included'))}
+            &nbsp;·&nbsp; Excess: <strong>${escHtml(pkg.deductible_summary || '—')}</strong>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px">${coversHtml}</div>
+        </div>`;
+    }).join('');
+
+    const baseItems = (co.included_base || []).map(b => {
+      const label = b.deductible_label || (b.deductible_isk != null ? `${(b.deductible_isk/1000).toFixed(0)}k ISK excess` : 'Included');
+      return `<li><strong>${escHtml(b.type.toUpperCase())}</strong> — ${escHtml(b.note || '')} <span style="color:#6b7280">(${escHtml(label)})</span></li>`;
+    }).join('');
+
+    return `
+      <div class="card ins-company-card" style="border-top:4px solid ${escHtml(co.color)}">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+          <span style="width:12px;height:12px;border-radius:50%;background:${escHtml(co.color)};flex-shrink:0"></span>
+          <div class="card-title" style="margin:0">${escHtml(name)}</div>
+        </div>
+        <div style="font-size:12px;margin-bottom:10px">
+          <span class="badge badge-green" style="font-size:11px">${escHtml(co.highlight)}</span>
+        </div>
+        ${co.notes ? `<p style="font-size:12px;color:#6b7280;margin-bottom:10px">${escHtml(co.notes)}</p>` : ''}
+        <div style="margin-bottom:10px">
+          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#9ca3af;margin-bottom:6px">Included in Base Rental</div>
+          <ul style="font-size:12px;padding-left:16px;margin:0;line-height:2">${baseItems}</ul>
+        </div>
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#9ca3af;margin-bottom:6px">Packages & Add-ons</div>
+        <div style="display:flex;flex-direction:column;gap:8px">${packagesHtml}</div>
+      </div>`;
+  }).join('');
+}
+
+function renderDeductiblesTable(companies, companyNames) {
+  const table = document.getElementById('deductibles-table');
+  if (!table) return;
+
+  const rows = [
+    { label: 'CDW Collision Excess',     key: 'cdw'  },
+    { label: 'After SCDW Upgrade',       key: 'scdw' },
+    { label: 'Gravel / Glass (GP)',       key: 'gp'   },
+    { label: 'Sand & Ash (SAAP)',         key: 'saap' },
+    { label: 'Theft (TP)',                key: 'tp'   },
+    { label: 'Tire & Wheel (TIP)',        key: 'tip'  },
+    { label: 'Zero-Excess Package',       key: 'zero' },
+  ];
+
+  const thead = table.querySelector('thead') || table.createTHead();
+  const tbody = table.querySelector('tbody') || table.createTBody();
+
+  thead.innerHTML = `<tr>
+    <th>Deductible / Excess</th>
+    ${companyNames.map(n => {
+      const co = companies[n];
+      return `<th style="text-align:center">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:3px">
+          <span style="width:10px;height:10px;border-radius:50%;background:${escHtml(co.color)};display:inline-block"></span>
+          <span style="font-size:11px">${escHtml(shortCompanyName(n))}</span>
+        </div>
+      </th>`;
+    }).join('')}
+  </tr>`;
+
+  tbody.innerHTML = rows.map(row => {
+    const cells = companyNames.map(n => {
+      const co = companies[n];
+      const val = getDeductibleValue(co, row.key);
+      const cls = val === '0' || val === '0 ISK' ? 'style="color:#22c55e;font-weight:600"' :
+                  val === '—' ? 'style="color:#9ca3af"' : '';
+      return `<td style="text-align:center;font-size:13px" ${cls}>${escHtml(val)}</td>`;
+    }).join('');
+    return `<tr><td style="font-size:13px;font-weight:500">${escHtml(row.label)}</td>${cells}</tr>`;
+  }).join('');
+}
+
+function getDeductibleValue(company, key) {
+  if (key === 'zero') {
+    const zeroPkg = (company.packages || []).find(p => p.tier === 'zero');
+    return zeroPkg ? (zeroPkg.price_note || (zeroPkg.price_isk ? zeroPkg.price_isk.toLocaleString() + ' ISK/day' : '—')) : '—';
+  }
+  // Check included_base first
+  const base = (company.included_base || []).find(p => p.type === key);
+  if (base) {
+    if (base.deductible_label) return base.deductible_label;
+    if (base.deductible_isk === 0) return '0 ISK';
+    if (base.deductible_isk != null) return `${Math.round(base.deductible_isk / 1000)}k ISK`;
+    return 'Included';
+  }
+  // Check individual_products (Hertz)
+  const ind = (company.individual_products || []).find(p => p.type === key);
+  if (ind) {
+    if (ind.deductible_label) return ind.deductible_label;
+    if (ind.deductible_isk === 0) return '0 ISK';
+    if (ind.deductible_isk != null) return `${Math.round(ind.deductible_isk / 1000)}k ISK`;
+  }
+  // Check optional packages
+  for (const pkg of (company.packages || [])) {
+    if ((pkg.covers || []).includes(key) && pkg.tier !== 'base' && pkg.tier !== 'zero') {
+      return pkg.deductible_summary || 'In add-on';
+    }
+  }
+  return '—';
+}
+
+function renderZeroExcessCards(companies) {
+  const container = document.getElementById('zero-excess-cards');
+  if (!container) return;
+
+  container.innerHTML = Object.entries(companies).map(([name, co]) => {
+    const zeroPkg = (co.packages || []).find(p => p.tier === 'zero');
+    const price = zeroPkg ? (zeroPkg.price_note || (zeroPkg.price_isk ? zeroPkg.price_isk.toLocaleString('is-IS') + ' ISK/day' : 'Quote only')) : 'Not available';
+    const pkgName = zeroPkg ? zeroPkg.name : 'Not offered';
+    const hasZero = !!zeroPkg;
+
+    return `
+      <div style="border:1px solid rgba(0,0,0,0.1);border-radius:var(--radius);padding:14px;border-top:3px solid ${escHtml(co.color)}">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <span style="width:9px;height:9px;border-radius:50%;background:${escHtml(co.color)};flex-shrink:0"></span>
+          <strong style="font-size:13px">${escHtml(shortCompanyName(name))}</strong>
+        </div>
+        <div style="font-size:12px;color:#6b7280;margin-bottom:4px">${escHtml(pkgName)}</div>
+        <div style="font-size:${hasZero ? '15px' : '13px'};font-weight:600;color:${hasZero ? '#22c55e' : '#9ca3af'}">${escHtml(price)}</div>
+      </div>`;
+  }).join('');
+}
+
+function shortCompanyName(name) {
+  const shorts = {
+    'Blue Car Rental': 'Blue',
+    'Holdur': 'Holdur',
+    'Lotus Car Rental': 'Lotus',
+    'Avis Iceland': 'Avis',
+    'Go Car Rental': 'Go',
+    'Hertz Iceland': 'Hertz',
+    'Lava Car Rental': 'Lava',
+  };
+  return shorts[name] || name;
 }
 
 // ── Security helper ────────────────────────────────────────────────────────

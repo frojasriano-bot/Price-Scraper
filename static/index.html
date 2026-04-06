@@ -45,6 +45,14 @@
         SEO Rank Tracker
       </div>
 
+      <div class="nav-item" data-tab="insurance">
+        <!-- Shield icon -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+        Insurance
+      </div>
+
       <div class="nav-section-label" style="margin-top:12px">Configuration</div>
 
       <div class="nav-item" data-tab="settings">
@@ -762,6 +770,97 @@
         </div>
 
       </div><!-- /tab-settings -->
+
+      <!-- ══════════════════════════════════════════════════════════════
+           TAB: INSURANCE COMPARISON
+      ══════════════════════════════════════════════════════════════ -->
+      <div id="tab-insurance" class="tab-panel" style="display:none">
+
+        <!-- Header row -->
+        <div class="stats-row" id="insurance-insights-row">
+          <!-- Filled by JS -->
+        </div>
+
+        <!-- View toggle -->
+        <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-secondary btn-sm view-toggle active" id="btn-ins-comparison" onclick="setInsuranceView('comparison')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+            Coverage Matrix
+          </button>
+          <button class="btn btn-secondary btn-sm view-toggle" id="btn-ins-company" onclick="setInsuranceView('company')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+            Company Cards
+          </button>
+          <button class="btn btn-secondary btn-sm view-toggle" id="btn-ins-deductibles" onclick="setInsuranceView('deductibles')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            Deductibles
+          </button>
+          <span style="margin-left:auto;font-size:12px;color:#6b7280" id="insurance-last-updated"></span>
+        </div>
+
+        <!-- COVERAGE MATRIX VIEW -->
+        <div id="ins-view-comparison">
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Coverage Matrix</div>
+                <div class="card-subtitle">What each company includes by default vs. optional add-ons vs. not available</div>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table id="insurance-matrix-table">
+                <thead><tr><th>Protection</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <div style="display:flex;gap:20px;padding:12px 16px;font-size:12px;flex-wrap:wrap">
+              <span><span class="ins-legend ins-included"></span> Included in base rental</span>
+              <span><span class="ins-legend ins-optional"></span> Optional add-on</span>
+              <span><span class="ins-legend ins-zero"></span> Included in zero-excess package</span>
+              <span><span class="ins-legend ins-unavailable"></span> Not available</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- COMPANY CARDS VIEW -->
+        <div id="ins-view-company" style="display:none">
+          <div id="insurance-company-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px">
+            <!-- Filled by JS -->
+          </div>
+        </div>
+
+        <!-- DEDUCTIBLES VIEW -->
+        <div id="ins-view-deductibles" style="display:none">
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Deductible Comparison</div>
+                <div class="card-subtitle">Out-of-pocket excess per incident at each coverage tier</div>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table id="deductibles-table">
+                <thead></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top:16px">
+            <div class="card-header">
+              <div class="card-title">Zero-Excess Package Comparison</div>
+              <div class="card-subtitle">Daily price to eliminate all deductibles</div>
+            </div>
+            <div id="zero-excess-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;padding:4px 0"></div>
+          </div>
+        </div>
+
+        <!-- Disclaimer -->
+        <div id="insurance-disclaimer" style="margin-top:16px;padding:12px 16px;border-radius:var(--radius);background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);font-size:12px;color:#92400e;display:none">
+          <strong>⚠ Disclaimer:</strong> <span id="insurance-disclaimer-text"></span>
+        </div>
+
+      </div><!-- /tab-insurance -->
 
     </div><!-- /content -->
   </div><!-- /main -->

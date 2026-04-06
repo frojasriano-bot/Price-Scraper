@@ -29,6 +29,7 @@ from routes.rates import router as rates_router
 from routes.seo import router as seo_router
 from routes.settings import router as settings_router
 from routes.alerts import router as alerts_router
+from routes.insurance import router as insurance_router
 
 # Load environment variables from .env if present
 load_dotenv()
@@ -215,6 +216,7 @@ app.include_router(rates_router)
 app.include_router(seo_router)
 app.include_router(settings_router)
 app.include_router(alerts_router)
+app.include_router(insurance_router)
 
 # Serve static files (the SPA dashboard)
 static_dir = Path(__file__).parent / "static"
