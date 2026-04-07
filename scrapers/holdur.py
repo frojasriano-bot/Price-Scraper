@@ -37,7 +37,8 @@ HOLDUR_CATEGORY_PARAMS = [
 # minivans in the FO (regular cars) bucket, so we can't rely on the param alone.
 _MINIVAN_KEYWORDS = ["trafic", "caravelle", "vito", "proace", "tourneo", "caddy", "transit", "sprinter"]
 _4X4_KEYWORDS     = ["land cruiser", "landcruiser", "defender", "discovery", "santa fe",
-                      "hilux", "highlander", "outlander", "mercedes gle", "wrangler"]
+                      "hilux", "highlander", "outlander", "wrangler",
+                      "sorento", "gle"]          # sorento/GLE may appear in FO bucket
 _SUV_KEYWORDS     = ["rav4", "tucson", "sportage", "vitara", "duster", "bigster",
                       "jimny", "forester", "model y", "id.4", "qashqai", "ariya",
                       "x-trail", "eclipse", "kodiaq", "cr-v", "honda cr"]
@@ -48,12 +49,20 @@ _COMPACT_KEYWORDS = ["octavia", "jogger", "sportswagon", "ceed", "model 3", "cap
 # Strip both to get the clean car name for keyword matching and display.
 _HOLDUR_PREFIX = re.compile(r"^[A-Z0-9]+[-–]\s*", re.UNICODE)
 _HOLDUR_SUFFIX = re.compile(r"\s*-\s*eða\s+sambærilegur\s*$", re.IGNORECASE | re.UNICODE)
+# Icelandic transmission suffixes appended to the car model name by Holdur.
+# "sjálfskiptur/sjálfskipti" = automatic; "handskiptur/handskipti" = manual.
+# Must be stripped so "Toyota Aygo" and "Toyota Aygo sjálfskiptur" dedup to one record.
+_HOLDUR_TRANSMISSION = re.compile(
+    r"\s+(?:sjálfskiptur|sjálfskipti|handskiptur|handskipti)\b.*$",
+    re.IGNORECASE | re.UNICODE,
+)
 
 
 def _clean_holdur_name(raw: str) -> str:
-    """Strip Holdur's vehicle code prefix and Icelandic 'or similar' suffix."""
+    """Strip Holdur's vehicle code prefix, Icelandic transmission suffix, and 'or similar' suffix."""
     name = _HOLDUR_PREFIX.sub("", raw.strip())
     name = _HOLDUR_SUFFIX.sub("", name).strip()
+    name = _HOLDUR_TRANSMISSION.sub("", name).strip()
     return name
 
 
@@ -210,6 +219,23 @@ class HoldurScraper(BaseScraper):
             })
         return results
 
+    @staticmethod
+    def _deduplicate(results: list[dict]) -> list[dict]:
+        """
+        Holdur's server ignores vehicleCategoryId and returns all cars for every
+        category request, so results contain each car 3× (once per POST).
+        Deduplicate by car_model, keeping the first (FO-bucket) occurrence.
+        _refine_category uses keywords for all category detection, so Economy/Compact
+        cars are correctly labelled from the FO bucket. The JE bucket's catch-all
+        fallback ("if from JE bucket → SUV") must NOT override keyword-based Economy
+        classifications, which is why we keep first rather than highest-priority.
+        """
+        seen: dict[str, dict] = {}
+        for car in results:
+            if car["car_model"] not in seen:
+                seen[car["car_model"]] = car
+        return list(seen.values())
+
     async def scrape_rates(self, location: str, pickup_date: str, return_date: str) -> list[dict]:
         """
         POST to Holdur results page for each vehicle category type.
@@ -233,4 +259,6 @@ class HoldurScraper(BaseScraper):
             except Exception:
                 pass  # If one category fails, continue with others
 
-        return results
+        # Holdur's server returns all cars regardless of vehicleCategoryId —
+        # deduplicate so each model appears exactly once with the correct category.
+        return self._deduplicate(results)

@@ -323,7 +323,7 @@
                 <div class="card-subtitle">Per-day rates sampled on the 15th of each month — 7-night stay</div>
               </div>
               <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-                <select id="seasonal-category" class="form-select" onchange="renderSeasonalChart(); renderSeasonalTable();" style="min-width:160px">
+                <select id="seasonal-category" class="form-select" onchange="onSeasonalCategoryChange();" style="min-width:160px">
                   <option value="">Overall Average</option>
                   <option value="Economy">Economy</option>
                   <option value="Compact">Compact</option>
@@ -331,9 +331,21 @@
                   <option value="4x4">4x4</option>
                   <option value="Minivan">Minivan</option>
                 </select>
+                <!-- History mode: month selector (hidden until toggled) -->
+                <select id="history-month-select" class="form-select" onchange="onHistoryMonthChange();" style="min-width:160px;display:none">
+                  <option value="">Select a month…</option>
+                </select>
                 <button class="btn btn-secondary btn-sm" id="btn-reload-seasonal" onclick="loadSeasonal(true)">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
                   Refresh
+                </button>
+                <button class="btn btn-secondary btn-sm" id="btn-scrape-seasonal" onclick="scrapeSeasonalAnchors()" title="Re-scrape all 12 anchor months from live sources and store">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                  Scrape All
+                </button>
+                <button class="btn btn-secondary btn-sm" id="btn-history-mode" onclick="toggleHistoryMode()" title="Show how prices for a specific month changed over time">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                  History
                 </button>
                 <span id="seasonal-source-badge" class="badge badge-gray" style="display:none">Mock Data</span>
               </div>
@@ -348,10 +360,10 @@
             </div>
           </div>
 
-          <!-- Line chart -->
-          <div class="card" style="margin-bottom:16px">
+          <!-- Line chart (seasonal overview) -->
+          <div class="card" style="margin-bottom:16px" id="seasonal-chart-card">
             <div class="card-header">
-              <div class="card-title">Per-Day Price Across 12 Months</div>
+              <div class="card-title" id="seasonal-chart-title">Per-Day Price Across 12 Months</div>
               <div id="seasonal-loading" style="font-size:12px;color:#6b7280;display:none">
                 <span class="spinner" style="border-color:rgba(0,0,0,.15);border-top-color:#2563eb;width:12px;height:12px"></span>
                 &nbsp;Loading…
@@ -359,6 +371,26 @@
             </div>
             <div style="position:relative;height:340px">
               <canvas id="seasonal-chart"></canvas>
+            </div>
+          </div>
+
+          <!-- History chart (price evolution for one anchor month) -->
+          <div class="card" style="margin-bottom:16px;display:none" id="history-chart-card">
+            <div class="card-header">
+              <div>
+                <div class="card-title" id="history-chart-title">Price Evolution</div>
+                <div class="card-subtitle">How prices for this month have changed across weekly scrapes</div>
+              </div>
+              <div id="history-loading" style="font-size:12px;color:#6b7280;display:none">
+                <span class="spinner" style="border-color:rgba(0,0,0,.15);border-top-color:#2563eb;width:12px;height:12px"></span>
+                &nbsp;Loading…
+              </div>
+            </div>
+            <div style="position:relative;height:340px">
+              <canvas id="history-chart"></canvas>
+            </div>
+            <div id="history-no-data" style="display:none;padding:40px;text-align:center;color:#6b7280;font-size:13px">
+              Only one scrape on record for this month — come back after the next weekly scrape to see price trends.
             </div>
           </div>
 

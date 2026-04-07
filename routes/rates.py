@@ -24,6 +24,8 @@ from database import (
     set_config,
     get_seasonal_cache,
     set_seasonal_cache,
+    clear_seasonal_cache,
+    get_seasonal_anchor_history,
     get_model_competitor_coverage,
     get_per_competitor_price_changes,
     log_scrape,
@@ -387,37 +389,32 @@ async def get_matrix(
 async def get_seasonal_rates(
     category: Optional[str] = Query(None, description="Filter to one car category"),
     location: Optional[str] = Query(None, description="Filter to one pickup location"),
-    force: bool = Query(False, description="Bypass cache and re-scrape"),
+    force: bool = Query(False, description="Bypass response cache and re-read from DB"),
 ):
     """
-    Sweep the next 12 months (mid-month, 7-night stay) and return per-day
-    pricing for each competitor and category across the year.
-    Reveals low / shoulder / high / peak season price bands.
+    Return seasonal price analysis across the next 12 months (15th of each month,
+    7-night stay). Reads from the rates DB first — only live-scrapes months that
+    have no stored anchor data. Response is cached for 30 minutes.
     """
-    # --- Cache check ---
     cache_key = f"seasonal:{category or 'all'}:{location or 'kef'}"
     if not force:
-        cached = await get_seasonal_cache(cache_key)
+        cached = await get_seasonal_cache(cache_key, max_age_hours=0.5)
         if cached:
             data, cached_at = cached
-            # Preserve the original source ("live" / "mock") so the badge
-            # reflects reality. Add cached_at so the UI can show the age.
             data["cached_at"] = cached_at
             return data
 
-    from scrapers.base import LOCATIONS as ALL_LOCATIONS
-
     today = date.today()
-    target_locs = [location] if location else ALL_LOCATIONS
+    scrape_loc = location or "Keflavik Airport"
 
-    # Build 12 sample months (15th of each month from now)
+    # Build 12 anchor months
     sweep_months = []
     for offset in range(12):
         total_month = today.month + offset
-        year = today.year + (total_month - 1) // 12
+        year  = today.year + (total_month - 1) // 12
         month = (total_month - 1) % 12 + 1
         pickup = date(year, month, 15)
-        ret = pickup + timedelta(days=_RENTAL_DAYS)
+        ret    = pickup + timedelta(days=_RENTAL_DAYS)
         season, season_label = _SEASON_MAP[month]
         sweep_months.append({
             "month_str":    pickup.strftime("%Y-%m"),
@@ -429,57 +426,75 @@ async def get_seasonal_rates(
             "season_label": season_label,
         })
 
-    # --- Live scrape all months concurrently ---
-    # Limit to Keflavik Airport when no location filter to keep request count manageable.
-    scrape_locs = target_locs if location else ["Keflavik Airport"]
-    semaphore = asyncio.Semaphore(10)
+    # --- DB-first: check stored rates for each anchor month ---
+    month_rates: dict[str, list[dict]] = {}
+    months_needing_scrape: list[dict]  = []
 
-    async def _scrape(ScraperClass, loc, m_info):
-        async with semaphore:
-            async with ScraperClass() as scraper:
-                try:
-                    rates = await asyncio.wait_for(
-                        scraper.scrape_rates(loc, m_info["pickup"], m_info["return"]),
-                        timeout=10,
-                    )
-                    return rates, m_info["month_str"], "live"
-                except Exception:
-                    rates = scraper.get_mock_rates(loc, m_info["pickup"], m_info["return"])
-                    return rates, m_info["month_str"], "mock"
+    for m in sweep_months:
+        stored = await get_latest_rates(
+            location=scrape_loc,
+            pickup_date=m["pickup"],
+            return_date=m["return"],
+        )
+        if stored:
+            month_rates[m["month_str"]] = stored
+        else:
+            month_rates[m["month_str"]] = []
+            months_needing_scrape.append(m)
 
-    tasks = [
-        _scrape(Cls, loc, m)
-        for m in sweep_months
-        for Cls in ALL_SCRAPERS
-        for loc in scrape_locs
-    ]
-    # Overall 90s timeout so a hung scraper batch can't block the endpoint indefinitely
-    raw_results = await asyncio.wait_for(
-        asyncio.gather(*tasks, return_exceptions=True),
-        timeout=90,
-    )
-
-    # Bucket all rate dicts by month_str, tracking whether any live data came through
-    month_rates: dict[str, list[dict]] = {m["month_str"]: [] for m in sweep_months}
+    # --- Live-scrape only months with no stored data ---
     live_months: set[str] = set()
+    db_months:   set[str] = set(month_rates) - set(m["month_str"] for m in months_needing_scrape)
 
-    for item in raw_results:
-        if isinstance(item, Exception):
-            continue
-        rates, month_str, src = item
-        month_rates[month_str].extend(rates)
-        if src == "live" and rates:
-            live_months.add(month_str)
+    if months_needing_scrape:
+        semaphore = asyncio.Semaphore(10)
 
-    # --- Aggregate per month ---
+        async def _scrape(ScraperClass, m_info):
+            async with semaphore:
+                async with ScraperClass() as scraper:
+                    try:
+                        rates = await asyncio.wait_for(
+                            scraper.scrape_rates(scrape_loc, m_info["pickup"], m_info["return"]),
+                            timeout=10,
+                        )
+                        return rates, m_info["month_str"], "live"
+                    except Exception:
+                        rates = scraper.get_mock_rates(scrape_loc, m_info["pickup"], m_info["return"])
+                        return rates, m_info["month_str"], "mock"
+
+        tasks = [
+            _scrape(Cls, m)
+            for m in months_needing_scrape
+            for Cls in ALL_SCRAPERS
+        ]
+        raw_results = await asyncio.wait_for(
+            asyncio.gather(*tasks, return_exceptions=True),
+            timeout=90,
+        )
+
+        newly_scraped: list[dict] = []
+        for item in raw_results:
+            if isinstance(item, Exception):
+                continue
+            rates, month_str, src = item
+            month_rates[month_str].extend(rates)
+            if src == "live" and rates:
+                live_months.add(month_str)
+                newly_scraped.extend(rates)
+
+        # Persist only live-scraped data so it's available on future requests
+        if newly_scraped:
+            await insert_rates(newly_scraped)
+
+    # --- Aggregate per month (unchanged logic) ---
     results = []
     for m in sweep_months:
         comp_data: dict = {}
         for r in month_rates[m["month_str"]]:
             if category and r["car_category"] != category:
                 continue
-            comp = r["competitor"]
-            cat  = r["car_category"]
+            comp    = r["competitor"]
+            cat     = r["car_category"]
             per_day = round(r["price_isk"] / _RENTAL_DAYS)
             comp_data.setdefault(comp, {}).setdefault(cat, []).append(per_day)
 
@@ -500,13 +515,13 @@ async def get_seasonal_rates(
         }
 
         results.append({
-            "month":         m["month_str"],
-            "month_label":   m["month_label"],
-            "season":        m["season"],
-            "season_label":  m["season_label"],
-            "competitors":   competitors,
-            "comp_overall":  comp_overall,
-            "market_avg":    market_avg,
+            "month":        m["month_str"],
+            "month_label":  m["month_label"],
+            "season":       m["season"],
+            "season_label": m["season_label"],
+            "competitors":  competitors,
+            "comp_overall": comp_overall,
+            "market_avg":   market_avg,
         })
 
     # Season summary
@@ -521,7 +536,6 @@ async def get_seasonal_rates(
         for s, comps in season_buckets.items()
     }
 
-    # Category season summary (average per-day across all competitors)
     cat_season_buckets: dict = {}
     for r in results:
         s = r["season"]
@@ -538,9 +552,14 @@ async def get_seasonal_rates(
     for r in results:
         season_months.setdefault(r["season"], []).append(r["month_label"])
 
-    source = "live" if live_months else "mock"
+    # Source label: database if all from DB, live if any newly scraped, mock if nothing live
+    if db_months and not live_months:
+        source = "database"
+    elif live_months:
+        source = "live"
+    else:
+        source = "mock"
 
-    # --- Store to cache ---
     result_payload = {
         "months":                  results,
         "season_summary":          season_summary,
@@ -550,8 +569,146 @@ async def get_seasonal_rates(
         "rental_days":             _RENTAL_DAYS,
     }
     await set_seasonal_cache(cache_key, result_payload)
-
     return result_payload
+
+
+@router.post("/scrape-seasonal")
+async def scrape_seasonal_anchors(
+    location: Optional[str] = Query(None, description="Location to scrape (default: Keflavik Airport)"),
+):
+    """
+    Scrape the 15th of each of the next 12 months and persist in the rates table.
+    Only stores data from successful live scrapes — mock fallbacks are discarded.
+    Called by the weekly cron job and the manual 'Scrape All Months' button.
+    """
+    import time
+    from datetime import datetime as dt
+
+    scrape_loc  = location or "Keflavik Airport"
+    today       = date.today()
+    started_at  = time.monotonic()
+    total_rates = 0
+    all_errors: list[str] = []
+    month_log:  list[dict] = []
+
+    semaphore = asyncio.Semaphore(10)
+
+    async def _scrape_one(ScraperClass, pickup_iso: str, ret_iso: str):
+        async with semaphore:
+            async with ScraperClass() as scraper:
+                try:
+                    rates = await asyncio.wait_for(
+                        scraper.scrape_rates(scrape_loc, pickup_iso, ret_iso),
+                        timeout=15,
+                    )
+                    return rates, None
+                except Exception as e:
+                    return [], f"{ScraperClass.competitor_name}: {e}"
+
+    for offset in range(12):
+        total_month = today.month + offset
+        year  = today.year + (total_month - 1) // 12
+        month = (total_month - 1) % 12 + 1
+        pickup_d = date(year, month, 15)
+        ret_d    = pickup_d + timedelta(days=_RENTAL_DAYS)
+        pickup   = pickup_d.isoformat()
+        ret      = ret_d.isoformat()
+
+        tasks   = [_scrape_one(Cls, pickup, ret) for Cls in ALL_SCRAPERS]
+        results = await asyncio.gather(*tasks)
+
+        month_rates: list[dict] = []
+        month_errors: list[str] = []
+        for rates, err in results:
+            if err:
+                month_errors.append(err)
+            else:
+                month_rates.extend(rates)
+
+        if month_rates:
+            await insert_rates(month_rates)
+            total_rates += len(month_rates)
+
+        all_errors.extend(month_errors)
+        month_log.append({
+            "month":  pickup_d.strftime("%Y-%m"),
+            "pickup": pickup,
+            "rates":  len(month_rates),
+            "errors": month_errors,
+        })
+
+    duration = time.monotonic() - started_at
+
+    # Invalidate the 30-min response cache so the next GET reflects fresh data
+    await clear_seasonal_cache()
+
+    await log_scrape(
+        location=scrape_loc,
+        total_rates=total_rates,
+        competitors=len(ALL_SCRAPERS),
+        errors=all_errors[:20],
+        duration_seconds=duration,
+        trigger="seasonal",
+    )
+
+    return {
+        "scraped":          total_rates,
+        "months_scraped":   len(month_log),
+        "duration_seconds": round(duration, 1),
+        "months":           month_log,
+        "errors":           all_errors[:20],
+    }
+
+
+@router.get("/seasonal/history")
+async def get_seasonal_history(
+    pickup_date: str = Query(..., description="Anchor pickup date YYYY-MM-DD, e.g. 2026-07-15"),
+    category:    Optional[str] = Query(None, description="Filter to one car category"),
+    location:    Optional[str] = Query(None),
+):
+    """
+    Return a time series showing how prices for a specific anchor month evolved
+    across successive scrape dates. Used by the 'Price Evolution' history chart.
+    """
+    ret_date  = (date.fromisoformat(pickup_date) + timedelta(days=_RENTAL_DAYS)).isoformat()
+    scrape_loc = location or "Keflavik Airport"
+
+    rows = await get_seasonal_anchor_history(
+        pickup_date=pickup_date,
+        return_date=ret_date,
+        location=scrape_loc,
+        category=category,
+    )
+
+    if not rows:
+        return {
+            "series":      {},
+            "pickup_date": pickup_date,
+            "return_date": ret_date,
+            "source":      "none",
+        }
+
+    # Pivot to {competitor: [{date, avg_per_day, car_count}, ...]}
+    # If category filter active: one series per competitor
+    # If no filter: average across categories per competitor per date
+    series: dict[str, list] = {}
+    for row in rows:
+        comp = row["competitor"]
+        if comp not in series:
+            series[comp] = []
+        series[comp].append({
+            "date":       row["scrape_date"],
+            "avg_per_day": int(row["avg_per_day"]),
+            "car_count":  row["car_count"],
+            "category":   row["car_category"],
+        })
+
+    return {
+        "series":      series,
+        "pickup_date": pickup_date,
+        "return_date": ret_date,
+        "source":      "database",
+    }
 
 
 @router.get("/price-changes")

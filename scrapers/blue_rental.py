@@ -108,11 +108,18 @@ class BlueCarRentalScraper(BaseScraper):
         """
         Return a dict of {lowercase_model_name: category} built from FLEET.
         Used for fast exact-name matching against Caren API responses.
+        Also indexes apostrophe-free variants so that the Caren API spelling
+        "Kia Cee'd" matches the FLEET entry "Kia Ceed".
         """
         lookup: dict[str, str] = {}
         for category, cars in self.FLEET.items():
             for car in cars:
-                lookup[car["model"].lower()] = category
+                key = car["model"].lower()
+                lookup[key] = category
+                # Index the apostrophe-free variant (Caren uses "Cee'd", FLEET uses "Ceed")
+                key_no_apos = key.replace("'", "")
+                if key_no_apos != key:
+                    lookup[key_no_apos] = category
         return lookup
 
     def _infer_category(
@@ -134,15 +141,21 @@ class BlueCarRentalScraper(BaseScraper):
         5. ACRISS first letter fallback
         """
         name_lower = name.lower()
+        # Normalised form strips apostrophes so "Kia Cee'd" matches "Kia Ceed"
+        name_norm = name_lower.replace("'", "").rstrip()
 
-        # 1. Exact match
+        # 1. Exact match (with and without apostrophes)
         if name_lower in name_lookup:
             return name_lookup[name_lower]
+        if name_norm in name_lookup:
+            return name_lookup[name_norm]
 
         # 2. Substring match – check each FLEET model name against the Caren name
         for model_lower, category in name_lookup.items():
             # Match if either string is a substring of the other
             if model_lower in name_lower or name_lower in model_lower:
+                return category
+            if model_lower in name_norm or name_norm in model_lower:
                 return category
 
         # 3. Minivan keywords

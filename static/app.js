@@ -48,6 +48,10 @@ const state = {
   ratesSort: { col: null, dir: 'asc' },
   seasonalData: null,
   seasonalChart: null,
+  historyMode: false,
+  historyEvolutionData: null,
+  historyEvolutionChart: null,
+  historyEvolutionMonth: null,
   deltas: {},
   deltasAvailable: false,
   priceChanges: {},
@@ -500,6 +504,218 @@ async function loadSeasonal(force = false) {
   } finally {
     if (loadingEl) loadingEl.style.display = 'none';
   }
+}
+
+function onSeasonalCategoryChange() {
+  if (state.historyMode) {
+    loadHistoryData(state.historyEvolutionMonth);
+  } else {
+    renderSeasonalChart();
+    renderSeasonalTable();
+  }
+}
+
+async function scrapeSeasonalAnchors() {
+  const btn = document.getElementById('btn-scrape-seasonal');
+  if (!btn) return;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner" style="border-color:rgba(0,0,0,.2);border-top-color:#2563eb;width:11px;height:11px;display:inline-block"></span> Scraping…';
+  const loadingEl = document.getElementById('seasonal-loading');
+  if (loadingEl) loadingEl.style.display = 'flex';
+
+  try {
+    const data = await apiFetch('/api/rates/scrape-seasonal', { method: 'POST' });
+    showToast(`Scraped ${data.scraped.toLocaleString()} rates across ${data.months_scraped} months in ${data.duration_seconds}s.`, 'success');
+    // Invalidate cached seasonal data so next load reads fresh DB results
+    state.seasonalData = null;
+    await loadSeasonal(true);
+  } catch (e) {
+    showToast(`Seasonal scrape failed: ${e.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg> Scrape All';
+    if (loadingEl) loadingEl.style.display = 'none';
+  }
+}
+
+function toggleHistoryMode() {
+  state.historyMode = !state.historyMode;
+  const btn          = document.getElementById('btn-history-mode');
+  const monthSel     = document.getElementById('history-month-select');
+  const catSel       = document.getElementById('seasonal-category');
+  const overviewCard = document.getElementById('seasonal-chart-card');
+  const historyCard  = document.getElementById('history-chart-card');
+  const tables       = document.querySelectorAll('#seasonal-table, #seasonal-category-table, .card:has(#seasonal-tbody), .card:has(#seasonal-category-tbody)');
+
+  if (state.historyMode) {
+    btn.classList.add('active');
+    monthSel.style.display     = '';
+    overviewCard.style.display = 'none';
+    historyCard.style.display  = '';
+
+    // Populate month selector from loaded seasonal data
+    if (state.seasonalData?.months) {
+      monthSel.innerHTML = '<option value="">Select a month…</option>' +
+        state.seasonalData.months.map(m =>
+          `<option value="${m.month}">${m.month_label}</option>`
+        ).join('');
+    }
+
+    // If a month was previously selected, reload it
+    if (state.historyEvolutionMonth) {
+      monthSel.value = state.historyEvolutionMonth;
+      loadHistoryData(state.historyEvolutionMonth);
+    }
+  } else {
+    btn.classList.remove('active');
+    monthSel.style.display     = 'none';
+    overviewCard.style.display = '';
+    historyCard.style.display  = 'none';
+    renderSeasonalChart();
+    renderSeasonalTable();
+  }
+}
+
+function onHistoryMonthChange() {
+  const sel   = document.getElementById('history-month-select');
+  const month = sel?.value;
+  if (!month) return;
+  state.historyEvolutionMonth = month;
+  loadHistoryData(month);
+}
+
+async function loadHistoryData(monthStr) {
+  if (!monthStr) return;
+
+  const category  = document.getElementById('seasonal-category')?.value || '';
+  const pickupDate = monthStr + '-15';
+  const titleEl   = document.getElementById('history-chart-title');
+  const loadingEl = document.getElementById('history-loading');
+  const noDataEl  = document.getElementById('history-no-data');
+  const canvas    = document.getElementById('history-chart');
+
+  if (titleEl) {
+    const label = state.seasonalData?.months?.find(m => m.month === monthStr)?.month_label || monthStr;
+    titleEl.textContent = `${label} — Price Evolution${category ? ' · ' + category : ''}`;
+  }
+  if (loadingEl) loadingEl.style.display = 'flex';
+  if (noDataEl)  noDataEl.style.display  = 'none';
+  if (canvas)    canvas.style.display    = '';
+
+  try {
+    const params = new URLSearchParams({ pickup_date: pickupDate });
+    if (category) params.set('category', category);
+    const data = await apiFetch(`/api/rates/seasonal/history?${params}`);
+    state.historyEvolutionData = data;
+    renderHistoryChart();
+  } catch (e) {
+    showToast(`Failed to load history: ${e.message}`, 'error');
+  } finally {
+    if (loadingEl) loadingEl.style.display = 'none';
+  }
+}
+
+function renderHistoryChart() {
+  const canvas   = document.getElementById('history-chart');
+  const noDataEl = document.getElementById('history-no-data');
+  const data     = state.historyEvolutionData;
+  if (!canvas || !data) return;
+
+  const series    = data.series || {};
+  const compNames = Object.keys(series).sort();
+
+  // Collect all unique scrape dates across all competitors
+  const allDates = [...new Set(
+    compNames.flatMap(c => series[c].map(pt => pt.date))
+  )].sort();
+
+  // Need at least 2 dates to show a trend
+  if (allDates.length === 0) {
+    canvas.style.display   = 'none';
+    if (noDataEl) noDataEl.style.display = '';
+    return;
+  }
+  canvas.style.display = '';
+  if (noDataEl) noDataEl.style.display = 'none';
+
+  const category = document.getElementById('seasonal-category')?.value || '';
+
+  // Build datasets — one line per competitor
+  // When no category filter: average across categories per date
+  const datasets = compNames.map((comp, i) => {
+    const pts = series[comp];
+    const byDate = {};
+    pts.forEach(pt => {
+      if (!byDate[pt.date]) byDate[pt.date] = [];
+      byDate[pt.date].push(pt.avg_per_day);
+    });
+    const chartData = allDates.map(d => {
+      const vals = byDate[d];
+      if (!vals) return null;
+      return Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+    });
+    const color = compColor(comp, i);
+    return {
+      label:           comp,
+      data:            chartData,
+      borderColor:     color,
+      backgroundColor: color + '18',
+      borderWidth:     2,
+      pointRadius:     5,
+      pointHoverRadius: 7,
+      tension:         0.3,
+      spanGaps:        true,
+      fill:            false,
+    };
+  });
+
+  if (state.historyEvolutionChart) state.historyEvolutionChart.destroy();
+
+  state.historyEvolutionChart = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: allDates.map(d => {
+        const dt = new Date(d + 'T12:00:00Z');
+        return dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+      }),
+      datasets,
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { font: { size: 11 }, boxWidth: 12, padding: 10 },
+        },
+        tooltip: {
+          callbacks: {
+            title: items => `Scraped on ${items[0].label}`,
+            label: ctx => ctx.parsed.y !== null
+              ? ` ${ctx.dataset.label}: ${formatISK(ctx.parsed.y)}/day`
+              : null,
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks:  { color: '#6b7280', font: { size: 11 } },
+          grid:   { color: 'rgba(0,0,0,0.06)' },
+          title:  { display: true, text: 'Scrape Date', font: { size: 11 }, color: '#9ca3af' },
+        },
+        y: {
+          ticks: {
+            color: '#6b7280',
+            font: { size: 11 },
+            callback: v => (v / 1000).toFixed(0) + 'k ISK',
+          },
+          grid:  { color: 'rgba(0,0,0,0.06)' },
+          title: { display: true, text: 'Per-Day Price (ISK)', font: { size: 11 }, color: '#9ca3af' },
+        },
+      },
+    },
+  });
 }
 
 // Module-level season sequence — set before chart construction so beforeDraw sees it

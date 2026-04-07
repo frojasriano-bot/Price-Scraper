@@ -88,6 +88,66 @@ async def scheduled_scrape():
     )
 
 
+async def scheduled_seasonal_scrape():
+    """
+    Scrape anchor dates (15th of each month) for the next 12 months and persist.
+    Runs every Monday so the seasonal chart always has fresh weekly data points.
+    """
+    import time
+    from scrapers import ALL_SCRAPERS
+    from database import insert_rates, log_scrape, clear_seasonal_cache
+    from datetime import date, timedelta
+
+    logger.info("Scheduled seasonal scrape starting (12 anchor months)…")
+    scrape_loc  = "Keflavik Airport"
+    today       = date.today()
+    started_at  = time.monotonic()
+    total_rates = 0
+    errors: list[str] = []
+
+    for offset in range(12):
+        total_month = today.month + offset
+        year  = today.year + (total_month - 1) // 12
+        month = (total_month - 1) % 12 + 1
+        pickup = date(year, month, 15).isoformat()
+        ret    = (date(year, month, 15) + timedelta(days=7)).isoformat()
+
+        month_rates: list[dict] = []
+        tasks = []
+
+        async def _scrape(ScraperClass, p=pickup, r=ret):
+            async with ScraperClass() as scraper:
+                try:
+                    return await asyncio.wait_for(
+                        scraper.scrape_rates(scrape_loc, p, r), timeout=15
+                    )
+                except Exception as e:
+                    errors.append(f"{ScraperClass.__name__} {p}: {e}")
+                    return []
+
+        import asyncio as _asyncio
+        results = await _asyncio.gather(*[_scrape(Cls) for Cls in ALL_SCRAPERS])
+        for r_list in results:
+            month_rates.extend(r_list)
+
+        if month_rates:
+            await insert_rates(month_rates)
+            total_rates += len(month_rates)
+
+    await clear_seasonal_cache()
+    duration = time.monotonic() - started_at
+    logger.info(f"Seasonal scrape complete: {total_rates} rates across 12 months in {duration:.1f}s.")
+
+    await log_scrape(
+        location=scrape_loc,
+        total_rates=total_rates,
+        competitors=len(ALL_SCRAPERS),
+        errors=errors[:20],
+        duration_seconds=duration,
+        trigger="seasonal",
+    )
+
+
 async def scheduled_alert_check():
     """Run price alert check after scrape — called by APScheduler."""
     from routes.alerts import check_alerts
@@ -184,6 +244,15 @@ def setup_scheduler(schedule: str = "daily"):
         replace_existing=True,
         name="Price Alert Check",
     )
+    # Seasonal scrape: always weekly on Monday 08:00, regardless of main schedule
+    scheduler.add_job(
+        scheduled_seasonal_scrape,
+        trigger=CronTrigger(day_of_week="mon", hour=8, minute=0),
+        id="scrape_seasonal",
+        replace_existing=True,
+        name="Seasonal Anchor Scrape (12 months)",
+    )
+
     logger.info(f"Scheduler configured: {schedule} schedule active.")
 
 

@@ -10,7 +10,7 @@ FastAPI backend · SQLite · APScheduler · Vanilla JS SPA · Chart.js
 
 | Tab | Description |
 |-----|-------------|
-| **Rate Intelligence** | Executive summary banner, live competitor rates, sortable table with per-competitor price-change arrows, bar chart, cross-competitor matrix, price history charts, seasonal analysis, CSV export |
+| **Rate Intelligence** | Executive summary banner, live competitor rates, sortable table with per-competitor price-change arrows, bar chart, cross-competitor matrix, price history charts, seasonal analysis with price-evolution history mode, CSV export |
 | **Insurance Comparison** | Coverage matrix, per-category zero-excess pricing (editable), company package cards, deductible comparison, Trigger Research + Mark Reviewed workflow with audit log |
 | **SEO Rank Tracker** | Keyword ranking history with previous rank + change via SerpAPI; 10 Iceland-specific keywords pre-seeded |
 | **Settings** | Scraper status, schedule config, SerpAPI key, location management, car model mappings, Slack alerts, scrape history log |
@@ -36,9 +36,9 @@ Set `SERPAPI_KEY` to enable live SEO rank checks. All other features work withou
 ### 3. Start the server
 
 ```bash
-uvicorn main:app --reload
-# or
 python main.py
+# or
+uvicorn main:app --reload
 ```
 
 Open **http://localhost:8000**
@@ -99,12 +99,19 @@ Keflavik Airport and Reykjavik only — the two locations Blue Car Rental operat
 | Competitor | KEF Airport | Reykjavik | Notes |
 |------------|------------|-----------|-------|
 | Blue Car Rental | ✅ | ✅ | Caren API |
-| Holdur | ✅ | ✅ | HTML form |
+| Holdur | ✅ | ✅ | HTML form (3 category POST requests, server-side deduplication) |
 | Avis Iceland | ✅ | ✅ | HTML form |
-| Go Car Rental | ✅ | ✅ | GoRentals JSON API |
-| Hertz Iceland | ✅ | ✅ | WordPress ajax + HTML |
+| Go Car Rental | ✅ | ✅ | GoRentals JSON API + Sanity CMS for car names |
+| Hertz Iceland | ✅ | ✅ | WordPress nonce → ajax + HTML |
 | Lava Car Rental | ✅ | — | Caren API (KEF only) |
 | Lotus Car Rental | ✅ | — | Caren API (KEF only) |
+
+### Known scraper behaviours
+
+- **Hertz**: Displays a single "from" floor price for multiple Economy models (website design, not a scraper bug)
+- **Holdur**: Server ignores `vehicleCategoryId` filter and returns all cars for every POST — duplicates stripped client-side
+- **Go Car Rental**: Dacia Jogger appears twice (5-seat Compact + 7-seat Minivan) — two distinct class IDs in their CMS, both legitimate
+- **Lava Car Rental**: "4x4 Cars" group contains mixed SUVs and true 4x4s — classified as SUV with keyword promotion for vehicles like Land Rover Defender, Land Cruiser, Sorento
 
 ### Adding a live scraper
 
@@ -128,13 +135,15 @@ Keflavik Airport and Reykjavik only — the two locations Blue Car Rental operat
 
 ### Car name normalisation
 
-`canonical.py` exposes `canonicalize(name)` which strips transmission/fuel suffixes and maps variant spellings to standard names via an `_EXACT` dict.
+`canonical.py` exposes `canonicalize(name)` which strips transmission/fuel suffixes (automatic, manual, petrol, diesel, hybrid, electric, awd, 4wd) and maps variant spellings to standard names via an `_EXACT` dict. Apostrophes are normalised so e.g. `"Kia Cee'd"` matches `"Kia Ceed"`.
 
 ```
-"Toyota Landcruiser 150"    → "Toyota Land Cruiser 150"
-"VW Transporter 4WD"        → "VW Transporter"
-"Volkswagen Caravelle"      → "VW Caravelle"
-"Kia Ceed Sportswagon"      → "Kia Ceed Wagon"
+"Toyota Landcruiser 150"            → "Toyota Land Cruiser 150"
+"VW Transporter 4WD"                → "VW Transporter"
+"Volkswagen Caravelle"              → "VW Caravelle"
+"Kia Ceed Sportswagon"              → "Kia Ceed Wagon"
+"Toyota Land Cruiser 4x4 35\" ..."  → "Toyota Land Cruiser 150"
+"Dacia Duster Used Model"           → "Dacia Duster"
 ```
 
 ---
@@ -145,13 +154,13 @@ SQLite via `aiosqlite`. Schema initialised automatically on startup by `init_db(
 
 | Table | Purpose |
 |-------|---------|
-| `rates` | Scraped rental rates — one row per competitor/location/model/scrape |
+| `rates` | Scraped rental rates — one row per competitor/location/model/scrape. Accumulates over time; no overwrites. |
 | `car_catalog` | Master list of canonical car names and categories |
 | `car_mappings` | Competitor model name → canonical name (editable via Settings) |
 | `rankings` | SEO keyword rankings from SerpAPI |
 | `config` | Key-value store: SerpAPI key, schedule, webhook URL, locations, SEO keywords |
-| `seasonal_cache` | 6-hour cached seasonal analysis results |
-| `scrape_log` | History of every manual and scheduled scrape run (rates, duration, errors) |
+| `seasonal_cache` | 30-minute response cache for the seasonal analysis endpoint |
+| `scrape_log` | History of every manual, scheduled, and seasonal scrape run (rates, duration, errors) |
 | `insurance_reviews` | Timestamped log of manual insurance data verifications |
 | `insurance_price_overrides` | Per-company/category zero-excess price overrides (editable via Insurance tab) |
 
@@ -169,7 +178,7 @@ Shown at the top of the Rates tab on every load:
 
 ### Price Change Arrows
 
-The Δ column in the list view shows **per-competitor** price movement (not market average). A new `GET /api/rates/price-changes` endpoint compares each competitor's own avg price per model between the two most recent scrape dates.
+The Δ column in the list view shows **per-competitor** price movement (not market average). `GET /api/rates/price-changes` compares each competitor's own avg price per model between the two most recent scrape dates.
 
 ### Date Picker → Auto Scrape
 
@@ -181,21 +190,59 @@ Export the full rates table as CSV from the list view header button. Includes pe
 
 ### Scrape History Log
 
-Settings → Scrape History shows every run: timestamp, trigger (manual/scheduled), location, rates scraped, competitors hit, duration, and error count.
+Settings → Scrape History shows every run: timestamp, trigger (manual / scheduled / seasonal), location, rates scraped, competitors hit, duration, and error count.
+
+---
+
+## Seasonal Analysis
+
+The seasonal view plots per-day pricing across the next 12 months, with one data point per competitor per month (pickup on the 15th, 7-night stay).
+
+### Data architecture
+
+The seasonal endpoint is **DB-first** — it reads from the `rates` table first and only live-scrapes months that have no stored anchor data:
+
+1. For each of the 12 anchor months, query `rates WHERE pickup_date = 'YYYY-MM-15'`
+2. If stored data exists → use it (fast, instant load)
+3. If no stored data → live-scrape that month and persist the result for future requests
+4. Response is cached for 30 minutes to avoid re-aggregating on every browser refresh
+
+This means the seasonal chart load is instant once data is stored, and the weekly cron keeps it current without any on-demand scraping overhead.
+
+### Scraping anchor dates
+
+The **Scrape All** button (or `POST /api/rates/scrape-seasonal`) re-scrapes all 12 anchor months and stores fresh data. The weekly Monday cron does the same automatically.
+
+### Price evolution / History mode
+
+The **History** toggle switches the chart to show how prices for a selected future month have changed across successive weekly scrapes:
+
+- X-axis: scrape dates (e.g. "7 Apr", "14 Apr", "21 Apr"...)
+- Y-axis: per-day ISK
+- One line per competitor
+
+This reveals whether competitors are raising or lowering prices as a future season approaches — the most actionable competitive intelligence the tool provides.
+
+### Mock data vs live data
+
+`SEASON_MULTIPLIERS` in `base.py` (Jan: 0.82× → Jul: 1.92×) are **only** used by the `get_mock_rates()` fallback when a live scrape fails entirely. They are never applied to real prices returned by competitor websites.
 
 ---
 
 ## Scheduler
 
-APScheduler (`AsyncIOScheduler`) runs three jobs:
+APScheduler (`AsyncIOScheduler`) runs four jobs:
 
-| Job | Default schedule | Description |
-|-----|-----------------|-------------|
-| `scrape_rates` | Daily 07:00 | Scrapes all competitors, logs to `scrape_log` |
-| `seo_check` | Daily 07:30 | Checks stored keywords via SerpAPI |
-| `alert_check` | Daily 07:45 | Fires Slack alerts if competitors undercut Blue |
+| Job | Schedule | Description |
+|-----|----------|-------------|
+| `scrape_rates` | Daily 07:00 (configurable) | Scrapes all competitors for today+7 → today+10 |
+| `seo_check` | Daily 07:30 (configurable) | Checks stored keywords via SerpAPI |
+| `alert_check` | Daily 07:45 (configurable) | Fires Slack alerts if competitors undercut Blue |
+| `scrape_seasonal` | **Every Monday 08:00** | Re-scrapes all 12 anchor months; always weekly |
 
-Change schedule via Settings or:
+The daily/hourly/weekly setting (configurable via Settings) applies to `scrape_rates`, `seo_check`, and `alert_check`. The seasonal scrape always runs weekly regardless.
+
+Change the main schedule via Settings or:
 
 ```
 POST /api/scheduler/reconfigure?schedule=weekly
@@ -220,13 +267,31 @@ POST /api/scheduler/reconfigure?schedule=weekly
 2. Review each site and update any changed prices in the **Price by Category** table (click a price cell to edit inline)
 3. Click **Mark Reviewed** — records a timestamped verification entry in the `insurance_reviews` log
 
-The header shows `Research: April 2025 · Verified [date]` once reviewed.
+The header shows `Research: April 2026 · Verified [date]` once reviewed.
 
-### Key findings (April 2025)
+### Confirmed prices (April 2026)
 
+**Lotus Car Rental** — flat rate regardless of car category:
+
+| Package | Deductible | Per Day |
+|---------|-----------|---------|
+| Silver (included in base) | 150,000 ISK | 2,190 ISK |
+| Gold | 65,000 ISK | 4,650 ISK |
+| Platinum | 0 ISK | 6,950 ISK |
+
+Platinum uniquely includes river crossing protection and F-road insurance.
+
+**Avis Iceland** — two size tiers (small cars / large cars):
+
+| Package | Deductible | Small | Large |
+|---------|-----------|-------|-------|
+| Grunntrygging (base) | 195k / 360k ISK | Included | Included |
+| Viðbótartrygging | 0 ISK | 2,700 ISK/day | 3,600 ISK/day |
+| Aukin viðbótartrygging | 0 ISK + roadside | 4,450 ISK/day | 5,350 ISK/day |
+
+**Other key findings:**
 - **Lava Car Rental** — most comprehensive base bundle (7 protections by default, incl. SAAP + TIP)
 - **Hertz Iceland** — only company where CDW is **not** in the base price
-- **Lotus Car Rental** — only company offering river crossing protection (Platinum, 4x4 only)
 - **Go Car Rental** — uniquely prices all insurance in EUR, not ISK
 
 ---
@@ -235,18 +300,13 @@ The header shows `Research: April 2025 · Verified [date]` once reviewed.
 
 Tracks Google ranking for `bluecarrental.is` across 10 pre-seeded Iceland car rental keywords:
 
-- car rental reykjavik
-- car rental iceland
-- rent a car keflavik airport
-- cheap car hire iceland
-- bílaleiga reykjavík
-- leigubíll ísland
-- 4x4 rental iceland
-- iceland car hire comparison
-- keflavik airport car rental
-- best car rental iceland
+- car rental reykjavik / car rental iceland
+- rent a car keflavik airport / keflavik airport car rental
+- cheap car hire iceland / best car rental iceland
+- iceland car hire comparison / 4x4 rental iceland
+- bílaleiga reykjavík / leigubíll ísland
 
-Previous rank and change (▲/▼) are tracked per keyword independently using `ROW_NUMBER() OVER (PARTITION BY keyword)` so each keyword's history is correct regardless of check frequency.
+Previous rank and change (▲/▼) are tracked per keyword independently using `ROW_NUMBER() OVER (PARTITION BY keyword)`.
 
 Keywords are managed via Settings → Keywords or `POST /api/seo/keywords?keyword=...`.
 
@@ -279,7 +339,7 @@ GET  /api/rates/deltas           Market-avg price delta between last two scrape 
 GET  /api/rates/price-changes    Per-competitor price delta (competitor::location::model key)
      ?location=  &category=
 
-GET  /api/rates/scrape-log       Recent scrape history
+GET  /api/rates/scrape-log       Recent scrape history (manual + scheduled + seasonal)
      ?limit=20
 
 GET  /api/rates/history
@@ -294,8 +354,14 @@ GET  /api/rates/history/coverage
 GET  /api/rates/matrix
      ?location=  &pickup_date=  &return_date=  &category=
 
-GET  /api/rates/seasonal         (cached 6h)
-     ?category=  &location=
+GET  /api/rates/seasonal         DB-first; response cached 30 min
+     ?category=  &location=  &force=false
+
+POST /api/rates/scrape-seasonal  Scrape all 12 anchor months and persist
+     ?location=
+
+GET  /api/rates/seasonal/history Time series showing how prices for one anchor month evolved
+     ?pickup_date=YYYY-MM-DD  &category=  &location=
 
 GET  /api/rates/scraper-status
 GET  /api/rates/car-catalog
@@ -360,8 +426,6 @@ POST /api/alerts/check
 ## Dark Mode
 
 Toggle via moon/sun icon in the top bar. Persisted to `localStorage`. Implemented via `body.dark-mode` CSS class. Filter bar inputs (date pickers, selects) use `color-scheme: dark` for correct rendering.
-
-> **Note:** Do not override `--white` in dark mode — the sidebar uses it for text and is intentionally always dark.
 
 ---
 

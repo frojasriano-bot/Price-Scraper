@@ -212,6 +212,67 @@ _EXACT: dict[str, str] = {
 
     # ── Renault Trafic ──────────────────────────────────────────────────────
     "renault trafic":                            "Renault Trafic",
+
+    # ── Kia Cee'd (Caren API uses apostrophe; FLEET uses "Ceed") ────────────
+    "kia cee'd":                                 "Kia Ceed",
+    "kia cee'd sportswagon":                     "Kia Ceed Wagon",
+
+    # ── Holdur live API variants ─────────────────────────────────────────────
+    "mitsubishi outlander phev 4x4":             "Mitsubishi Outlander",
+    "land rover discovery 4x4":                  "Land Rover Discovery",
+    "land rover defender 4x4":                   "Land Rover Defender",
+    "skoda octavia combi 4x4":                   "Skoda Octavia Wagon",
+    "kia sportage phev 4x4":                     "Kia Sportage",
+    "kia sportage 4x4":                          "Kia Sportage",
+    "suzuki jimny 4x4":                          "Suzuki Jimny",
+    "dacia duster 4x4":                          "Dacia Duster",
+    "suzuki vitara 4x4":                         "Suzuki Vitara",
+    "toyota rav4 4x4":                           "Toyota RAV4",
+    "volkswagen id.4 2wd 77kw":                  "VW ID.4",
+    "volkswagen id.4 gtx":                       "VW ID.4",
+    "volkswagen id.4 gtx awd":                   "VW ID.4",
+    "volkswagen caddy maxi":                     "VW Caddy Maxi",
+    "renault trafic lll":                        "Renault Trafic",
+    "mercedes benz 350 gle phev":                "Mercedes GLE",
+    "mercedes benz 350 gle phev 4x4":            "Mercedes GLE",
+    "byd dolphin 60kw":                          "BYD Dolphin",
+    "kia ev3 82kw":                              "Kia EV3",
+    "jm - ford tourneo":                         "Ford Tourneo",
+
+    # ── Blue Car Rental live API variants ───────────────────────────────────
+    "dacia duster used model":                   "Dacia Duster",
+    "toyota rav4 used model":                    "Toyota RAV4",
+    "toyota rav4 - 4x4":                         "Toyota RAV4",
+    "toyota rav4 - 4x4 (older model)":           "Toyota RAV4",
+    "suzuki vitara mt":                          "Suzuki Vitara",
+    "suzuki vitara 4x4 (older model)":           "Suzuki Vitara",
+
+    # ── Lotus live API variants (long descriptive names) ────────────────────
+    "kia sorento 4x4 - 7 seats":                 "Kia Sorento",
+    "toyota highlander gx 4x4 - 7 seats":        "Toyota Highlander",
+    "toyota hilux 4x4 double cap w/hardtop -":   "Toyota Hilux",
+    "toyota land cruiser 150 4x4 - 7 seats":     "Toyota Land Cruiser 150",
+    'toyota land cruiser 4x4 35" modified super jeep': "Toyota Land Cruiser 150",
+    "toyota land cruiser 250 4x4 - 7 seats":     "Toyota Land Cruiser 250",
+    "land rover defender 4x4":                   "Land Rover Defender",
+    "tesla model y - long range 4x4":            "Tesla Model Y",
+    "tesla model 3 - long range 4x4":            "Tesla Model 3",
+    "suzuki jimny 4x4 - 2 seats only":           "Suzuki Jimny",
+    "suzuki jimny 4x4 (manual) - 2 seats only":  "Suzuki Jimny",
+    "suzuki jimny 4x4 - 2 seats only (older model)": "Suzuki Jimny",
+    "volkswagen caravelle 4x4 - 9 seater":       "VW Caravelle",
+    "mercedes benz vito tourer 4x4 - 9 seater":  "Mercedes Vito",
+
+    # ── Avis Iceland ─────────────────────────────────────────────────────────
+    "volkswagen polo":                           "VW Polo",
+
+    # ── Lava Car Rental models ────────────────────────────────────────────────
+    "toyota aygo x":                             "Toyota Aygo X",
+    "mg4":                                       "MG4",
+    "dacia duster (new model)":                  "Dacia Duster",
+    "dacia duster (2022-2023) older model":      "Dacia Duster",
+    "tesla model y (awd)":                       "Tesla Model Y",
+    "renault kangoo campervan":                  "Renault Kangoo",
 }
 
 # ---------------------------------------------------------------------------
@@ -224,7 +285,7 @@ import re as _re
 
 _STRIP_SUFFIXES = _re.compile(
     r"\s*[\(\[]?\s*"
-    r"(?:plug-in hybrid|plug in hybrid|phev|plug-in|automatic|manual|auto|petrol|diesel|hybrid|electric)"
+    r"(?:plug-in hybrid|plug in hybrid|phev|plug-in|automatic|manual|auto|petrol|diesel|hybrid|electric|awd|4wd)"
     r"\s*[\)\]]?\s*$",
     _re.IGNORECASE,
 )
@@ -238,7 +299,8 @@ def canonicalize(name: str) -> str:
       1. Strip surrounding whitespace.
       2. Strip trailing transmission/fuel suffixes (e.g. "(Automatic)").
       3. Look up the result in the exact-match table (case-insensitive).
-      4. If not found, return the cleaned name as-is.
+      4. If not found, try the apostrophe-free variant (handles "Cee'd" → "Ceed").
+      5. If still not found, return the cleaned name as-is.
 
     This function is intentionally conservative: it only maps names that are
     explicitly listed. Unknown variants are returned unchanged so they appear
@@ -248,4 +310,14 @@ def canonicalize(name: str) -> str:
         return name
 
     cleaned = _STRIP_SUFFIXES.sub("", name.strip()).strip()
-    return _EXACT.get(cleaned.lower(), cleaned)
+    key = cleaned.lower()
+    result = _EXACT.get(key)
+    if result:
+        return result
+    # Try without apostrophes — catches "Kia Cee'd" matching "kia ceed" etc.
+    key_no_apos = key.replace("'", "")
+    if key_no_apos != key:
+        result = _EXACT.get(key_no_apos)
+        if result:
+            return result
+    return cleaned

@@ -95,6 +95,7 @@ body.dark-mode .season-peak-th     { background: rgba(127,29,29,0.35) !important
 body.dark-mode .season-cell-low      { background: rgba(29,78,216,0.08); }
 body.dark-mode .season-cell-shoulder { background: rgba(146,64,14,0.08); }
 body.dark-mode .season-cell-high     { background: rgba(153,27,27,0.08); }
+body.dark-mode .season-cell-peak     { background: rgba(127,29,29,0.12); }
 body.dark-mode .season-low      { background: rgba(29,78,216,0.3);  color: #93c5fd; }
 body.dark-mode .season-shoulder { background: rgba(146,64,14,0.3);  color: #fcd34d; }
 body.dark-mode .season-high     { background: rgba(153,27,27,0.3);  color: #fca5a5; }

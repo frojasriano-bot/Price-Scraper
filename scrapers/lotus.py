@@ -20,11 +20,14 @@ LOTUS_LOCATION_IDS: dict[str, tuple[int, int] | None] = {
 
 LOTUS_API_URL = "https://www.lotuscarrental.is/_carenapix/class/"
 
-# Lotus group names → our canonical categories
+# Lotus group names → our canonical categories.
+# Verified against live API (2026-04): Small = Jimny/Model 3, Medium = SUVs (Duster/
+# Vitara/Sportage/RAV4/Model Y…), Large = heavy 4x4s (CR-V/Sorento/LC150/LC250…),
+# Luxury and Vans = minivans + Land Rover Defender (handled by keyword override).
 LOTUS_GROUP_CATEGORY: dict[str, str] = {
     "Small":          "Economy",
-    "Medium":         "Compact",
-    "Large":          "SUV",
+    "Medium":         "SUV",
+    "Large":          "4x4",
     "4x4":            "4x4",
     "Luxury and Vans": "Minivan",
     "Campers":        "Minivan",
@@ -41,15 +44,49 @@ _ECONOMY_KEYWORDS = ["aygo", "yaris", "i10", "sandero", "polo", "swift"]
 
 
 def _infer_category(name: str, group: str, for_highland: bool, drive: str) -> str:
-    if group in LOTUS_GROUP_CATEGORY:
-        # Use drive/highland to distinguish SUV from 4x4 within group "Large"
-        cat = LOTUS_GROUP_CATEGORY[group]
-        if cat == "SUV" and (for_highland or "4wd" in drive.lower() or "awd" in drive.lower()):
-            return "4x4"
-        return cat
+    """
+    Classify a Lotus car by group name.
+
+    NOTE: Lotus marks virtually every car ForHighland=True and drive=4WD
+    (including Jimny, Duster, Vitara, Sportage, Tesla Model Y…).
+    We therefore do NOT use for_highland/drive to promote to 4x4 — only the
+    GroupName and name keywords determine the correct category.
+
+    Group mapping:
+      "Small"          → Economy  (Jimny, Tesla Model 3 — small/affordable)
+      "Medium"         → SUV      (Duster, Vitara, Sportage, RAV4, Model Y…)
+      "Large"          → 4x4      (Honda CR-V, Sorento, Highlander, Hilux, LC…)
+      "4x4"            → 4x4
+      "Luxury and Vans"→ Minivan by default; override to 4x4 for Defender/Discovery
+    """
     n = name.lower()
-    if for_highland:
-        return "4x4"
+
+    # Minivan always wins over group label
+    for kw in _MINIVAN_KEYWORDS:
+        if kw in n:
+            return "Minivan"
+
+    if group in LOTUS_GROUP_CATEGORY:
+        cat = LOTUS_GROUP_CATEGORY[group]
+
+        # "Luxury and Vans" mixes minivans (Caravelle, Vito) with true 4x4s (Defender).
+        # Minivans already handled above; check for 4x4 keywords here.
+        if cat == "Minivan":
+            for kw in _4X4_KEYWORDS:
+                if kw in n:
+                    return "4x4"
+
+        # "Small" group contains Suzuki Jimny — classified as Economy by Lotus but
+        # consistently SUV at every other competitor. Apply SUV keyword override for
+        # cross-competitor comparison consistency.
+        if cat == "Economy":
+            for kw in _SUV_KEYWORDS:
+                if kw in n:
+                    return "SUV"
+
+        return cat
+
+    # Unknown group — keyword inference only (no for_highland promotion)
     for kw in _4X4_KEYWORDS:
         if kw in n:
             return "4x4"

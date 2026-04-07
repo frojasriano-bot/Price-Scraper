@@ -21,7 +21,11 @@ LAVA_LOCATION_IDS: dict[str, int | None] = {
 
 LAVA_API_URL = "https://www.lavacarrental.is/_plugins/carenapi/class"
 
-# Lava group names → our canonical categories
+# Lava group names → our canonical categories.
+# NOTE: "4x4 Cars" contains a mix of SUVs (Duster, Vitara, Qashqai, Jimny…) and
+# genuine 4x4s (Sorento, X-Trail, LC, Defender). We map it to "SUV" and rely on
+# _LAVA_TRUE_4X4_KW promotion to correctly promote the true 4x4s.
+# "Electric Cars" and "Luxury Cars" are not mapped → keyword inference handles them.
 LAVA_GROUP_CATEGORY: dict[str, str] = {
     "Economy Cars":   "Economy",
     "Economy":        "Economy",
@@ -29,7 +33,7 @@ LAVA_GROUP_CATEGORY: dict[str, str] = {
     "SUV":            "SUV",
     "SUV Cars":       "SUV",
     "4x4":            "4x4",
-    "4x4 Cars":       "4x4",
+    "4x4 Cars":       "SUV",    # mixed group — true 4x4s promoted via _LAVA_TRUE_4X4_KW
     "Minivan":        "Minivan",
     "Minivans":       "Minivan",
     "Vans":           "Minivan",
@@ -43,16 +47,19 @@ _LAVA_MINIVAN_KW = [
     "trafic", "caravelle", "vito", "proace", "transit", "sprinter",
     "transporter", "tourneo", "campervan",
 ]
-# Keywords for genuine 4x4 / F-road vehicles (used to control ForHighland promotion)
+# Keywords for genuine 4x4 / F-road vehicles (used to control ForHighland promotion).
+# These appear in group "4x4 Cars" alongside regular SUVs, so they need explicit
+# keyword promotion. "sorento", "x-trail", and "santa fe" are here because Lava
+# always sells them as true expedition 4x4s (consistent with other competitors).
 _LAVA_TRUE_4X4_KW = [
     "land cruiser", "landcruiser", "defender", "discovery", "santa fe",
-    "hilux", "highlander", "hilux", "wrangler",
+    "hilux", "highlander", "wrangler", "sorento", "x-trail",
 ]
 # Keywords for SUVs that should NOT be promoted to 4x4 even if ForHighland is set
 _LAVA_SUV_KW = [
     "duster", "bigster", "vitara", "jimny", "qashqai", "tucson",
     "sportage", "rav4", "eclipse", "model y", "mg ehs", "mg ",
-    "ariya", "x-trail", "sorento", "subaru",
+    "ariya", "subaru",
 ]
 
 

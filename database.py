@@ -939,6 +939,54 @@ async def set_seasonal_cache(cache_key: str, data: dict):
         await db.commit()
 
 
+async def clear_seasonal_cache() -> None:
+    """Delete all seasonal response-cache entries so the next GET re-aggregates from DB."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM seasonal_cache")
+        await db.commit()
+
+
+async def get_seasonal_anchor_history(
+    pickup_date: str,
+    return_date: str,
+    location: str = "Keflavik Airport",
+    competitor: str = None,
+    category: str = None,
+) -> list[dict]:
+    """
+    Return a time series for a specific anchor pickup month, showing how
+    prices changed across multiple scrape dates.
+    Groups by DATE(scraped_at), competitor, and car_category.
+    """
+    params: list = [location, pickup_date, return_date]
+    extra = ""
+    if competitor:
+        extra += " AND competitor = ?"
+        params.append(competitor)
+    if category:
+        extra += " AND car_category = ?"
+        params.append(category)
+
+    query = f"""
+        SELECT
+            DATE(scraped_at)                           AS scrape_date,
+            competitor,
+            car_category,
+            ROUND(AVG(CAST(price_isk AS FLOAT) / 7))  AS avg_per_day,
+            COUNT(*)                                   AS car_count
+        FROM rates
+        WHERE location = ? AND pickup_date = ? AND return_date = ?
+        {extra}
+        GROUP BY DATE(scraped_at), competitor, car_category
+        ORDER BY scrape_date, competitor, car_category
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(query, params) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+
+
 async def get_per_competitor_price_changes(
     location: str = None,
     category: str = None,
