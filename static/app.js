@@ -1088,12 +1088,15 @@ function renderRateChart() {
     competitorMap[r.competitor].push(r.price_isk);
   });
 
-  const labels = Object.keys(competitorMap);
-  const data = labels.map(c => Math.round(
+  const fullLabels = Object.keys(competitorMap);
+  // Shorten labels for the x-axis so they fit cleanly at full width
+  const shortLabel = name => name.replace(' Car Rental', '').replace(' Iceland', '');
+  const labels = fullLabels.map(shortLabel);
+  const data = fullLabels.map(c => Math.round(
     competitorMap[c].reduce((a, b) => a + b, 0) / competitorMap[c].length
   ));
 
-  const colors = labels.map((name, i) => compColor(name, i));
+  const colors = fullLabels.map((name, i) => compColor(name, i));
 
   if (state.rateChart) state.rateChart.destroy();
 
@@ -1116,7 +1119,9 @@ function renderRateChart() {
         legend: { display: false },
         tooltip: {
           callbacks: {
-            label: ctx => formatISK(ctx.raw),
+            // Show full name in tooltip
+            title: items => fullLabels[items[0].dataIndex],
+            label: ctx => `  Avg: ${formatISK(ctx.raw)}`,
           },
         },
       },
@@ -1130,7 +1135,7 @@ function renderRateChart() {
           grid: { color: '#f3f4f6' },
         },
         x: {
-          ticks: { font: { size: 11 } },
+          ticks: { font: { size: 12 } },
           grid: { display: false },
         },
       },
@@ -1855,6 +1860,32 @@ async function loadInsurance() {
   } catch (e) {
     showToast(`Failed to load insurance data: ${e.message}`, 'error');
   }
+}
+
+function triggerInsuranceResearch() {
+  const data = state.insuranceData;
+  if (!data || !data.companies) {
+    showToast('Insurance data not loaded yet.', 'error');
+    return;
+  }
+  // Collect all insurance URLs from the loaded data
+  const urls = Object.entries(data.companies)
+    .map(([name, c]) => ({ name, url: c.insurance_url }))
+    .filter(e => e.url);
+
+  if (!urls.length) {
+    showToast('No insurance URLs found.', 'error');
+    return;
+  }
+
+  // Open each URL in a new tab
+  urls.forEach(({ url }) => window.open(url, '_blank', 'noopener'));
+
+  showToast(
+    `Opened ${urls.length} insurance pages. Review each site, then click "Mark Reviewed" when done.`,
+    'success',
+    6000,
+  );
 }
 
 async function markInsuranceReviewed() {
