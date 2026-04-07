@@ -46,8 +46,9 @@ scheduler = AsyncIOScheduler()
 
 async def scheduled_scrape():
     """Run all scrapers and store results — called by APScheduler."""
+    import time
     from scrapers import ALL_SCRAPERS
-    from database import insert_rates
+    from database import insert_rates, log_scrape
     from datetime import date, timedelta, datetime
 
     logger.info("Scheduled scrape starting...")
@@ -55,13 +56,20 @@ async def scheduled_scrape():
     ret = (date.today() + timedelta(days=10)).isoformat()
 
     all_rates = []
+    errors = []
+    started_at = time.monotonic()
+
     for ScraperClass in ALL_SCRAPERS:
         async with ScraperClass() as scraper:
             try:
                 rates = await scraper.run(pickup_date=pickup, return_date=ret)
                 all_rates.extend(rates)
             except Exception as e:
+                err_msg = f"{ScraperClass.__name__}: {e}"
                 logger.warning(f"Scraper {ScraperClass.__name__} failed: {e}")
+                errors.append(err_msg)
+
+    duration = time.monotonic() - started_at
 
     if all_rates:
         await insert_rates(all_rates)
@@ -69,6 +77,15 @@ async def scheduled_scrape():
         logger.info(f"Scheduled scrape complete: {len(all_rates)} rate records stored.")
     else:
         logger.warning("Scheduled scrape returned no results.")
+
+    await log_scrape(
+        location=None,
+        total_rates=len(all_rates),
+        competitors=len(ALL_SCRAPERS),
+        errors=errors,
+        duration_seconds=duration,
+        trigger="scheduled",
+    )
 
 
 async def scheduled_alert_check():
@@ -96,7 +113,7 @@ async def scheduled_alert_check():
 
 async def scheduled_seo_check():
     """Check SEO rankings via SerpAPI — called by APScheduler."""
-    from routes.seo import DEFAULT_KEYWORDS, DEFAULT_LOCATION, _check_keyword_rank
+    from routes.seo import DEFAULT_LOCATION, _check_keyword_rank, get_stored_keywords
     from database import insert_rankings
     import httpx
 
@@ -108,18 +125,19 @@ async def scheduled_seo_check():
         logger.info("Scheduled SEO check skipped: no SerpAPI key configured.")
         return
 
-    logger.info("Scheduled SEO check starting...")
+    keywords = await get_stored_keywords()
+    logger.info(f"Scheduled SEO check starting for {len(keywords)} keywords...")
     async with httpx.AsyncClient() as client:
         tasks = [
             _check_keyword_rank(client, api_key, kw, DEFAULT_LOCATION)
-            for kw in DEFAULT_KEYWORDS
+            for kw in keywords
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
     successful = [r for r in results if not isinstance(r, Exception)]
     if successful:
         await insert_rankings(successful)
-        logger.info(f"SEO check complete: {len(successful)}/{len(DEFAULT_KEYWORDS)} keywords checked.")
+        logger.info(f"SEO check complete: {len(successful)}/{len(keywords)} keywords checked.")
 
 
 def setup_scheduler(schedule: str = "daily"):

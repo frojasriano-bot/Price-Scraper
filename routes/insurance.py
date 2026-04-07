@@ -4,8 +4,101 @@ Data researched April 2025 from publicly available sources.
 """
 
 from fastapi import APIRouter
+from pydantic import BaseModel
+from typing import Optional
 
 router = APIRouter(prefix="/api/insurance", tags=["insurance"])
+
+# Per-category zero-excess (full protection) daily price in ISK.
+# Used by the "Price by Category" comparison table.
+# None = not published / priced in foreign currency.
+# Source: April 2025 research; prices reflect the full zero-excess tier per day.
+CATEGORY_PRICING = {
+    "Blue Car Rental": {
+        "package": "Liability Waiver (Zero)",
+        "note": "4,450 ISK Economy–Compact · 5,200 ISK mid-size SUV · 6,050 ISK large 4x4 & Minivan",
+        "prices": {
+            "Economy":  4450,
+            "Compact":  4450,
+            "SUV":      5200,
+            "4x4":      6050,
+            "Minivan":  6050,
+        },
+    },
+    "Holdur": {
+        "package": "Premium Protection",
+        "note": "3,900 ISK standard cars · 6,500 ISK jeeps & large vehicles",
+        "prices": {
+            "Economy":  3900,
+            "Compact":  3900,
+            "SUV":      6500,
+            "4x4":      6500,
+            "Minivan":  6500,
+        },
+    },
+    "Hertz Iceland": {
+        "package": "MAX Coverage",
+        "note": "4,950 ISK standard · 5,950 ISK large. CDW not included in base — add 3,190–4,090 ISK/day.",
+        "prices": {
+            "Economy":  4950,
+            "Compact":  4950,
+            "SUV":      5950,
+            "4x4":      5950,
+            "Minivan":  5950,
+        },
+    },
+    "Lava Car Rental": {
+        "package": "Full Protection",
+        "note": "Flat 5,000 ISK/day all categories. 7 protections already in base price.",
+        "prices": {
+            "Economy":  5000,
+            "Compact":  5000,
+            "SUV":      5000,
+            "4x4":      5000,
+            "Minivan":  5000,
+        },
+    },
+    "Lotus Car Rental": {
+        "package": "Platinum Package",
+        "note": "Prices not publicly listed. Estimates ~4,000–5,500 ISK/day from quotes.",
+        "prices": {
+            "Economy":  None,
+            "Compact":  None,
+            "SUV":      None,
+            "4x4":      None,
+            "Minivan":  None,
+        },
+    },
+    "Avis Iceland": {
+        "package": "Complete Protection (CPP)",
+        "note": "Add-on prices not published online. Estimated ~$29 USD/day.",
+        "prices": {
+            "Economy":  None,
+            "Compact":  None,
+            "SUV":      None,
+            "4x4":      None,
+            "Minivan":  None,
+        },
+    },
+    "Go Car Rental": {
+        "package": "Gold Package",
+        "note": "Priced in EUR (~€25/day all categories), not ISK.",
+        "prices": {
+            "Economy":  None,
+            "Compact":  None,
+            "SUV":      None,
+            "4x4":      None,
+            "Minivan":  None,
+        },
+        "price_eur": {
+            "Economy":  25,
+            "Compact":  25,
+            "SUV":      25,
+            "4x4":      25,
+            "Minivan":  None,
+        },
+    },
+}
 
 INSURANCE_DATA = {
     "last_updated": "April 2025",
@@ -311,4 +404,42 @@ INSURANCE_DATA = {
 @router.get("")
 async def get_insurance_data():
     """Return full insurance comparison data for all tracked competitors."""
-    return INSURANCE_DATA
+    from database import get_insurance_reviews
+    reviews = await get_insurance_reviews(limit=1)
+    last_reviewed = reviews[0]["reviewed_at"] if reviews else None
+    return {**INSURANCE_DATA, "category_pricing": CATEGORY_PRICING, "last_reviewed": last_reviewed}
+
+
+@router.get("/category-pricing")
+async def get_category_pricing():
+    """Return zero-excess insurance price breakdown by competitor and car category."""
+    return {"category_pricing": CATEGORY_PRICING, "categories": ["Economy", "Compact", "SUV", "4x4", "Minivan"]}
+
+
+class ReviewRequest(BaseModel):
+    reviewer: Optional[str] = ""
+    notes: Optional[str] = ""
+    companies_verified: Optional[list[str]] = None
+
+
+@router.post("/mark-reviewed")
+async def mark_insurance_reviewed(body: ReviewRequest):
+    """
+    Record a manual verification event — call this after reviewing company websites
+    to confirm prices are current.
+    """
+    from database import log_insurance_review
+    entry = await log_insurance_review(
+        reviewer=body.reviewer or "",
+        notes=body.notes or "",
+        companies=body.companies_verified,
+    )
+    return {"message": "Insurance data marked as reviewed.", "entry": entry}
+
+
+@router.get("/review-log")
+async def get_review_log(limit: int = 10):
+    """Return the insurance verification history."""
+    from database import get_insurance_reviews
+    reviews = await get_insurance_reviews(limit=limit)
+    return {"reviews": reviews}

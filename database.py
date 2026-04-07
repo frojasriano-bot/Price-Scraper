@@ -245,6 +245,31 @@ async def init_db():
             )
         """)
 
+        # Insurance review / verification log
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS insurance_reviews (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                reviewed_at TEXT NOT NULL,
+                reviewer TEXT,
+                notes TEXT,
+                companies_verified TEXT
+            )
+        """)
+
+        # Scrape history log
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS scrape_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                scraped_at TEXT NOT NULL,
+                location TEXT,
+                total_rates INTEGER NOT NULL DEFAULT 0,
+                competitors INTEGER NOT NULL DEFAULT 0,
+                errors TEXT,
+                duration_seconds REAL,
+                trigger TEXT NOT NULL DEFAULT 'manual'
+            )
+        """)
+
         # Indexes for query performance (safe to re-run — IF NOT EXISTS)
         await db.execute(
             "CREATE INDEX IF NOT EXISTS idx_rates_scraped_at ON rates(scraped_at)"
@@ -286,8 +311,18 @@ async def init_db():
             "locations": json.dumps([
                 {"name": "Keflavik Airport", "address": "Keflavíkurflugvöllur, 235 Reykjanesbær, Iceland"},
                 {"name": "Reykjavik", "address": "Reykjavík, Iceland"},
-                {"name": "Akureyri", "address": "Akureyri, Iceland"},
-                {"name": "Egilsstaðir", "address": "Egilsstaðir, Iceland"},
+            ]),
+            "seo_keywords": json.dumps([
+                "car rental reykjavik",
+                "car rental iceland",
+                "rent a car keflavik airport",
+                "cheap car hire iceland",
+                "bílaleiga reykjavík",
+                "leigubíll ísland",
+                "4x4 rental iceland",
+                "iceland car hire comparison",
+                "keflavik airport car rental",
+                "best car rental iceland",
             ]),
         }
         for key, value in defaults.items():
@@ -821,34 +856,26 @@ async def get_rankings_history(keyword: str = None, location: str = None, days: 
 async def get_previous_rankings() -> dict:
     """
     Return the second-most-recent ranking per keyword for comparison (previous rank).
+    Uses a window function to find the 2nd-newest row per keyword independently,
+    so keywords checked at different times are handled correctly.
     Returns a dict: {keyword: rank}
     """
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
+        # ROW_NUMBER() OVER (PARTITION BY keyword ORDER BY created_at DESC) gives
+        # rn=1 for the most recent check, rn=2 for the previous one.
         query = """
-            SELECT keyword, rank, created_at
-            FROM rankings
-            WHERE created_at IN (
-                SELECT DISTINCT created_at FROM rankings ORDER BY created_at DESC LIMIT 2
+            SELECT keyword, rank
+            FROM (
+                SELECT keyword, rank,
+                       ROW_NUMBER() OVER (PARTITION BY keyword ORDER BY created_at DESC) AS rn
+                FROM rankings
             )
-            ORDER BY keyword, created_at DESC
+            WHERE rn = 2
         """
         async with db.execute(query) as cursor:
             rows = await cursor.fetchall()
-
-        # Group by keyword, take second entry
-        seen: dict[str, list] = {}
-        for row in rows:
-            kw = row["keyword"]
-            if kw not in seen:
-                seen[kw] = []
-            seen[kw].append(row["rank"])
-
-        previous = {}
-        for kw, ranks in seen.items():
-            if len(ranks) >= 2:
-                previous[kw] = ranks[1]
-        return previous
+        return {row["keyword"]: row["rank"] for row in rows}
 
 
 async def delete_rankings_for_keywords(keywords: list[str]) -> int:
@@ -897,3 +924,195 @@ async def set_seasonal_cache(cache_key: str, data: dict):
             (cache_key, datetime.now(timezone.utc).isoformat(), json.dumps(data)),
         )
         await db.commit()
+
+
+async def get_per_competitor_price_changes(
+    location: str = None,
+    category: str = None,
+) -> dict:
+    """
+    Compare each competitor's avg price per canonical model between the two
+    most recent scrape dates.
+
+    Returns a dict keyed by "{competitor}::{location}::{canonical_name}":
+        {
+          "Blue Car Rental::Keflavik Airport::Toyota Yaris": {
+            "direction": "down",
+            "delta_pct": -4.2,
+            "delta_isk": -400,
+            "curr_price": 9100,
+            "prev_price": 9500,
+          },
+          ...
+        }
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+
+        # Find the two most recent distinct scrape dates
+        async with db.execute(
+            "SELECT DISTINCT DATE(scraped_at) AS d FROM rates ORDER BY d DESC LIMIT 2"
+        ) as cursor:
+            dates = [row["d"] for row in await cursor.fetchall()]
+
+        if len(dates) < 2:
+            return {}
+
+        date_curr, date_prev = dates[0], dates[1]
+
+        extra_conditions = []
+        extra_params: list = []
+        if location:
+            extra_conditions.append("location = ?")
+            extra_params.append(location)
+        if category:
+            extra_conditions.append("car_category = ?")
+            extra_params.append(category)
+
+        extra_where = (" AND " + " AND ".join(extra_conditions)) if extra_conditions else ""
+
+        query_tpl = f"""
+            SELECT
+                competitor,
+                location,
+                COALESCE(canonical_name, car_model) AS model,
+                ROUND(AVG(price_isk)) AS avg_price
+            FROM rates
+            WHERE DATE(scraped_at) = ?{extra_where}
+            GROUP BY competitor, location, model
+        """
+
+        async with db.execute(query_tpl, [date_curr] + extra_params) as cursor:
+            curr_rows = {
+                f"{r['competitor']}::{r['location']}::{r['model']}": int(r["avg_price"])
+                for r in await cursor.fetchall()
+            }
+
+        async with db.execute(query_tpl, [date_prev] + extra_params) as cursor:
+            prev_rows = {
+                f"{r['competitor']}::{r['location']}::{r['model']}": int(r["avg_price"])
+                for r in await cursor.fetchall()
+            }
+
+    result = {}
+    for key, curr_price in curr_rows.items():
+        if key not in prev_rows:
+            continue
+        prev_price = prev_rows[key]
+        delta_isk = curr_price - prev_price
+        direction = "up" if delta_isk > 100 else ("down" if delta_isk < -100 else "same")
+        delta_pct = round((delta_isk / prev_price) * 100, 1) if (prev_price and direction != "same") else 0.0
+        result[key] = {
+            "direction":  direction,
+            "delta_pct":  delta_pct,
+            "delta_isk":  delta_isk,
+            "curr_price": curr_price,
+            "prev_price": prev_price,
+            "date_curr":  date_curr,
+            "date_prev":  date_prev,
+        }
+    return result
+
+
+async def log_scrape(
+    location: str | None,
+    total_rates: int,
+    competitors: int,
+    errors: list[str],
+    duration_seconds: float,
+    trigger: str = "manual",
+) -> None:
+    """Insert a row into scrape_log recording a completed scrape run."""
+    errors_json = json.dumps(errors) if errors else None
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """
+            INSERT INTO scrape_log
+                (scraped_at, location, total_rates, competitors, errors, duration_seconds, trigger)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                datetime.now(timezone.utc).isoformat(),
+                location,
+                total_rates,
+                competitors,
+                errors_json,
+                round(duration_seconds, 2),
+                trigger,
+            ),
+        )
+        await db.commit()
+
+
+async def get_scrape_log(limit: int = 20) -> list[dict]:
+    """Return the most recent scrape log entries."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """
+            SELECT id, scraped_at, location, total_rates, competitors,
+                   errors, duration_seconds, trigger
+            FROM scrape_log
+            ORDER BY scraped_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+    result = []
+    for row in rows:
+        d = dict(row)
+        if d["errors"]:
+            try:
+                d["errors"] = json.loads(d["errors"])
+            except (json.JSONDecodeError, TypeError):
+                d["errors"] = [d["errors"]]
+        else:
+            d["errors"] = []
+        result.append(d)
+    return result
+
+
+async def log_insurance_review(reviewer: str = "", notes: str = "", companies: list[str] | None = None) -> dict:
+    """Record a manual insurance data verification event. Returns the new row."""
+    companies_json = json.dumps(companies) if companies else None
+    now = datetime.now(timezone.utc).isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            """
+            INSERT INTO insurance_reviews (reviewed_at, reviewer, notes, companies_verified)
+            VALUES (?, ?, ?, ?)
+            """,
+            (now, reviewer or None, notes or None, companies_json),
+        )
+        await db.commit()
+        row_id = cursor.lastrowid
+    return {"id": row_id, "reviewed_at": now, "reviewer": reviewer, "notes": notes}
+
+
+async def get_insurance_reviews(limit: int = 10) -> list[dict]:
+    """Return the most recent insurance review log entries."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """
+            SELECT id, reviewed_at, reviewer, notes, companies_verified
+            FROM insurance_reviews
+            ORDER BY reviewed_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+    result = []
+    for row in rows:
+        d = dict(row)
+        if d["companies_verified"]:
+            try:
+                d["companies_verified"] = json.loads(d["companies_verified"])
+            except (json.JSONDecodeError, TypeError):
+                d["companies_verified"] = []
+        else:
+            d["companies_verified"] = []
+        result.append(d)
+    return result

@@ -25,6 +25,9 @@ from database import (
     get_seasonal_cache,
     set_seasonal_cache,
     get_model_competitor_coverage,
+    get_per_competitor_price_changes,
+    log_scrape,
+    get_scrape_log,
 )
 from scrapers import ALL_SCRAPERS
 
@@ -116,11 +119,15 @@ async def trigger_scrape(
     Trigger a manual scrape of all competitor websites.
     Stores results in the database.
     """
+    import time
+    from datetime import datetime as dt
+
     mock_pickup = pickup_date or (date.today() + timedelta(days=7)).isoformat()
     mock_return = return_date or (date.today() + timedelta(days=10)).isoformat()
 
     all_results = []
     errors = []
+    started_at = time.monotonic()
 
     async def run_scraper(ScraperClass):
         async with ScraperClass() as scraper:
@@ -142,10 +149,20 @@ async def trigger_scrape(
             errors.append(error)
         all_results.extend(results)
 
+    duration = time.monotonic() - started_at
+
     if all_results:
         await insert_rates(all_results)
-        from datetime import datetime as dt
         await set_config("last_scrape_at", dt.utcnow().isoformat())
+
+    await log_scrape(
+        location=location,
+        total_rates=len(all_results),
+        competitors=len(ALL_SCRAPERS),
+        errors=errors,
+        duration_seconds=duration,
+        trigger="manual",
+    )
 
     return {
         "scraped": len(all_results),
@@ -535,6 +552,27 @@ async def get_seasonal_rates(
     await set_seasonal_cache(cache_key, result_payload)
 
     return result_payload
+
+
+@router.get("/price-changes")
+async def get_price_changes(
+    location: Optional[str] = Query(None),
+    category: Optional[str] = Query(None),
+):
+    """
+    Per-competitor price change vs previous scrape date.
+    Returns a dict keyed by "{competitor}::{location}::{canonical_name}".
+    Empty dict if fewer than two scrape dates exist.
+    """
+    changes = await get_per_competitor_price_changes(location=location, category=category)
+    return {"changes": changes, "available": bool(changes)}
+
+
+@router.get("/scrape-log")
+async def get_scrape_log_endpoint(limit: int = Query(20, ge=1, le=100)):
+    """Return the most recent scrape history log entries."""
+    entries = await get_scrape_log(limit=limit)
+    return {"entries": entries}
 
 
 @router.get("/scraper-status")

@@ -50,6 +50,8 @@ const state = {
   seasonalChart: null,
   deltas: {},
   deltasAvailable: false,
+  priceChanges: {},
+  priceChangesAvailable: false,
   rankings: [],
   rankingsSource: 'mock',
   rankingsHistory: [],
@@ -118,7 +120,7 @@ function switchTab(tab) {
 
   if (tab === 'rates') loadRates();
   if (tab === 'seo') loadRankings();
-  if (tab === 'settings') loadSettings();
+  if (tab === 'settings') { loadSettings(); loadScrapeLog(); }
   if (tab === 'insurance') loadInsurance();
 }
 
@@ -746,17 +748,21 @@ async function loadRates() {
     if (location) deltaParams.set('location', location);
     if (category) deltaParams.set('category', category);
 
-    const [ratesData, deltasData] = await Promise.all([
+    const [ratesData, deltasData, changesData] = await Promise.all([
       apiFetch(`/api/rates?${params}`),
       apiFetch(`/api/rates/deltas?${deltaParams}`).catch(() => ({ deltas: {}, available: false })),
+      apiFetch(`/api/rates/price-changes?${deltaParams}`).catch(() => ({ changes: {}, available: false })),
     ]);
-    state.rates          = ratesData.rates || [];
-    state.ratesSource    = ratesData.source;
-    state.deltas         = deltasData.deltas || {};
-    state.deltasAvailable = deltasData.available || false;
+    state.rates               = ratesData.rates || [];
+    state.ratesSource         = ratesData.source;
+    state.deltas              = deltasData.deltas || {};
+    state.deltasAvailable     = deltasData.available || false;
+    state.priceChanges        = changesData.changes || {};
+    state.priceChangesAvailable = changesData.available || false;
     renderRatesTable();
     renderRateChart();
     updateRateStats();
+    renderExecutiveSummary();
     // Reset matrix so it reloads with new filters if active
     state.matrix = null;
     if (state.ratesView === 'matrix') loadMatrix();
@@ -862,9 +868,12 @@ function renderRatesTable() {
     const canonicalNote = r.canonical_name && r.canonical_name !== r.car_model
       ? `<span style="color:#6b7280;font-size:11px"> → ${escHtml(r.canonical_name)}</span>` : '';
 
-    // Delta indicator
-    const deltaKey = r.canonical_name || r.car_model;
-    const d = state.deltas[deltaKey];
+    // Delta indicator — use per-competitor price change if available, else market-avg delta
+    const compKey = `${r.competitor}::${r.location}::${r.canonical_name || r.car_model}`;
+    const marketKey = r.canonical_name || r.car_model;
+    const d = state.priceChangesAvailable
+      ? (state.priceChanges[compKey] || state.priceChanges[marketKey] || state.deltas[marketKey])
+      : state.deltas[marketKey];
     let deltaHtml = `<span style="color:#6b7280">—</span>`;
     if (d) {
       const sign = d.delta_pct > 0 ? '+' : '';
@@ -996,6 +1005,73 @@ function updateRateStats() {
     histComp.innerHTML = '<option value="">All Competitors</option>' +
       comps.map(c => `<option value="${c}"${c === current ? ' selected' : ''}>${c}</option>`).join('');
   }
+}
+
+function renderExecutiveSummary() {
+  const banner = document.getElementById('exec-banner');
+  const items = document.getElementById('exec-banner-items');
+  if (!banner || !items) return;
+
+  const rates = state.rates;
+  if (!rates.length) { banner.style.display = 'none'; return; }
+
+  // Blue vs market
+  const blueRates = rates.filter(r => r.competitor === 'Blue Car Rental');
+  const competitorRates = rates.filter(r => r.competitor !== 'Blue Car Rental');
+
+  const blueAvg = blueRates.length
+    ? Math.round(blueRates.reduce((s, r) => s + r.price_isk, 0) / blueRates.length) : null;
+  const mktAvg = competitorRates.length
+    ? Math.round(competitorRates.reduce((s, r) => s + r.price_isk, 0) / competitorRates.length) : null;
+
+  // Cheapest competitor overall
+  const minRate = [...competitorRates].sort((a, b) => a.price_isk - b.price_isk)[0];
+
+  // Competitors undercutting Blue (by any model)
+  const blueByModel = {};
+  blueRates.forEach(r => {
+    const k = r.canonical_name || r.car_model;
+    if (!blueByModel[k] || r.price_isk < blueByModel[k]) blueByModel[k] = r.price_isk;
+  });
+  const undercutters = new Set();
+  competitorRates.forEach(r => {
+    const k = r.canonical_name || r.car_model;
+    if (blueByModel[k] && r.price_isk < blueByModel[k]) undercutters.add(r.competitor);
+  });
+
+  // Price movement arrows from per-competitor changes
+  const changes = state.priceChanges;
+  const allMovers = Object.values(changes);
+  const upCount = allMovers.filter(c => c.direction === 'up').length;
+  const downCount = allMovers.filter(c => c.direction === 'down').length;
+
+  const chip = (icon, label, value, color) =>
+    `<div style="display:flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(255,255,255,0.07);border-radius:6px;white-space:nowrap">
+      <span style="font-size:15px">${icon}</span>
+      <span style="font-size:11px;color:#93c5fd">${label}</span>
+      <span style="font-size:13px;font-weight:700;color:${color}">${value}</span>
+    </div>`;
+
+  const pct = (a, b) => b ? `${a > b ? '+' : ''}${Math.round(((a - b)/b)*100)}%` : '—';
+  const blueVsMkt = (blueAvg && mktAvg)
+    ? chip('📊', 'Blue vs Market', pct(blueAvg, mktAvg),
+        blueAvg > mktAvg ? '#f87171' : '#4ade80')
+    : '';
+  const cheapestChip = minRate
+    ? chip('💰', 'Market Low', `${formatISK(minRate.price_isk)} (${minRate.competitor.replace(' Car Rental','').replace(' Iceland','')})`, '#fbbf24')
+    : '';
+  const undercutChip = chip(
+    undercutters.size > 0 ? '⚠️' : '✅',
+    'Undercutting Blue',
+    undercutters.size > 0 ? `${undercutters.size} competitor${undercutters.size > 1 ? 's' : ''}` : 'None',
+    undercutters.size > 0 ? '#f87171' : '#4ade80'
+  );
+  const movementChip = (upCount + downCount > 0)
+    ? chip('📈', 'Price Moves', `↑${upCount} ↓${downCount}`, '#93c5fd')
+    : '';
+
+  items.innerHTML = [blueVsMkt, cheapestChip, undercutChip, movementChip].filter(Boolean).join('');
+  banner.style.display = 'flex';
 }
 
 function renderRateChart() {
@@ -1729,6 +1805,27 @@ function exportSeasonalCSV() {
   showToast('Seasonal summary exported!', 'success');
 }
 
+function exportRatesCSV() {
+  if (!state.rates.length) return showToast('No rate data to export. Scrape first.', 'error');
+  const headers = ['Competitor', 'Location', 'Car Model', 'Canonical Name', 'Category',
+                   'Total (ISK)', 'Per Day (ISK)', 'Pickup Date', 'Return Date', 'Scraped At'];
+  function getDays(pickup, ret) {
+    try { return Math.max(1, Math.round((new Date(ret) - new Date(pickup)) / 86400000)); }
+    catch { return 1; }
+  }
+  const rows = state.rates.map(r => {
+    const days = getDays(r.pickup_date, r.return_date);
+    return [
+      r.competitor, r.location,
+      r.car_model || '', r.canonical_name || '',
+      r.car_category, r.price_isk, Math.round(r.price_isk / days),
+      r.pickup_date, r.return_date, r.scraped_at,
+    ];
+  });
+  downloadCSV(`competitor_rates_${new Date().toISOString().slice(0,10)}.csv`, [headers, ...rows]);
+  showToast(`Exported ${rows.length} rate records.`, 'success');
+}
+
 // ── INSURANCE TAB ─────────────────────────────────────────────────────────
 
 const COVERAGE_STATUS = {
@@ -1739,14 +1836,18 @@ const COVERAGE_STATUS = {
 };
 
 function setInsuranceView(view) {
-  ['comparison', 'company', 'deductibles'].forEach(v => {
-    document.getElementById(`ins-view-${v}`).style.display = (v === view) ? '' : 'none';
-    document.getElementById(`btn-ins-${v}`).classList.toggle('active', v === view);
+  ['comparison', 'company', 'prices', 'deductibles'].forEach(v => {
+    const el = document.getElementById(`ins-view-${v}`);
+    const btn = document.getElementById(`btn-ins-${v}`);
+    if (el) el.style.display = (v === view) ? '' : 'none';
+    if (btn) btn.classList.toggle('active', v === view);
   });
+  // Load review log when prices view is shown
+  if (view === 'prices') loadInsuranceReviewLog();
 }
 
 async function loadInsurance() {
-  if (state.insuranceData) { renderInsurance(state.insuranceData); return; }
+  // Always reload to get the latest last_reviewed timestamp
   try {
     const data = await apiFetch('/api/insurance');
     state.insuranceData = data;
@@ -1756,13 +1857,96 @@ async function loadInsurance() {
   }
 }
 
+async function markInsuranceReviewed() {
+  const btn = document.getElementById('btn-ins-review');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  try {
+    await apiFetch('/api/insurance/mark-reviewed', {
+      method: 'POST',
+      body: JSON.stringify({ notes: 'Manual review via dashboard' }),
+    });
+    showToast('Insurance data marked as reviewed.', 'success');
+    // Reload to update timestamp
+    state.insuranceData = null;
+    await loadInsurance();
+    await loadInsuranceReviewLog();
+  } catch (e) {
+    showToast(`Failed: ${e.message}`, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> Mark Reviewed`; }
+  }
+}
+
+async function loadInsuranceReviewLog() {
+  try {
+    const data = await apiFetch('/api/insurance/review-log');
+    const tbody = document.getElementById('insurance-review-log-tbody');
+    if (!tbody) return;
+    const reviews = data.reviews || [];
+    if (!reviews.length) {
+      tbody.innerHTML = `<tr><td colspan="3" style="padding:20px;text-align:center;color:#6b7280">No review history yet. Click "Mark Reviewed" after verifying company websites.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = reviews.map(r => `<tr>
+      <td style="white-space:nowrap">${formatDate(r.reviewed_at)}</td>
+      <td>${escHtml(r.reviewer || '—')}</td>
+      <td style="color:#6b7280;font-size:12px">${escHtml(r.notes || '—')}</td>
+    </tr>`).join('');
+  } catch {}
+}
+
+function renderCategoryPricingTable(categoryPricing) {
+  const tbody = document.getElementById('insurance-prices-tbody');
+  if (!tbody || !categoryPricing) return;
+  const cats = ['Economy', 'Compact', 'SUV', '4x4', 'Minivan'];
+  const companies = Object.keys(categoryPricing);
+
+  // Find min price per category to highlight cheapest
+  const minPerCat = {};
+  cats.forEach(cat => {
+    const prices = companies
+      .map(c => categoryPricing[c]?.prices?.[cat])
+      .filter(p => p !== null && p !== undefined);
+    minPerCat[cat] = prices.length ? Math.min(...prices) : null;
+  });
+
+  tbody.innerHTML = companies.map(company => {
+    const entry = categoryPricing[company];
+    const color = (state.insuranceData?.companies?.[company]?.color) || '#6b7280';
+    const cells = cats.map(cat => {
+      const price = entry?.prices?.[cat];
+      const eur   = entry?.price_eur?.[cat];
+      if (price !== null && price !== undefined) {
+        const isMin = minPerCat[cat] !== null && price === minPerCat[cat];
+        return `<td style="text-align:center" class="${isMin ? 'price-low' : ''}">${formatISK(price)}</td>`;
+      } else if (eur !== null && eur !== undefined) {
+        return `<td style="text-align:center;color:#6b7280">~€${eur}</td>`;
+      }
+      return `<td style="text-align:center;color:#9ca3af">—</td>`;
+    }).join('');
+    return `<tr>
+      <td><strong style="color:${color}">${escHtml(company)}</strong></td>
+      <td style="font-size:12px;color:#6b7280">${escHtml(entry?.package || '')}</td>
+      ${cells}
+      <td style="font-size:11px;color:#6b7280;max-width:220px">${escHtml(entry?.note || '')}</td>
+    </tr>`;
+  }).join('');
+}
+
 function renderInsurance(data) {
-  const { companies, protection_types, key_insights, disclaimer, last_updated } = data;
+  const { companies, protection_types, key_insights, disclaimer, last_updated, last_reviewed, category_pricing } = data;
   const companyNames = Object.keys(companies);
 
-  // Last updated label
+  // Last updated / reviewed label
   const upEl = document.getElementById('insurance-last-updated');
-  if (upEl) upEl.textContent = `Data current as of ${last_updated}`;
+  if (upEl) {
+    const reviewedStr = last_reviewed
+      ? ` · Verified ${formatDate(last_reviewed)}`
+      : ' · Not yet verified';
+    upEl.textContent = `Research: ${last_updated}${reviewedStr}`;
+  }
+
+  if (category_pricing) renderCategoryPricingTable(category_pricing);
 
   // Disclaimer
   const discEl = document.getElementById('insurance-disclaimer');
@@ -2018,6 +2202,46 @@ function shortCompanyName(name) {
   return shorts[name] || name;
 }
 
+// ── SCRAPE LOG ─────────────────────────────────────────────────────────────
+async function loadScrapeLog() {
+  try {
+    const data = await apiFetch('/api/rates/scrape-log');
+    renderScrapeLog(data.entries || []);
+  } catch {
+    // Not critical — silently skip
+  }
+}
+
+function renderScrapeLog(entries) {
+  const tbody = document.getElementById('scrape-log-tbody');
+  if (!tbody) return;
+  if (!entries.length) {
+    tbody.innerHTML = `<tr><td colspan="7" style="padding:20px;text-align:center;color:#6b7280">No scrape history yet. Run a scrape first.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = entries.map(e => {
+    const hasErrors = e.errors && e.errors.length > 0;
+    const statusHtml = hasErrors
+      ? `<span class="badge" style="background:#fef2f2;color:#b91c1c;border:1px solid #fca5a5">${e.errors.length} error${e.errors.length > 1 ? 's' : ''}</span>`
+      : `<span class="badge" style="background:#f0fdf4;color:#15803d;border:1px solid #86efac">✓ OK</span>`;
+    const triggerBadge = e.trigger === 'scheduled'
+      ? `<span class="badge badge-blue">Scheduled</span>`
+      : `<span class="badge badge-gray">Manual</span>`;
+    const duration = e.duration_seconds != null
+      ? `${e.duration_seconds.toFixed(1)}s`
+      : '—';
+    return `<tr>
+      <td style="white-space:nowrap;color:#6b7280;font-size:12px">${timeAgo(e.scraped_at)}<br><span style="font-size:11px">${formatDate(e.scraped_at)}</span></td>
+      <td>${triggerBadge}</td>
+      <td style="font-size:12px">${escHtml(e.location || 'All Locations')}</td>
+      <td style="font-weight:600">${e.total_rates.toLocaleString()}</td>
+      <td>${e.competitors}</td>
+      <td style="font-size:12px">${duration}</td>
+      <td>${statusHtml}</td>
+    </tr>`;
+  }).join('');
+}
+
 // ── Security helper ────────────────────────────────────────────────────────
 function escHtml(str) {
   if (str === null || str === undefined) return '';
@@ -2042,9 +2266,19 @@ function init() {
   });
 
   // Filter change handlers
-  ['filter-location', 'filter-pickup', 'filter-return', 'filter-category'].forEach(id => {
+  // Location + category just reload existing DB rates (no new scrape needed)
+  ['filter-location', 'filter-category'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('change', loadRates);
+  });
+  // Date inputs: debounce, then trigger a live scrape for the selected dates
+  let _dateDebounce = null;
+  ['filter-pickup', 'filter-return'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', () => {
+      clearTimeout(_dateDebounce);
+      _dateDebounce = setTimeout(() => triggerScrape(), 800);
+    });
   });
 
   // Button handlers

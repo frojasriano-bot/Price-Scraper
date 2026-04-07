@@ -93,6 +93,14 @@
       ══════════════════════════════════════════════════════════════ -->
       <div id="tab-rates" class="tab-panel">
 
+        <!-- Executive Summary Banner -->
+        <div id="exec-banner" style="display:none;background:linear-gradient(135deg,#1e3a5f 0%,#0d2040 100%);border:1px solid rgba(255,255,255,0.1);border-radius:var(--radius);padding:16px 20px;margin-bottom:16px;color:#fff">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <div style="font-size:13px;font-weight:700;color:#93c5fd;letter-spacing:.04em;text-transform:uppercase">Market Snapshot</div>
+            <div style="flex:1;display:flex;gap:20px;flex-wrap:wrap;align-items:center" id="exec-banner-items"></div>
+          </div>
+        </div>
+
         <!-- Stat row -->
         <div class="stats-row">
           <div class="stat-card">
@@ -122,8 +130,6 @@
               <option value="">All Locations</option>
               <option value="Keflavik Airport">Keflavik Airport</option>
               <option value="Reykjavik">Reykjavik</option>
-              <option value="Akureyri">Akureyri</option>
-              <option value="Egilsstaðir">Egilsstaðir</option>
             </select>
           </div>
           <div class="filter-group">
@@ -199,7 +205,13 @@
                 <div class="card-title">Competitor Rates</div>
                 <div class="card-subtitle">Green = cheapest for model &nbsp;|&nbsp; Red = most expensive &nbsp;|&nbsp; Click column headers to sort</div>
               </div>
-              <span id="rates-source-badge" class="badge badge-gray">Mock Data</span>
+              <div style="display:flex;align-items:center;gap:8px">
+                <button class="btn btn-secondary btn-sm" onclick="exportRatesCSV()" title="Export table as CSV">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  Export CSV
+                </button>
+                <span id="rates-source-badge" class="badge badge-gray">Mock Data</span>
+              </div>
             </div>
             <div class="table-wrap">
               <table>
@@ -758,8 +770,40 @@
           </div>
         </div>
 
+        <!-- Scrape History Log -->
+        <div class="card" style="margin-top:16px">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Scrape History</div>
+              <div class="card-subtitle">Log of recent manual and scheduled scrape runs</div>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="loadScrapeLog()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              Refresh
+            </button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>When</th>
+                  <th>Trigger</th>
+                  <th>Location</th>
+                  <th>Rates Scraped</th>
+                  <th>Competitors</th>
+                  <th>Duration</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="scrape-log-tbody">
+                <tr><td colspan="7" style="padding:20px;text-align:center;color:#6b7280">No scrape history yet. Run a scrape first.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         <!-- Save button -->
-        <div style="display:flex;justify-content:flex-end;margin-top:4px">
+        <div style="display:flex;justify-content:flex-end;margin-top:16px">
           <button class="btn btn-primary" id="btn-save-settings">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px">
               <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
@@ -781,7 +825,7 @@
           <!-- Filled by JS -->
         </div>
 
-        <!-- View toggle -->
+        <!-- View toggle + review controls -->
         <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
           <button class="btn btn-secondary btn-sm view-toggle active" id="btn-ins-comparison" onclick="setInsuranceView('comparison')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
@@ -791,11 +835,21 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
             Company Cards
           </button>
-          <button class="btn btn-secondary btn-sm view-toggle" id="btn-ins-deductibles" onclick="setInsuranceView('deductibles')">
+          <button class="btn btn-secondary btn-sm view-toggle" id="btn-ins-prices" onclick="setInsuranceView('prices')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            Price by Category
+          </button>
+          <button class="btn btn-secondary btn-sm view-toggle" id="btn-ins-deductibles" onclick="setInsuranceView('deductibles')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
             Deductibles
           </button>
-          <span style="margin-left:auto;font-size:12px;color:#6b7280" id="insurance-last-updated"></span>
+          <div style="margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <span style="font-size:12px;color:#6b7280" id="insurance-last-updated"></span>
+            <button class="btn btn-secondary btn-sm" onclick="markInsuranceReviewed()" id="btn-ins-review" title="Mark current data as manually verified today">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+              Mark Reviewed
+            </button>
+          </div>
         </div>
 
         <!-- COVERAGE MATRIX VIEW -->
@@ -818,6 +872,61 @@
               <span><span class="ins-legend ins-optional"></span> Optional add-on</span>
               <span><span class="ins-legend ins-zero"></span> Included in zero-excess package</span>
               <span><span class="ins-legend ins-unavailable"></span> Not available</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- PRICE BY CATEGORY VIEW -->
+        <div id="ins-view-prices" style="display:none">
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Zero-Excess (Full Protection) Price by Car Category</div>
+                <div class="card-subtitle">Daily ISK cost for the highest protection tier, broken down by car type. Helps compare like-for-like insurance costs across competitors.</div>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table id="insurance-prices-table">
+                <thead>
+                  <tr>
+                    <th>Competitor</th>
+                    <th>Package</th>
+                    <th style="text-align:center">Economy</th>
+                    <th style="text-align:center">Compact</th>
+                    <th style="text-align:center">SUV</th>
+                    <th style="text-align:center">4x4</th>
+                    <th style="text-align:center">Minivan</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody id="insurance-prices-tbody">
+                  <!-- Filled by JS -->
+                </tbody>
+              </table>
+            </div>
+            <div style="padding:12px 16px;font-size:12px;color:#6b7280">
+              Prices in ISK/day unless noted. Blank = price not published or priced in foreign currency.
+              Data verified manually — click "Mark Reviewed" to log a review date.
+            </div>
+          </div>
+
+          <!-- Review history -->
+          <div class="card" style="margin-top:16px">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Verification Log</div>
+                <div class="card-subtitle">History of manual data reviews</div>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Reviewed At</th><th>Reviewer</th><th>Notes</th></tr>
+                </thead>
+                <tbody id="insurance-review-log-tbody">
+                  <tr><td colspan="3" style="padding:20px;text-align:center;color:#6b7280">No review history yet.</td></tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
