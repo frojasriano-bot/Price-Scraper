@@ -3,6 +3,7 @@ Insurance comparison data for all tracked Iceland car rental competitors.
 Data researched April 2025 from publicly available sources.
 """
 
+import copy
 from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import Optional
@@ -401,19 +402,75 @@ INSURANCE_DATA = {
 }
 
 
+def _apply_overrides(base: dict, overrides: dict) -> dict:
+    """
+    Merge DB overrides into a deep copy of CATEGORY_PRICING.
+    Overrides structure: { company: { category: {price_isk, price_note, updated_at} } }
+    """
+    merged = copy.deepcopy(base)
+    for company, cats in overrides.items():
+        if company not in merged:
+            continue
+        for category, override in cats.items():
+            if "prices" not in merged[company]:
+                merged[company]["prices"] = {}
+            if override.get("price_isk") is not None:
+                merged[company]["prices"][category] = override["price_isk"]
+            if override.get("price_note"):
+                merged[company]["note"] = override["price_note"]
+            merged[company].setdefault("_overrides", {})[category] = override["updated_at"]
+    return merged
+
+
 @router.get("")
 async def get_insurance_data():
-    """Return full insurance comparison data for all tracked competitors."""
-    from database import get_insurance_reviews
+    """Return full insurance comparison data including any saved price overrides."""
+    from database import get_insurance_reviews, get_insurance_price_overrides
     reviews = await get_insurance_reviews(limit=1)
     last_reviewed = reviews[0]["reviewed_at"] if reviews else None
-    return {**INSURANCE_DATA, "category_pricing": CATEGORY_PRICING, "last_reviewed": last_reviewed}
+    overrides = await get_insurance_price_overrides()
+    pricing = _apply_overrides(CATEGORY_PRICING, overrides)
+    return {**INSURANCE_DATA, "category_pricing": pricing, "last_reviewed": last_reviewed}
 
 
 @router.get("/category-pricing")
 async def get_category_pricing():
-    """Return zero-excess insurance price breakdown by competitor and car category."""
-    return {"category_pricing": CATEGORY_PRICING, "categories": ["Economy", "Compact", "SUV", "4x4", "Minivan"]}
+    """Return zero-excess pricing with any saved overrides applied."""
+    from database import get_insurance_price_overrides
+    overrides = await get_insurance_price_overrides()
+    pricing = _apply_overrides(CATEGORY_PRICING, overrides)
+    return {"category_pricing": pricing, "categories": ["Economy", "Compact", "SUV", "4x4", "Minivan"]}
+
+
+class PriceOverrideRequest(BaseModel):
+    company: str
+    category: str
+    price_isk: Optional[int] = None   # None = mark as unpublished
+    price_note: Optional[str] = None
+
+
+@router.post("/prices")
+async def save_price_override(body: PriceOverrideRequest):
+    """
+    Save or update a zero-excess price for one company + car category.
+    Persists to DB and is applied on all subsequent /api/insurance calls.
+    """
+    from database import set_insurance_price_override
+    valid_companies = list(CATEGORY_PRICING.keys())
+    valid_categories = ["Economy", "Compact", "SUV", "4x4", "Minivan"]
+    if body.company not in valid_companies:
+        from fastapi import HTTPException
+        raise HTTPException(400, f"Unknown company. Valid: {valid_companies}")
+    if body.category not in valid_categories:
+        from fastapi import HTTPException
+        raise HTTPException(400, f"Unknown category. Valid: {valid_categories}")
+    row = await set_insurance_price_override(
+        company=body.company,
+        category=body.category,
+        price_isk=body.price_isk,
+        price_note=body.price_note,
+    )
+    return {"message": "Price saved.", "override": row}
 
 
 class ReviewRequest(BaseModel):

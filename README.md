@@ -2,7 +2,7 @@
 
 Competitor pricing intelligence + insurance comparison + local SEO rank tracking for **Blue Car Rental Iceland**.
 
-A FastAPI backend serving a single-page dashboard from `static/` with a JSON API under `/api/*`. Uses SQLite for storage and APScheduler for automated scraping.
+FastAPI backend · SQLite · APScheduler · Vanilla JS SPA · Chart.js
 
 ---
 
@@ -10,10 +10,10 @@ A FastAPI backend serving a single-page dashboard from `static/` with a JSON API
 
 | Tab | Description |
 |-----|-------------|
-| **Rate Intelligence** | Latest competitor rates, sortable table, cross-competitor matrix, price history charts, seasonal analysis |
-| **Insurance Comparison** | Full coverage matrix, per-company package breakdowns, deductible comparison across all 7 competitors |
-| **SEO Rank Tracker** | Keyword ranking history for bluecarrental.is via SerpAPI |
-| **Settings** | Scraper status, schedule config, SerpAPI key, location management, car model mappings, Slack alerts |
+| **Rate Intelligence** | Executive summary banner, live competitor rates, sortable table with per-competitor price-change arrows, bar chart, cross-competitor matrix, price history charts, seasonal analysis, CSV export |
+| **Insurance Comparison** | Coverage matrix, per-category zero-excess pricing (editable), company package cards, deductible comparison, Trigger Research + Mark Reviewed workflow with audit log |
+| **SEO Rank Tracker** | Keyword ranking history with previous rank + change via SerpAPI; 10 Iceland-specific keywords pre-seeded |
+| **Settings** | Scraper status, schedule config, SerpAPI key, location management, car model mappings, Slack alerts, scrape history log |
 
 ---
 
@@ -37,11 +37,7 @@ Set `SERPAPI_KEY` to enable live SEO rank checks. All other features work withou
 
 ```bash
 uvicorn main:app --reload
-```
-
-Or:
-
-```bash
+# or
 python main.py
 ```
 
@@ -66,9 +62,11 @@ canonical.py             Car name normalisation (canonicalize() function)
 database.py              SQLite schema, CAR_CATALOG, all DB helpers
 
 routes/
-  rates.py               /api/rates/* — scraper trigger, history, matrix, seasonal
-  insurance.py           /api/insurance  — static insurance comparison data
-  seo.py                 /api/seo/*  — rankings, keyword management
+  rates.py               /api/rates/* — scraper trigger, history, matrix, seasonal,
+                         per-competitor price-changes, scrape log
+  insurance.py           /api/insurance — comparison data, category pricing (with DB
+                         overrides), mark-reviewed workflow, review log
+  seo.py                 /api/seo/* — rankings, keyword management
   settings.py            /api/settings — config, locations, scraper status
   alerts.py              /api/alerts/* — Slack webhook config & test
 
@@ -92,11 +90,11 @@ static/
 
 ## Scrapers
 
-All scrapers inherit from `BaseScraper` (`scrapers/base.py`) and implement `scrape_rates(pickup_date, return_date, location)`. On failure, the base class falls back to deterministic mock pricing from each scraper's `FLEET` definition so the dashboard always has data to display.
+All scrapers inherit from `BaseScraper` and implement `scrape_rates(pickup_date, return_date, location)`. On failure the base class falls back to deterministic mock pricing from each scraper's `FLEET` definition.
 
 ### Supported locations
 
-Scraping runs for **Keflavik Airport** and **Reykjavik** only. These are the only two locations Blue Car Rental operates from, and the only locations relevant for direct competitor comparison.
+Keflavik Airport and Reykjavik only — the two locations Blue Car Rental operates from.
 
 | Competitor | KEF Airport | Reykjavik | Notes |
 |------------|------------|-----------|-------|
@@ -108,37 +106,20 @@ Scraping runs for **Keflavik Airport** and **Reykjavik** only. These are the onl
 | Lava Car Rental | ✅ | — | Caren API (KEF only) |
 | Lotus Car Rental | ✅ | — | Caren API (KEF only) |
 
-### Live scraper details
-
-**Blue Car Rental**, **Lotus Car Rental**, and **Lava Car Rental** all use the [Caren](https://www.caren.is) booking management API:
-
-```
-Blue/Lotus: POST /_carenapix/class/
-Lava:       GET  /_plugins/carenapi/class
-Params: dateFrom, dateTo (YYYY-MM-DD HH:MM format)
-```
-
-**Holdur** (Europcar Iceland) and **Avis Iceland** are scraped via HTTP POST to their booking form with BeautifulSoup HTML parsing.
-
-**Go Car Rental** uses two requests: the GoRentals JSON API for pricing, and the public Sanity CMS API for car name/category lookup by class ID.
-
-**Hertz Iceland** uses a three-step flow: GET homepage → extract WordPress nonce → POST to `wp-admin/admin-ajax.php` → GET results page.
-
 ### Adding a live scraper
 
-1. Open the scraper file (e.g. `scrapers/gocarrental.py`)
-2. Implement `scrape_rates(self, pickup_date, return_date, location)` — replace `raise NotImplementedError`
-3. Return a list of dicts with these keys:
+1. Open the scraper file and implement `scrape_rates(self, pickup_date, return_date, location)`
+2. Return a list of dicts:
 
 ```python
 {
     "competitor":     str,   # e.g. "Go Car Rental"
-    "location":       str,   # e.g. "Keflavik Airport"
+    "location":       str,   # "Keflavik Airport" | "Reykjavik"
     "pickup_date":    str,   # YYYY-MM-DD
     "return_date":    str,   # YYYY-MM-DD
     "car_category":   str,   # Economy | Compact | SUV | 4x4 | Minivan
     "car_model":      str,   # raw model name from source
-    "canonical_name": str,   # normalised via canonicalize() from canonical.py
+    "canonical_name": str,   # normalised via canonicalize()
     "price_isk":      int,
     "currency":       str,   # "ISK"
     "scraped_at":     str,   # ISO datetime
@@ -147,41 +128,60 @@ Params: dateFrom, dateTo (YYYY-MM-DD HH:MM format)
 
 ### Car name normalisation
 
-`canonical.py` exposes a `canonicalize(name)` function that maps variant spellings to a standard canonical name used across all scrapers and the database. The function:
+`canonical.py` exposes `canonicalize(name)` which strips transmission/fuel suffixes and maps variant spellings to standard names via an `_EXACT` dict.
 
-1. Strips surrounding whitespace
-2. Strips trailing transmission/fuel suffixes (e.g. `(Automatic)`, `Plug-In Hybrid`, `PHEV`)
-3. Looks up the cleaned name in the `_EXACT` dict (case-insensitive)
-4. Returns the cleaned name unchanged if no mapping exists
-
-Examples:
 ```
-"Toyota Landcruiser 150"          → "Toyota Land Cruiser 150"
-"BMW X5 Plug-In Hybrid"           → "BMW X5"
-"KIA Sorento"                     → "Kia Sorento"
-"VW Transporter 4WD Passenger Van"→ "VW Transporter"
-"Volkswagen Caravelle"            → "VW Caravelle"
-"Kia Ceed Sportswagon"            → "Kia Ceed Wagon"
+"Toyota Landcruiser 150"    → "Toyota Land Cruiser 150"
+"VW Transporter 4WD"        → "VW Transporter"
+"Volkswagen Caravelle"      → "VW Caravelle"
+"Kia Ceed Sportswagon"      → "Kia Ceed Wagon"
 ```
-
-Add new entries to the `_EXACT` dict in `canonical.py`. `insert_rates()` in `database.py` applies `canonicalize()` automatically on every insert.
 
 ---
 
 ## Database
 
-SQLite via `aiosqlite`. Schema is initialised automatically on startup by `init_db()` in `database.py`. Local file: `blue_rental.db`
+SQLite via `aiosqlite`. Schema initialised automatically on startup by `init_db()`. Local file: `blue_rental.db`
 
 | Table | Purpose |
 |-------|---------|
 | `rates` | Scraped rental rates — one row per competitor/location/model/scrape |
 | `car_catalog` | Master list of canonical car names and categories |
-| `car_mappings` | Competitor model name → canonical name mapping (editable via UI) |
-| `rankings` | SEO keyword rankings (from SerpAPI) |
-| `config` | Key-value store: SerpAPI key, schedule, webhook URL, locations, etc. |
+| `car_mappings` | Competitor model name → canonical name (editable via Settings) |
+| `rankings` | SEO keyword rankings from SerpAPI |
+| `config` | Key-value store: SerpAPI key, schedule, webhook URL, locations, SEO keywords |
 | `seasonal_cache` | 6-hour cached seasonal analysis results |
+| `scrape_log` | History of every manual and scheduled scrape run (rates, duration, errors) |
+| `insurance_reviews` | Timestamped log of manual insurance data verifications |
+| `insurance_price_overrides` | Per-company/category zero-excess price overrides (editable via Insurance tab) |
 
-`rates` table columns: `competitor`, `location`, `pickup_date`, `return_date`, `car_category`, `car_model`, `canonical_name`, `price_isk`, `currency`, `scraped_at`
+---
+
+## Rate Intelligence
+
+### Executive Summary Banner
+
+Shown at the top of the Rates tab on every load:
+- **Blue vs Market** — Blue's avg price vs competitor avg (green = cheaper, red = more expensive)
+- **Market Low** — cheapest single rate in the current view
+- **Undercutting Blue** — number of competitors with any model cheaper than Blue's equivalent
+- **Price Moves** — count of models whose price has gone ↑ or ↓ since the previous scrape
+
+### Price Change Arrows
+
+The Δ column in the list view shows **per-competitor** price movement (not market average). A new `GET /api/rates/price-changes` endpoint compares each competitor's own avg price per model between the two most recent scrape dates.
+
+### Date Picker → Auto Scrape
+
+Changing the pickup or return date triggers a live scrape after an 800 ms debounce, so the table always reflects actual live pricing for the selected window.
+
+### CSV Export
+
+Export the full rates table as CSV from the list view header button. Includes per-day pricing calculated from the rental window.
+
+### Scrape History Log
+
+Settings → Scrape History shows every run: timestamp, trigger (manual/scheduled), location, rates scraped, competitors hit, duration, and error count.
 
 ---
 
@@ -191,11 +191,11 @@ APScheduler (`AsyncIOScheduler`) runs three jobs:
 
 | Job | Default schedule | Description |
 |-----|-----------------|-------------|
-| `scrape_rates` | Daily 07:00 | Scrapes all competitors for KEF + Reykjavik, inserts to DB |
-| `seo_check` | Daily 07:30 | Checks keyword rankings via SerpAPI |
-| `alert_check` | Daily 07:45 | Fires Slack alerts if competitors undercut Blue's rates |
+| `scrape_rates` | Daily 07:00 | Scrapes all competitors, logs to `scrape_log` |
+| `seo_check` | Daily 07:30 | Checks stored keywords via SerpAPI |
+| `alert_check` | Daily 07:45 | Fires Slack alerts if competitors undercut Blue |
 
-Schedule can be changed to `hourly` or `weekly` via Settings → Auto-scrape schedule, or via:
+Change schedule via Settings or:
 
 ```
 POST /api/scheduler/reconfigure?schedule=weekly
@@ -205,22 +205,52 @@ POST /api/scheduler/reconfigure?schedule=weekly
 
 ## Insurance Comparison
 
-The Insurance tab (`GET /api/insurance`) contains static, researched data for all 7 competitors — no scraping, no DB required. Data lives in `routes/insurance.py`.
+### Views
 
-**Covered protection types:** TPL, CDW, SCDW, TP, GP (Gravel/Glass), SAAP (Sand & Ash), TIP (Tire & Wheel), PAI, Roadside Assistance, F-Road Protection, River Crossing, Zero Excess
+| View | Description |
+|------|-------------|
+| Coverage Matrix | Which protections are included/optional/zero-excess per company |
+| Company Cards | Per-company package breakdown with daily prices and deductibles |
+| **Price by Category** | Zero-excess daily price broken down by car category (Economy→Minivan). Prices are **editable** — click any cell to update. Changes saved to `insurance_price_overrides` DB table and persist across restarts. |
+| Deductibles | Out-of-pocket excess comparison across coverage tiers |
 
-**Per-company data includes:**
-- Which protections are included in the base rental (with deductible amounts)
-- All available packages/tiers with daily price and deductible summary
-- Individual product pricing where applicable (Hertz uses an unbundled model)
+### Research Workflow
 
-**Key findings surfaced in the UI:**
-- **Lava Car Rental** has the most comprehensive base bundle (7 protections included by default)
-- **Hertz Iceland** is the only company where CDW is **not** included in the base price
-- **Lotus Car Rental** is the only company offering river crossing protection (Platinum, 4x4 only)
-- **Go Car Rental** uniquely prices all insurance in EUR rather than ISK
+1. Click **Trigger Research** — opens all 7 competitor insurance pages in new tabs simultaneously
+2. Review each site and update any changed prices in the **Price by Category** table (click a price cell to edit inline)
+3. Click **Mark Reviewed** — records a timestamped verification entry in the `insurance_reviews` log
 
-Data sourced April 2025 from publicly available company websites. To update, edit the `INSURANCE_DATA` dict in `routes/insurance.py`.
+The header shows `Research: April 2025 · Verified [date]` once reviewed.
+
+### Key findings (April 2025)
+
+- **Lava Car Rental** — most comprehensive base bundle (7 protections by default, incl. SAAP + TIP)
+- **Hertz Iceland** — only company where CDW is **not** in the base price
+- **Lotus Car Rental** — only company offering river crossing protection (Platinum, 4x4 only)
+- **Go Car Rental** — uniquely prices all insurance in EUR, not ISK
+
+---
+
+## SEO Rank Tracker
+
+Tracks Google ranking for `bluecarrental.is` across 10 pre-seeded Iceland car rental keywords:
+
+- car rental reykjavik
+- car rental iceland
+- rent a car keflavik airport
+- cheap car hire iceland
+- bílaleiga reykjavík
+- leigubíll ísland
+- 4x4 rental iceland
+- iceland car hire comparison
+- keflavik airport car rental
+- best car rental iceland
+
+Previous rank and change (▲/▼) are tracked per keyword independently using `ROW_NUMBER() OVER (PARTITION BY keyword)` so each keyword's history is correct regardless of check frequency.
+
+Keywords are managed via Settings → Keywords or `POST /api/seo/keywords?keyword=...`.
+
+Requires `SERPAPI_KEY` set in Settings or `.env`. Without a key, mock rankings are shown.
 
 ---
 
@@ -243,8 +273,14 @@ GET  /api/rates
 POST /api/rates/scrape
      ?location=  &pickup_date=  &return_date=
 
-GET  /api/rates/deltas
+GET  /api/rates/deltas           Market-avg price delta between last two scrape dates
      ?location=  &category=
+
+GET  /api/rates/price-changes    Per-competitor price delta (competitor::location::model key)
+     ?location=  &category=
+
+GET  /api/rates/scrape-log       Recent scrape history
+     ?limit=20
 
 GET  /api/rates/history
      ?location=  &car_category=  &competitor=  &days=30
@@ -258,7 +294,7 @@ GET  /api/rates/history/coverage
 GET  /api/rates/matrix
      ?location=  &pickup_date=  &return_date=  &category=
 
-GET  /api/rates/seasonal                 (cached 6h)
+GET  /api/rates/seasonal         (cached 6h)
      ?category=  &location=
 
 GET  /api/rates/scraper-status
@@ -271,7 +307,11 @@ DELETE /api/rates/car-mappings/{id}
 ### Insurance
 
 ```
-GET  /api/insurance
+GET  /api/insurance                  Full data + category pricing (with DB overrides)
+GET  /api/insurance/category-pricing Base category pricing without overrides
+POST /api/insurance/prices           Save a price override {company, category, price_isk, note}
+GET  /api/insurance/review-log       Verification history
+POST /api/insurance/mark-reviewed    Log a manual review event
 ```
 
 ### SEO Rank Tracking
@@ -280,7 +320,7 @@ GET  /api/insurance
 GET  /api/seo/rankings
      ?keyword=  &location=
 
-POST /api/seo/check                      Requires SERPAPI_KEY
+POST /api/seo/check
      ?location=
 
 GET  /api/seo/history
@@ -295,7 +335,7 @@ DELETE /api/seo/keywords/{keyword}
 
 ```
 GET  /api/settings
-POST /api/settings                       serpapi_key, schedule, locations
+POST /api/settings
 
 POST /api/alerts/test-webhook
 POST /api/alerts/check
@@ -304,8 +344,6 @@ POST /api/alerts/check
 ---
 
 ## Brand Colours
-
-Used in charts and the insurance comparison UI:
 
 | Competitor | Colour |
 |-----------|--------|
@@ -321,14 +359,13 @@ Used in charts and the insurance comparison UI:
 
 ## Dark Mode
 
-Toggle via the moon/sun icon in the top bar. Preference is persisted to `localStorage`. Implemented via `body.dark-mode` class + CSS custom property overrides in `style.css`.
+Toggle via moon/sun icon in the top bar. Persisted to `localStorage`. Implemented via `body.dark-mode` CSS class. Filter bar inputs (date pickers, selects) use `color-scheme: dark` for correct rendering.
 
-> **Note:** Do not override the `--white` CSS variable in dark mode overrides — the sidebar uses it for text colour and is intentionally always dark regardless of theme.
+> **Note:** Do not override `--white` in dark mode — the sidebar uses it for text and is intentionally always dark.
 
 ---
 
 ## Repo Hygiene
 
-- `blue_rental.db` and `.env` are excluded via `.gitignore`
-- Copy `.env.example` to `.env` for local setup
-- Secrets (SerpAPI key, Slack webhook URL) are stored in the `config` DB table at runtime, not in env files
+- `blue_rental.db` and `.env` excluded via `.gitignore`
+- Secrets (SerpAPI key, Slack webhook URL) stored in `config` DB table at runtime

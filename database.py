@@ -245,6 +245,19 @@ async def init_db():
             )
         """)
 
+        # Insurance price overrides (per-company, per-category editable prices)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS insurance_price_overrides (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                company TEXT NOT NULL,
+                category TEXT NOT NULL,
+                price_isk INTEGER,
+                price_note TEXT,
+                updated_at TEXT NOT NULL,
+                UNIQUE(company, category)
+            )
+        """)
+
         # Insurance review / verification log
         await db.execute("""
             CREATE TABLE IF NOT EXISTS insurance_reviews (
@@ -1088,6 +1101,51 @@ async def log_insurance_review(reviewer: str = "", notes: str = "", companies: l
         await db.commit()
         row_id = cursor.lastrowid
     return {"id": row_id, "reviewed_at": now, "reviewer": reviewer, "notes": notes}
+
+
+async def get_insurance_price_overrides() -> dict:
+    """
+    Return all stored price overrides as a nested dict:
+        { company: { category: { price_isk, price_note, updated_at } } }
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT company, category, price_isk, price_note, updated_at FROM insurance_price_overrides"
+        ) as cursor:
+            rows = await cursor.fetchall()
+    result: dict = {}
+    for row in rows:
+        result.setdefault(row["company"], {})[row["category"]] = {
+            "price_isk":   row["price_isk"],
+            "price_note":  row["price_note"],
+            "updated_at":  row["updated_at"],
+        }
+    return result
+
+
+async def set_insurance_price_override(
+    company: str,
+    category: str,
+    price_isk: int | None,
+    price_note: str | None = None,
+) -> dict:
+    """Upsert a price override for one company+category cell. Returns the saved row."""
+    now = datetime.now(timezone.utc).isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """
+            INSERT INTO insurance_price_overrides (company, category, price_isk, price_note, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(company, category) DO UPDATE SET
+                price_isk  = excluded.price_isk,
+                price_note = excluded.price_note,
+                updated_at = excluded.updated_at
+            """,
+            (company, category, price_isk, price_note or None, now),
+        )
+        await db.commit()
+    return {"company": company, "category": category, "price_isk": price_isk, "price_note": price_note, "updated_at": now}
 
 
 async def get_insurance_reviews(limit: int = 10) -> list[dict]:

@@ -1932,7 +1932,7 @@ function renderCategoryPricingTable(categoryPricing) {
   const cats = ['Economy', 'Compact', 'SUV', '4x4', 'Minivan'];
   const companies = Object.keys(categoryPricing);
 
-  // Find min price per category to highlight cheapest
+  // Find min ISK price per category to highlight cheapest
   const minPerCat = {};
   cats.forEach(cat => {
     const prices = companies
@@ -1944,24 +1944,100 @@ function renderCategoryPricingTable(categoryPricing) {
   tbody.innerHTML = companies.map(company => {
     const entry = categoryPricing[company];
     const color = (state.insuranceData?.companies?.[company]?.color) || '#6b7280';
+    const hasOverride = entry?._overrides && Object.keys(entry._overrides).length > 0;
+
     const cells = cats.map(cat => {
-      const price = entry?.prices?.[cat];
-      const eur   = entry?.price_eur?.[cat];
+      const price   = entry?.prices?.[cat];
+      const eur     = entry?.price_eur?.[cat];
+      const isOverridden = entry?._overrides?.[cat];
+      const isMin   = price !== null && price !== undefined && minPerCat[cat] !== null && price === minPerCat[cat];
+      const cls     = isMin ? 'price-low' : '';
+      const editedMark = isOverridden
+        ? `<span title="Manually updated ${formatDate(isOverridden)}" style="font-size:9px;color:#2563eb;margin-left:3px">✎</span>` : '';
+
+      let display;
       if (price !== null && price !== undefined) {
-        const isMin = minPerCat[cat] !== null && price === minPerCat[cat];
-        return `<td style="text-align:center" class="${isMin ? 'price-low' : ''}">${formatISK(price)}</td>`;
+        display = formatISK(price);
       } else if (eur !== null && eur !== undefined) {
-        return `<td style="text-align:center;color:#6b7280">~€${eur}</td>`;
+        display = `~€${eur}`;
+      } else {
+        display = '—';
       }
-      return `<td style="text-align:center;color:#9ca3af">—</td>`;
+
+      // Each cell is click-to-edit
+      return `<td class="${cls}" style="text-align:center;cursor:pointer;position:relative"
+                  title="Click to edit"
+                  onclick="editInsurancePriceCell(this,'${escHtml(company)}','${escHtml(cat)}',${price ?? 'null'})">
+        <span class="ins-price-val">${display}${editedMark}</span>
+      </td>`;
     }).join('');
+
     return `<tr>
-      <td><strong style="color:${color}">${escHtml(company)}</strong></td>
+      <td><strong style="color:${color}">${escHtml(company)}</strong>${hasOverride ? ' <span style="font-size:10px;color:#2563eb" title="Contains manual edits">✎</span>' : ''}</td>
       <td style="font-size:12px;color:#6b7280">${escHtml(entry?.package || '')}</td>
       ${cells}
       <td style="font-size:11px;color:#6b7280;max-width:220px">${escHtml(entry?.note || '')}</td>
     </tr>`;
   }).join('');
+}
+
+function editInsurancePriceCell(td, company, category, currentPrice) {
+  // If already editing this cell, ignore
+  if (td.querySelector('input')) return;
+
+  const span = td.querySelector('.ins-price-val');
+  const origHtml = span.innerHTML;
+
+  // Replace with an input
+  span.innerHTML = '';
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.min = '0';
+  input.step = '50';
+  input.value = currentPrice !== null ? currentPrice : '';
+  input.placeholder = 'ISK/day';
+  input.style.cssText = 'width:80px;padding:2px 6px;font-size:12px;border:1.5px solid #2563eb;border-radius:4px;text-align:center';
+  input.title = 'Enter ISK/day, leave blank for unpublished. Press Enter to save, Escape to cancel.';
+  span.appendChild(input);
+  input.focus();
+  input.select();
+
+  async function save() {
+    const raw = input.value.trim();
+    const price = raw === '' ? null : parseInt(raw, 10);
+    if (raw !== '' && (isNaN(price) || price < 0)) {
+      showToast('Enter a valid positive number (ISK/day), or leave blank for unpublished.', 'error');
+      input.focus();
+      return;
+    }
+    span.innerHTML = '<span style="color:#6b7280;font-size:11px">Saving…</span>';
+    try {
+      await apiFetch('/api/insurance/prices', {
+        method: 'POST',
+        body: JSON.stringify({ company, category, price_isk: price }),
+      });
+      showToast(`Saved: ${company} · ${category} → ${price !== null ? formatISK(price) + '/day' : 'unpublished'}`, 'success');
+      // Reload insurance data so the table re-renders with the new value
+      state.insuranceData = null;
+      await loadInsurance();
+    } catch (e) {
+      showToast(`Failed to save: ${e.message}`, 'error');
+      span.innerHTML = origHtml;
+    }
+  }
+
+  function cancel() {
+    span.innerHTML = origHtml;
+  }
+
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter')  { e.preventDefault(); save(); }
+    if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+  });
+  input.addEventListener('blur', () => {
+    // Small delay so Enter keydown fires before blur
+    setTimeout(() => { if (td.querySelector('input')) cancel(); }, 150);
+  });
 }
 
 function renderInsurance(data) {
