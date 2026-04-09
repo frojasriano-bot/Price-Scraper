@@ -3,101 +3,19 @@ Database initialization and helpers for Blue Rental Intelligence.
 Uses aiosqlite for async SQLite access.
 """
 
+from __future__ import annotations
+
 import aiosqlite
 import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from canonical import canonicalize
+from canonical import canonicalize, canonicalize_category, CANONICAL_CATEGORIES
 
 DB_PATH = Path(__file__).parent / "blue_rental.db"
 
-# Canonical car catalog: (canonical_name, category)
-# This is the master list of all recognised models and their primary category.
-CAR_CATALOG = [
-    # Economy
-    ("Toyota Aygo",        "Economy"),
-    ("Toyota Yaris",       "Economy"),
-    ("Kia Rio",            "Economy"),
-    ("Kia Ceed",           "Economy"),
-    ("Hyundai i10",        "Economy"),
-    ("Hyundai i20",        "Economy"),
-    ("Suzuki Swift",       "Economy"),
-    ("Renault Clio",       "Economy"),
-    ("VW Polo",            "Economy"),
-    ("VW ID.4",            "Economy"),
-    ("Dacia Sandero",      "Economy"),
-    ("Opel Corsa",         "Economy"),
-    ("Tesla Model 3",      "Economy"),
-    ("BYD Dolphin",        "Economy"),
-    ("Kia EV3",            "Economy"),
-    ("Smart #5",           "Economy"),
-    ("Renault Zoe",        "Economy"),
-    # Compact
-    ("Dacia Jogger",       "Compact"),
-    ("Kia Stonic",         "Compact"),
-    ("Kia XCeed",          "Compact"),
-    ("Kia Ceed Wagon",     "Compact"),
-    ("VW Golf",            "Compact"),
-    ("Toyota Corolla",     "Compact"),
-    ("Toyota Corolla Wagon","Compact"),
-    ("Toyota Yaris Cross", "Compact"),
-    ("Hyundai i30",        "Compact"),
-    ("Hyundai i20",        "Compact"),
-    ("Skoda Octavia",      "Compact"),
-    ("Skoda Octavia Wagon","Compact"),
-    ("Renault Captur",     "Compact"),
-    ("Renault Megane Wagon","Compact"),
-    ("Mazda CX-30",        "Compact"),
-    # SUV
-    ("Dacia Duster",       "SUV"),
-    ("Dacia Bigster",      "SUV"),
-    ("Suzuki Vitara",      "SUV"),
-    ("Suzuki Jimny",       "SUV"),
-    ("Kia Sportage",       "SUV"),
-    ("Toyota RAV4",        "SUV"),
-    ("Hyundai Tucson",     "SUV"),
-    ("Nissan Qashqai",     "SUV"),
-    ("Nissan Ariya",       "SUV"),
-    ("Jeep Renegade",      "SUV"),
-    ("Jeep Compass",       "SUV"),
-    ("Subaru Forester",    "SUV"),
-    ("Subaru XV",          "SUV"),
-    ("Mitsubishi Eclipse Cross", "SUV"),
-    ("Lexus UX250H",       "SUV"),
-    ("MG ZS",              "SUV"),
-    ("MG EHS",             "SUV"),
-    ("Kia EV6",            "SUV"),
-    ("Tesla Model Y",      "SUV"),
-    ("Renault Koleos",     "SUV"),
-    # 4x4
-    ("Toyota Land Cruiser 150", "4x4"),
-    ("Toyota Land Cruiser 250", "4x4"),
-    ("Toyota Hilux",       "4x4"),
-    ("Toyota Highlander",  "4x4"),
-    ("Kia Sorento",        "4x4"),
-    ("Hyundai Santa Fe",   "4x4"),
-    ("Nissan X-Trail",     "4x4"),
-    ("Land Rover Defender","4x4"),
-    ("Land Rover Discovery","4x4"),
-    ("Land Rover Discovery Sport","4x4"),
-    ("Range Rover Sport",  "4x4"),
-    ("Honda CR-V",         "4x4"),
-    ("Jeep Wrangler",      "4x4"),
-    ("Skoda Kodiaq",       "4x4"),
-    ("BMW X3",             "4x4"),
-    ("BMW X5",             "4x4"),
-    ("Mercedes GLE",       "4x4"),
-    ("Mitsubishi Outlander","4x4"),
-    # Minivan
-    ("VW Caravelle",       "Minivan"),
-    ("VW Caddy Maxi",      "Minivan"),
-    ("Ford Tourneo",       "Minivan"),
-    ("Toyota Proace",      "Minivan"),
-    ("Renault Trafic",     "Minivan"),
-    ("Mercedes Vito",      "Minivan"),
-    ("Mercedes Sprinter",  "Minivan"),
-]
+# NOTE: Car catalog is now derived from canonical.CANONICAL_CATEGORIES
+# (the single source of truth for car → category mappings).
 
 # Maps (competitor, competitor_model_name) → canonical_name
 # Used to seed the car_mappings DB table (informational reference).
@@ -299,8 +217,8 @@ async def init_db():
 
         await db.commit()
 
-        # Seed car catalog
-        for canonical_name, category in CAR_CATALOG:
+        # Seed car catalog from canonical category map (single source of truth)
+        for canonical_name, category in CANONICAL_CATEGORIES.items():
             await db.execute(
                 "INSERT OR IGNORE INTO car_catalog (canonical_name, category) VALUES (?, ?)",
                 (canonical_name, category),
@@ -349,6 +267,151 @@ async def init_db():
         await db.commit()
 
 
+async def recanonicalize_all_rates():
+    """
+    One-time migration: re-apply canonicalize() + Holdur name cleaning to every
+    row in the rates table. Fixes stale canonical_name values from before scraper
+    and canonical.py improvements. Runs on startup; skips if already done.
+    """
+    import re
+
+    # Holdur name cleaning patterns (same as scrapers/holdur.py)
+    _PREFIX = re.compile(r"^[A-Z0-9]+[-–]\s*", re.UNICODE)
+    _SUFFIX = re.compile(r"\s*-\s*eða\s+sambærilegur\s*$", re.IGNORECASE | re.UNICODE)
+    _TRANS  = re.compile(
+        r"\s+(?:sjálfskiptur|sjálfskipti|handskiptur|handskipti)\b.*$",
+        re.IGNORECASE | re.UNICODE,
+    )
+
+    def _clean(raw: str) -> str:
+        name = _PREFIX.sub("", raw.strip())
+        name = _SUFFIX.sub("", name).strip()
+        name = _TRANS.sub("", name).strip()
+        return name
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        # Check if migration already ran
+        db.row_factory = aiosqlite.Row
+        row = await db.execute_fetchall(
+            "SELECT value FROM config WHERE key = 'canonical_migration_v2'"
+        )
+        if row:
+            return  # already done
+
+        cursor = await db.execute("SELECT rowid AS rid, car_model, canonical_name FROM rates")
+        rows = await cursor.fetchall()
+
+        updates = []
+        for r in rows:
+            old_canonical = r["canonical_name"] or ""
+            raw_model     = r["car_model"] or ""
+
+            # Step 1: clean Holdur-style names from the car_model
+            cleaned = _clean(raw_model)
+            # Step 2: re-canonicalize
+            new_canonical = canonicalize(cleaned)
+            # Also re-canonicalize whatever was in canonical_name (it may already be clean)
+            alt_canonical = canonicalize(_clean(old_canonical))
+
+            # Pick whichever gives a shorter/cleaner result (a mapped name is always better)
+            best = new_canonical if len(new_canonical) <= len(alt_canonical) else alt_canonical
+
+            if best != old_canonical:
+                updates.append((best, cleaned, r["rid"]))
+
+        if updates:
+            await db.executemany(
+                "UPDATE rates SET canonical_name = ?, car_model = ? WHERE rowid = ?",
+                updates,
+            )
+
+        # Mark migration as done
+        await db.execute(
+            "INSERT OR REPLACE INTO config (key, value, updated_at) VALUES (?, ?, ?)",
+            ("canonical_migration_v2", str(len(updates)), datetime.now(timezone.utc).isoformat()),
+        )
+        await db.commit()
+
+    if updates:
+        print(f"[migration] Re-canonicalized {len(updates)} rates rows.")
+
+
+async def recategorize_all_rates():
+    """
+    Migration v3: apply CANONICAL_CATEGORIES to every row in the rates table.
+    Fixes historical data where scrapers assigned wrong categories.
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        row = await db.execute_fetchall(
+            "SELECT value FROM config WHERE key = 'category_migration_v1'"
+        )
+        if row:
+            return
+
+        cursor = await db.execute(
+            "SELECT rowid AS rid, canonical_name, car_category FROM rates"
+        )
+        rows = await cursor.fetchall()
+
+        updates = []
+        for r in rows:
+            canonical = r["canonical_name"] or ""
+            old_cat = r["car_category"] or ""
+            new_cat = canonicalize_category(canonical, old_cat)
+            if new_cat != old_cat:
+                updates.append((new_cat, r["rid"]))
+
+        if updates:
+            await db.executemany(
+                "UPDATE rates SET car_category = ? WHERE rowid = ?",
+                updates,
+            )
+
+        await db.execute(
+            "INSERT OR REPLACE INTO config (key, value, updated_at) VALUES (?, ?, ?)",
+            ("category_migration_v1", str(len(updates)), datetime.now(timezone.utc).isoformat()),
+        )
+        await db.commit()
+
+    if updates:
+        print(f"[migration] Re-categorized {len(updates)} rates rows.")
+
+
+async def get_category_audit():
+    """
+    Return category audit data: every canonical name, its assigned category,
+    the row count, and whether it conflicts with the canonical category map.
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("""
+            SELECT canonical_name, car_category, COUNT(*) as cnt
+            FROM rates
+            GROUP BY canonical_name, car_category
+            ORDER BY canonical_name, car_category
+        """)
+        rows = await cursor.fetchall()
+
+    from canonical import CANONICAL_CATEGORIES
+
+    results = []
+    for r in rows:
+        canonical = r["canonical_name"]
+        db_cat = r["car_category"]
+        correct_cat = CANONICAL_CATEGORIES.get(canonical)
+        results.append({
+            "canonical_name": canonical,
+            "db_category": db_cat,
+            "correct_category": correct_cat,
+            "count": r["cnt"],
+            "is_mapped": correct_cat is not None,
+            "is_correct": correct_cat == db_cat if correct_cat else True,
+        })
+
+    return results
+
+
 async def get_config(key: str, default=None):
     """Retrieve a config value by key."""
     async with aiosqlite.connect(DB_PATH) as db:
@@ -384,6 +447,9 @@ async def insert_rates(rates: list[dict]):
         row = dict(r)
         raw = row.get("canonical_name") or row.get("car_model") or ""
         row["canonical_name"] = canonicalize(raw)
+        row["car_category"] = canonicalize_category(
+            row["canonical_name"], row.get("car_category", "")
+        )
         normalised.append(row)
 
     async with aiosqlite.connect(DB_PATH) as db:

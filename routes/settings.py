@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List
 
-from database import get_config, set_config
+from database import get_config, set_config, get_category_audit
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -73,4 +73,29 @@ async def update_settings(payload: SettingsUpdate):
     return {
         "message": "Settings updated successfully.",
         "updated_fields": updated,
+    }
+
+
+@router.get("/category-audit")
+async def category_audit():
+    """
+    Return category audit data showing every canonical car name, its DB
+    category, the correct canonical category, and whether they match.
+    """
+    rows = await get_category_audit()
+
+    # Build summary stats
+    total_models = len(set(r["canonical_name"] for r in rows))
+    mapped = len(set(r["canonical_name"] for r in rows if r["is_mapped"]))
+    unmapped = total_models - mapped
+    conflicts = len(set(r["canonical_name"] for r in rows if not r["is_correct"]))
+
+    return {
+        "summary": {
+            "total_models": total_models,
+            "mapped": mapped,
+            "unmapped": unmapped,
+            "conflicts": conflicts,
+        },
+        "rows": rows,
     }

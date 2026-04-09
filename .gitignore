@@ -27,3 +27,4 @@ rates.db
 ### Git (sandbox workaround)
 .git_data/
 .git/
+.aider*

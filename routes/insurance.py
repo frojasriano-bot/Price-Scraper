@@ -1,6 +1,6 @@
 """
 Insurance comparison data for all tracked Iceland car rental competitors.
-Data researched April 2025 from publicly available sources.
+Data researched April 2026 from publicly available sources.
 """
 
 import copy
@@ -13,7 +13,7 @@ router = APIRouter(prefix="/api/insurance", tags=["insurance"])
 # Per-category zero-excess (full protection) daily price in ISK.
 # Used by the "Price by Category" comparison table.
 # None = not published / priced in foreign currency.
-# Source: April 2025 research; prices reflect the full zero-excess tier per day.
+# Source: April 2026 research; prices reflect the full zero-excess tier per day.
 CATEGORY_PRICING = {
     "Blue Car Rental": {
         "package": "Liability Waiver (Zero)",

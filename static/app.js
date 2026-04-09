@@ -124,7 +124,7 @@ function switchTab(tab) {
 
   if (tab === 'rates') loadRates();
   if (tab === 'seo') loadRankings();
-  if (tab === 'settings') { loadSettings(); loadScrapeLog(); }
+  if (tab === 'settings') { loadSettings(); loadScrapeLog(); loadCategoryAudit(); }
   if (tab === 'insurance') loadInsurance();
 }
 
@@ -1782,6 +1782,96 @@ async function testWebhook() {
     if (btn) { btn.disabled = false; btn.textContent = 'Test Webhook'; btn.prepend((() => { const s = document.createElementNS('http://www.w3.org/2000/svg','svg'); s.setAttribute('viewBox','0 0 24 24'); s.setAttribute('fill','none'); s.setAttribute('stroke','currentColor'); s.setAttribute('stroke-width','2'); s.setAttribute('stroke-linecap','round'); s.setAttribute('stroke-linejoin','round'); s.style.cssText='width:13px;height:13px;margin-right:4px'; s.innerHTML='<path d="M22 2L11 13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>'; return s; })()); }
   }
 }
+
+// ── Category Audit ─────────────────────────────────────────────────────────
+let _categoryAuditData = null;
+
+async function loadCategoryAudit() {
+  try {
+    const data = await apiFetch('/api/settings/category-audit');
+    _categoryAuditData = data;
+    renderCategoryAudit();
+  } catch (e) {
+    showToast(`Failed to load category audit: ${e.message}`, 'error');
+  }
+}
+
+function renderCategoryAudit() {
+  if (!_categoryAuditData) return;
+  const { summary, rows } = _categoryAuditData;
+  const filter = document.getElementById('audit-filter')?.value || 'all';
+
+  // Summary stats
+  const sumEl = document.getElementById('audit-summary');
+  if (sumEl) {
+    sumEl.innerHTML = `
+      <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:8px 14px;font-size:13px">
+        <span style="color:#6b7280">Total models</span><br>
+        <strong style="font-size:18px">${summary.total_models}</strong>
+      </div>
+      <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:8px 14px;font-size:13px">
+        <span style="color:#22c55e">Mapped</span><br>
+        <strong style="font-size:18px">${summary.mapped}</strong>
+      </div>
+      <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:8px 14px;font-size:13px">
+        <span style="color:#f59e0b">Unmapped</span><br>
+        <strong style="font-size:18px">${summary.unmapped}</strong>
+      </div>
+      <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:8px 14px;font-size:13px">
+        <span style="color:#ef4444">Conflicts</span><br>
+        <strong style="font-size:18px">${summary.conflicts}</strong>
+      </div>
+    `;
+  }
+
+  // Filter rows
+  let filtered = rows;
+  if (filter === 'conflicts') {
+    filtered = rows.filter(r => !r.is_correct);
+  } else if (filter === 'unmapped') {
+    filtered = rows.filter(r => !r.is_mapped);
+  }
+
+  const tbody = document.getElementById('audit-tbody');
+  if (!tbody) return;
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" style="padding:20px;text-align:center;color:#6b7280">No results for this filter</td></tr>';
+    return;
+  }
+
+  const catColors = {
+    Economy: '#3b82f6',
+    Compact: '#8b5cf6',
+    SUV:     '#f59e0b',
+    '4x4':   '#ef4444',
+    Minivan: '#22c55e',
+  };
+
+  function catBadge(cat) {
+    const color = catColors[cat] || '#6b7280';
+    return `<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;background:${color}20;color:${color};border:1px solid ${color}40">${cat || '—'}</span>`;
+  }
+
+  tbody.innerHTML = filtered.map(r => {
+    let statusBadge;
+    if (!r.is_mapped) {
+      statusBadge = '<span class="badge badge-gray" style="font-size:11px">Unmapped</span>';
+    } else if (r.is_correct) {
+      statusBadge = '<span class="badge badge-green" style="font-size:11px">OK</span>';
+    } else {
+      statusBadge = '<span class="badge" style="font-size:11px;background:#fef2f2;color:#dc2626;border:1px solid #fecaca">Mismatch</span>';
+    }
+    return `<tr${!r.is_correct ? ' style="background:rgba(239,68,68,0.04)"' : ''}>
+      <td><strong>${r.canonical_name}</strong></td>
+      <td>${catBadge(r.db_category)}</td>
+      <td>${r.correct_category ? catBadge(r.correct_category) : '<span style="color:#9ca3af">—</span>'}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums">${r.count.toLocaleString()}</td>
+      <td>${statusBadge}</td>
+    </tr>`;
+  }).join('');
+}
+
 
 function renderMappingsTable() {
   const tbody = document.getElementById('mappings-tbody');

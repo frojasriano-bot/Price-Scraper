@@ -74,15 +74,6 @@ def _parse_isk_price(text: str) -> int | None:
     return None
 
 
-def _classify_category(category_text: str) -> str:
-    """Map Avis category label to our canonical category."""
-    lower = category_text.lower().strip()
-    for key, cat in AVIS_CAT_MAP.items():
-        if key in lower:
-            return cat
-    return "Economy"
-
-
 class AvisIsScraper(BaseScraper):
     competitor_name = "Avis Iceland"
     base_url = "https://www.avis.is"
@@ -91,6 +82,7 @@ class AvisIsScraper(BaseScraper):
             {"model": "Hyundai i10",  "price_range": (8000,  11000)},
             {"model": "Hyundai i20",  "price_range": (9000,  12000)},
             {"model": "VW Polo",      "price_range": (9000,  12500)},
+            {"model": "Renault Zoe",  "price_range": (10000, 13000)},
         ],
         "Compact": [
             {"model": "VW Golf",       "price_range": (11000, 15000)},
@@ -110,8 +102,8 @@ class AvisIsScraper(BaseScraper):
             {"model": "Land Rover Defender",        "price_range": (33000, 44000)},
         ],
         "Minivan": [
-            {"model": "Renault Zoe",   "canonical_name": "Renault Zoe",  "price_range": (10000, 13000)},
-            {"model": "Tesla Model Y",                                    "price_range": (21000, 28000)},
+            {"model": "VW Transporter",  "price_range": (22000, 30000)},
+            {"model": "Mercedes Sprinter", "price_range": (25000, 35000)},
         ],
     }
 

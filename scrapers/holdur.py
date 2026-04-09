@@ -116,7 +116,7 @@ class HoldurScraper(BaseScraper):
         "Compact": [
             {"model": "Kia Ceed Sportswagon", "price_range": (10500, 14000)},
             {"model": "Dacia Jogger",          "price_range": (10000, 13500)},
-            {"model": "Skoda Octavia Combi",  "canonical_name": "Skoda Octavia", "price_range": (11000, 15000)},
+            {"model": "Skoda Octavia Combi",  "canonical_name": "Skoda Octavia Wagon", "price_range": (11000, 15000)},
         ],
         "SUV": [
             {"model": "Suzuki Jimny",   "price_range": (13000, 17500)},

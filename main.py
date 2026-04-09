@@ -24,7 +24,7 @@ from dotenv import load_dotenv
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from database import init_db, get_config, set_config
+from database import init_db, recanonicalize_all_rates, recategorize_all_rates, get_config, set_config
 from routes.rates import router as rates_router
 from routes.seo import router as seo_router
 from routes.settings import router as settings_router
@@ -113,7 +113,6 @@ async def scheduled_seasonal_scrape():
         ret    = (date(year, month, 15) + timedelta(days=7)).isoformat()
 
         month_rates: list[dict] = []
-        tasks = []
 
         async def _scrape(ScraperClass, p=pickup, r=ret):
             async with ScraperClass() as scraper:
@@ -125,8 +124,7 @@ async def scheduled_seasonal_scrape():
                     errors.append(f"{ScraperClass.__name__} {p}: {e}")
                     return []
 
-        import asyncio as _asyncio
-        results = await _asyncio.gather(*[_scrape(Cls) for Cls in ALL_SCRAPERS])
+        results = await asyncio.gather(*[_scrape(Cls) for Cls in ALL_SCRAPERS])
         for r_list in results:
             month_rates.extend(r_list)
 
@@ -262,6 +260,11 @@ async def lifespan(app: FastAPI):
     # Initialize the database
     await init_db()
     logger.info("Database initialized.")
+
+    # Re-canonicalize stale names from before scraper/canonical fixes
+    await recanonicalize_all_rates()
+    # Re-categorize all rates using the canonical category map
+    await recategorize_all_rates()
 
     # Load schedule preference from DB
     schedule = await get_config("scrape_schedule", "daily")

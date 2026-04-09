@@ -759,6 +759,47 @@
           </div>
         </div>
 
+        <!-- Category Audit -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Category Audit</div>
+              <div class="card-subtitle">Verify that every car model is assigned to the correct category</div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <select class="form-control" id="audit-filter" onchange="renderCategoryAudit()" style="font-size:12px;padding:4px 8px;min-width:120px">
+                <option value="all">All Models</option>
+                <option value="conflicts">Conflicts Only</option>
+                <option value="unmapped">Unmapped Only</option>
+              </select>
+              <button class="btn btn-secondary btn-sm" onclick="loadCategoryAudit()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                Refresh
+              </button>
+            </div>
+          </div>
+
+          <!-- Summary stats row -->
+          <div id="audit-summary" style="display:flex;gap:16px;margin-bottom:12px;flex-wrap:wrap"></div>
+
+          <div class="table-wrap" style="max-height:500px;overflow-y:auto">
+            <table>
+              <thead style="position:sticky;top:0;z-index:1">
+                <tr>
+                  <th>Canonical Name</th>
+                  <th>DB Category</th>
+                  <th>Correct Category</th>
+                  <th>Rows</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="audit-tbody">
+                <tr><td colspan="5" style="padding:20px;text-align:center;color:#6b7280">Click Refresh to load audit data</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         <!-- Car Model Mappings -->
         <div class="card">
           <div class="card-header">

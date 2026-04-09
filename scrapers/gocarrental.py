@@ -77,7 +77,7 @@ class GoCarRentalScraper(BaseScraper):
             {"model": "Renault Captur",       "price_range": (9000,  12500)},
             {"model": "Kia Ceed Wagon",       "canonical_name": "Kia Ceed Sportswagon", "price_range": (10000, 13500)},
             {"model": "Renault Megane Wagon", "canonical_name": "Renault Megane",        "price_range": (10000, 13500)},
-            {"model": "Skoda Octavia Wagon",  "canonical_name": "Skoda Octavia",         "price_range": (11000, 15000)},
+            {"model": "Skoda Octavia Wagon",  "canonical_name": "Skoda Octavia Wagon",   "price_range": (11000, 15000)},
         ],
         "SUV": [
             {"model": "Dacia Duster",          "price_range": (12000, 16000)},

@@ -65,6 +65,10 @@ _EXACT: dict[str, str] = {
     "volkswagen caravelle":                     "VW Caravelle",
     "volkswagen caravelle 4x4":                 "VW Caravelle",
     "vw caravelle":                             "VW Caravelle",
+    "volkswagen golf":                          "VW Golf",
+    "vw golf":                                  "VW Golf",
+    "volkswagen california 4x4":                "VW California",
+    "volkswagen california":                    "VW California",
 
     # ── Mercedes ────────────────────────────────────────────────────────────
     "mercedes benz vito":                       "Mercedes Vito",
@@ -72,8 +76,13 @@ _EXACT: dict[str, str] = {
     "mercedes vito":                            "Mercedes Vito",
     "mercedes gle":                             "Mercedes GLE",
     "mercedes gle phev":                        "Mercedes GLE",
+    "mercedes benz gle":                        "Mercedes GLE",
+    "mercedes benz gle plug-in hybrid":         "Mercedes GLE",
     "mercedes benz 350 gle phev":               "Mercedes GLE",
     "mercedes gle 350 phev":                    "Mercedes GLE",
+    "mercedes-benz sprinter":                   "Mercedes Sprinter",
+    "mercedes benz sprinter":                   "Mercedes Sprinter",
+    "mercedes sprinter":                        "Mercedes Sprinter",
 
     # ── Land Rover ──────────────────────────────────────────────────────────
     "land rover discovery sport":               "Land Rover Discovery Sport",
@@ -89,6 +98,7 @@ _EXACT: dict[str, str] = {
     # ── Skoda Octavia variants ──────────────────────────────────────────────
     "skoda octavia wagon":                      "Skoda Octavia Wagon",
     "skoda octavia combi":                      "Skoda Octavia Wagon",
+    "skoda octavia station":                    "Skoda Octavia Wagon",
 
     # ── Renault Megane ──────────────────────────────────────────────────────
     "renault megane wagon":                     "Renault Megane Wagon",
@@ -141,8 +151,12 @@ _EXACT: dict[str, str] = {
 
     # ── Nissan ──────────────────────────────────────────────────────────────
     "nissan x-trail":                           "Nissan X-Trail",
+    "nissan ariya awd suv":                     "Nissan Ariya",
+    "nissan ariya awd suv electric":            "Nissan Ariya",
+    "nissan ariya awd":                         "Nissan Ariya",
 
     # ── Toyota Land Cruiser (additional variants) ────────────────────────────
+    "toyota land cruiser adventure \"35":        "Toyota Land Cruiser 250",
     "toyota landcruiser":                        "Toyota Land Cruiser 150",
     "5 seats toyota land cruiser":               "Toyota Land Cruiser 150",
     "5 seat toyota land cruiser":                "Toyota Land Cruiser 150",
@@ -231,6 +245,9 @@ _EXACT: dict[str, str] = {
     "volkswagen id.4 2wd 77kw":                  "VW ID.4",
     "volkswagen id.4 gtx":                       "VW ID.4",
     "volkswagen id.4 gtx awd":                   "VW ID.4",
+    "vw id.4 ev awd":                            "VW ID.4",
+    "vw id.4 ev":                                "VW ID.4",
+    "vw id.4 ev awd electric":                   "VW ID.4",
     "volkswagen caddy maxi":                     "VW Caddy Maxi",
     "renault trafic lll":                        "Renault Trafic",
     "mercedes benz 350 gle phev":                "Mercedes GLE",
@@ -269,11 +286,131 @@ _EXACT: dict[str, str] = {
     # ── Lava Car Rental models ────────────────────────────────────────────────
     "toyota aygo x":                             "Toyota Aygo X",
     "mg4":                                       "MG4",
-    "dacia duster (new model)":                  "Dacia Duster",
-    "dacia duster (2022-2023) older model":      "Dacia Duster",
     "tesla model y (awd)":                       "Tesla Model Y",
     "renault kangoo campervan":                  "Renault Kangoo",
 }
+
+# ---------------------------------------------------------------------------
+# Canonical category map — single source of truth for car → category.
+# When a canonical name is resolved, this overrides whatever the scraper
+# assigned. Categories: Economy, Compact, SUV, 4x4, Minivan
+# ---------------------------------------------------------------------------
+CANONICAL_CATEGORIES: dict[str, str] = {
+    # ── Economy (city cars, superminis, small hatchbacks) ────────────────────
+    "Toyota Aygo":           "Economy",
+    "Toyota Aygo X":         "Economy",
+    "Toyota Yaris":          "Economy",
+    "Hyundai i10":           "Economy",
+    "Hyundai i20":           "Economy",
+    "Suzuki Swift":          "Economy",
+    "Kia Rio":               "Economy",
+    "Kia Ceed":              "Economy",
+    "VW Polo":               "Economy",
+    "Dacia Sandero":         "Economy",
+    "Opel Corsa":            "Economy",
+    "Renault Clio":          "Economy",
+    "Renault Zoe":           "Economy",
+    "BYD Dolphin":           "Economy",
+    "Kia EV3":               "Economy",
+    "MG4":                   "Economy",
+    "Smart #5":              "Economy",
+
+    # ── Compact (mid-size sedans, wagons, small crossovers) ─────────────────
+    "Dacia Jogger":          "Compact",
+    "Kia Stonic":            "Compact",
+    "Kia XCeed":             "Compact",
+    "Kia Ceed Wagon":        "Compact",
+    "VW Golf":               "Compact",
+    "VW ID.3":               "Compact",
+    "Toyota Corolla":        "Compact",
+    "Toyota Corolla Wagon":  "Compact",
+    "Toyota Corolla Sedan":  "Compact",
+    "Toyota Yaris Cross":    "Compact",
+    "Hyundai i30":           "Compact",
+    "Skoda Octavia":         "Compact",
+    "Skoda Octavia Wagon":   "Compact",
+    "Renault Captur":        "Compact",
+    "Renault Megane":        "Compact",
+    "Renault Megane Wagon":  "Compact",
+    "Mazda CX-30":           "Compact",
+    "Tesla Model 3":         "Compact",
+
+    # ── SUV (crossovers, mid-size SUVs) ─────────────────────────────────────
+    "Dacia Duster":          "SUV",
+    "Dacia Bigster":         "SUV",
+    "Dacia Duster Camping":  "SUV",
+    "Suzuki Vitara":         "SUV",
+    "Suzuki Jimny":          "SUV",
+    "Kia Sportage":          "SUV",
+    "Toyota RAV4":           "SUV",
+    "Hyundai Tucson":        "SUV",
+    "Nissan Qashqai":        "SUV",
+    "Nissan Ariya":          "SUV",
+    "Jeep Renegade":         "SUV",
+    "Jeep Compass":          "SUV",
+    "Subaru Forester":       "SUV",
+    "Mitsubishi Eclipse Cross": "SUV",
+    "Lexus UX250H":          "SUV",
+    "MG ZS":                 "SUV",
+    "MG EHS":                "SUV",
+    "Subaru XV":             "SUV",
+    "Kia EV6":               "SUV",
+    "Tesla Model Y":         "SUV",
+    "Renault Koleos":        "SUV",
+    "VW ID.4":               "SUV",
+    "Skoda Kodiaq":          "SUV",
+
+    # ── 4x4 (large SUVs, off-road / F-road capable) ────────────────────────
+    "Toyota Land Cruiser 150": "4x4",
+    "Toyota Land Cruiser 250": "4x4",
+    "Toyota Land Cruiser 4x4 35\" Modified Super Jeep": "4x4",
+    "Toyota Land Cruiser 4x4 35\u201d Modified Super Jeep": "4x4",
+    "Toyota Hilux":          "4x4",
+    "Toyota Hilux Double Cab": "4x4",
+    "Toyota Hilux Camper":   "4x4",
+    "Toyota Hilux 4x4 Camper": "4x4",
+    "Toyota Highlander":     "4x4",
+    "Kia Sorento":           "4x4",
+    "Hyundai Santa Fe":      "4x4",
+    "Nissan X-Trail":        "4x4",
+    "Land Rover Defender":   "4x4",
+    "Land Rover Discovery":  "4x4",
+    "Land Rover Discovery Sport": "4x4",
+    "Land Rover Discovery Luxury 4x4 - 7 seats": "4x4",
+    "Range Rover Sport":     "4x4",
+    "Honda CR-V":            "4x4",
+    "Jeep Wrangler":         "4x4",
+    "BMW X3":                "4x4",
+    "BMW X5":                "4x4",
+    "Mercedes GLE":          "4x4",
+    "Mitsubishi Outlander":  "4x4",
+    "Dacia Duster 4x4 + Roof Tent": "4x4",
+    "Toyota Rav4 4x4 + Roof Tent (Older Model)": "4x4",
+
+    # ── Minivan (people carriers, passenger vans) ───────────────────────────
+    "VW Caravelle":          "Minivan",
+    "VW Caddy Maxi":         "Minivan",
+    "VW Caddy Maxi 7 seater": "Minivan",
+    "VW Transporter":        "Minivan",
+    "VW California":         "Minivan",
+    "Ford Tourneo":          "Minivan",
+    "Ford Transit":          "Minivan",
+    "Toyota Proace":         "Minivan",
+    "Renault Trafic":        "Minivan",
+    "Renault Kangoo":        "Minivan",
+    "Mercedes Vito":         "Minivan",
+    "Mercedes Sprinter":     "Minivan",
+    "Fiat Benivan 160 Motorhome": "Minivan",
+}
+
+
+def canonicalize_category(canonical_name: str, scraper_category: str = "") -> str:
+    """
+    Return the correct category for a canonical car name.
+    Falls back to the scraper-provided category if the name is unknown.
+    """
+    return CANONICAL_CATEGORIES.get(canonical_name, scraper_category)
+
 
 # ---------------------------------------------------------------------------
 # Suffix patterns to strip before the exact lookup.
