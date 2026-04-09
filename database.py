@@ -1262,6 +1262,108 @@ async def set_insurance_price_override(
     return {"company": company, "category": category, "price_isk": price_isk, "price_note": price_note, "updated_at": now}
 
 
+async def get_horizon_rates(
+    location: str = None,
+    category: str = None,
+    weeks: int = 12,
+) -> list[dict]:
+    """
+    For each of the next N weeks, return the latest avg per-day price by competitor and category.
+    Anchor pickup dates: today + 7*w days, 7-night rental window.
+    Returns list of {pickup_date, week, week_label, days_out, has_data,
+                     competitors: {name: {cat: avg_per_day, _overall: avg}}}
+    """
+    from datetime import date, timedelta
+
+    today = date.today()
+    anchor_dates = [(today + timedelta(weeks=w)).isoformat() for w in range(1, weeks + 1)]
+    placeholders = ",".join("?" * len(anchor_dates))
+
+    inner_conds = [f"pickup_date IN ({placeholders})"]
+    inner_params: list = list(anchor_dates)
+    if location:
+        inner_conds.append("location = ?")
+        inner_params.append(location)
+
+    outer_conds = [f"r.pickup_date IN ({placeholders})"]
+    outer_params: list = list(anchor_dates)
+    if location:
+        outer_conds.append("r.location = ?")
+        outer_params.append(location)
+    if category:
+        outer_conds.append("r.car_category = ?")
+        outer_params.append(category)
+
+    inner_where = "WHERE " + " AND ".join(inner_conds)
+    outer_where = "WHERE " + " AND ".join(outer_conds)
+
+    query = f"""
+        SELECT r.competitor, r.pickup_date, r.return_date, r.car_category, r.price_isk
+        FROM rates r
+        INNER JOIN (
+            SELECT competitor, location, pickup_date, MAX(scraped_at) AS max_scraped
+            FROM rates
+            {inner_where}
+            GROUP BY competitor, location, pickup_date
+        ) latest
+        ON  r.competitor   = latest.competitor
+        AND r.location     = latest.location
+        AND r.pickup_date  = latest.pickup_date
+        AND r.scraped_at   = latest.max_scraped
+        {outer_where}
+        ORDER BY r.pickup_date, r.competitor, r.car_category
+    """
+
+    all_params = inner_params + outer_params
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(query, all_params) as cursor:
+            rows = await cursor.fetchall()
+
+    # Aggregate: {pickup_date: {competitor: {category: [per_day_prices]}}}
+    # Use actual rental duration (return_date - pickup_date) so 3-night and 7-night
+    # scrapes both produce correct per-day values.
+    buckets: dict = {}
+    for row in rows:
+        pd_key     = row["pickup_date"]
+        comp       = row["competitor"]
+        cat        = row["car_category"]
+        price      = row["price_isk"]
+        try:
+            from datetime import date as _date
+            rental_days = (_date.fromisoformat(row["return_date"]) - _date.fromisoformat(pd_key)).days
+        except Exception:
+            rental_days = 0
+        per_day = price / rental_days if rental_days > 0 else price / 7.0
+        buckets.setdefault(pd_key, {}).setdefault(comp, {}).setdefault(cat, []).append(per_day)
+
+    result = []
+    for w, pickup in enumerate(anchor_dates, 1):
+        pickup_d  = date.fromisoformat(pickup)
+        week_data = buckets.get(pickup, {})
+
+        avg_by_comp: dict = {}
+        for comp, cats in week_data.items():
+            avg_by_comp[comp] = {}
+            all_prices: list = []
+            for cat, per_day_prices in cats.items():
+                avg_by_comp[comp][cat] = round(sum(per_day_prices) / len(per_day_prices))
+                all_prices.extend(per_day_prices)
+            avg_by_comp[comp]["_overall"] = round(sum(all_prices) / len(all_prices)) if all_prices else None
+
+        result.append({
+            "pickup_date": pickup,
+            "week":        w,
+            "week_label":  pickup_d.strftime("%d %b"),
+            "days_out":    w * 7,
+            "has_data":    bool(week_data),
+            "competitors": avg_by_comp,
+        })
+
+    return result
+
+
 async def get_insurance_reviews(limit: int = 10) -> list[dict]:
     """Return the most recent insurance review log entries."""
     async with aiosqlite.connect(DB_PATH) as db:

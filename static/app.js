@@ -52,6 +52,10 @@ const state = {
   historyEvolutionData: null,
   historyEvolutionChart: null,
   historyEvolutionMonth: null,
+  horizonData: null,
+  horizonChart: null,
+  horizonCategory: '',
+  horizonScraping: false,
   deltas: {},
   deltasAvailable: false,
   priceChanges: {},
@@ -170,17 +174,20 @@ function defaultReturn() {
 // ── VIEW TOGGLE ────────────────────────────────────────────────────────────
 function setRatesView(view) {
   state.ratesView = view;
-  document.getElementById('view-list').style.display     = view === 'list'     ? '' : 'none';
-  document.getElementById('view-matrix').style.display   = view === 'matrix'   ? '' : 'none';
-  document.getElementById('view-history').style.display  = view === 'history'  ? '' : 'none';
-  document.getElementById('view-seasonal').style.display = view === 'seasonal' ? '' : 'none';
+  document.getElementById('view-list').style.display         = view === 'list'         ? '' : 'none';
+  document.getElementById('view-matrix').style.display       = view === 'matrix'       ? '' : 'none';
+  document.getElementById('view-history').style.display      = view === 'history'      ? '' : 'none';
+  document.getElementById('view-seasonal').style.display     = view === 'seasonal'     ? '' : 'none';
+  document.getElementById('view-horizon-fwd').style.display  = view === 'horizon-fwd'  ? '' : 'none';
   document.getElementById('btn-list-view').classList.toggle('active',     view === 'list');
   document.getElementById('btn-matrix-view').classList.toggle('active',   view === 'matrix');
   document.getElementById('btn-history-view').classList.toggle('active',  view === 'history');
   document.getElementById('btn-seasonal-view').classList.toggle('active', view === 'seasonal');
-  if (view === 'matrix'   && !state.matrix)       loadMatrix();
-  if (view === 'history')                         loadHistory();
-  if (view === 'seasonal' && !state.seasonalData) loadSeasonal();
+  document.getElementById('btn-horizon-view').classList.toggle('active',  view === 'horizon-fwd');
+  if (view === 'matrix'      && !state.matrix)       loadMatrix();
+  if (view === 'history')                            loadHistory();
+  if (view === 'seasonal'    && !state.seasonalData) loadSeasonal();
+  if (view === 'horizon-fwd' && !state.horizonData)  loadHorizon();
 }
 
 // ── SCHEDULER STATUS ───────────────────────────────────────────────────────
@@ -2653,6 +2660,292 @@ function renderScrapeLog(entries) {
       <td>${statusHtml}</td>
     </tr>`;
   }).join('');
+}
+
+// ── FORWARD RATES (HORIZON) VIEW ───────────────────────────────────────────
+
+function setHorizonCategory(cat) {
+  state.horizonCategory = cat;
+  ['', 'Economy', 'Compact', 'SUV', '4x4', 'Minivan'].forEach(c => {
+    const btn = document.getElementById(`hfwd-btn-${c}`);
+    if (btn) btn.classList.toggle('active', c === cat);
+  });
+  state.horizonData = null; // force reload with new category filter
+  loadHorizon();
+}
+
+async function loadHorizon(force = false) {
+  if (state.horizonData && !force) {
+    renderHorizonChart();
+    renderHorizonTable();
+    return;
+  }
+
+  const loading = document.getElementById('horizon-loading');
+  if (loading) loading.style.display = '';
+
+  const location = document.getElementById('filter-location').value;
+  const params = new URLSearchParams();
+  if (location)               params.set('location', location);
+  if (state.horizonCategory)  params.set('category', state.horizonCategory);
+
+  try {
+    params.set('weeks', '16');
+  const data = await apiFetch(`/api/rates/horizon?${params}`);
+    state.horizonData = data;
+    setSourceBadge('horizon-source-badge', data.source);
+    document.querySelectorAll('#horizon-source-badge').forEach(el => el.style.display = '');
+    renderHorizonChart();
+    renderHorizonTable();
+  } catch (e) {
+    showToast(`Failed to load forward rates: ${e.message}`, 'error');
+  } finally {
+    if (loading) loading.style.display = 'none';
+  }
+}
+
+function renderHorizonChart() {
+  const data = state.horizonData;
+  if (!data || !data.weeks || !data.weeks.length) return;
+
+  const weeks = data.weeks;
+  const labels = weeks.map(w => w.week_label);
+
+  // Collect all competitors that appear in any week
+  const compSet = new Set();
+  weeks.forEach(w => Object.keys(w.competitors).forEach(c => compSet.add(c)));
+  const competitors = Array.from(compSet).sort();
+
+  const field = state.horizonCategory || '_overall';
+  const titleEl = document.getElementById('horizon-chart-title');
+  if (titleEl) {
+    titleEl.textContent = state.horizonCategory
+      ? `Price Horizon — ${state.horizonCategory} · Next 16 Weeks`
+      : 'Price Horizon — All Categories · Next 16 Weeks';
+  }
+
+  const datasets = competitors.map((comp, i) => ({
+    label: comp,
+    data: weeks.map(w => {
+      const v = w.competitors[comp]?.[field];
+      return (v != null && v > 0) ? v : null;
+    }),
+    borderColor: compColor(comp, i),
+    backgroundColor: compColor(comp, i) + '18',
+    tension: 0.35,
+    pointRadius: 5,
+    pointHoverRadius: 7,
+    borderWidth: 2,
+    spanGaps: false,
+  }));
+
+  if (state.horizonChart) state.horizonChart.destroy();
+
+  const ctx = document.getElementById('horizon-chart')?.getContext('2d');
+  if (!ctx) return;
+
+  const isDark = document.body.classList.contains('dark-mode');
+  const gridColor   = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
+  const tickColor   = isDark ? '#9ca3af' : '#6b7280';
+
+  state.horizonChart = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'bottom',
+          labels: { color: tickColor, boxWidth: 12, padding: 16, font: { size: 12 } },
+        },
+        tooltip: {
+          callbacks: {
+            label: ctx => ctx.parsed.y != null
+              ? ` ${ctx.dataset.label}: ${formatISK(ctx.parsed.y)}/day`
+              : ` ${ctx.dataset.label}: —`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          grid: { color: gridColor },
+          ticks: { color: tickColor, font: { size: 11 } },
+        },
+        y: {
+          grid: { color: gridColor },
+          ticks: {
+            color: tickColor,
+            font: { size: 11 },
+            callback: v => formatISK(v),
+          },
+        },
+      },
+    },
+  });
+}
+
+function renderHorizonTable() {
+  const data = state.horizonData;
+  const wrap = document.getElementById('horizon-table-wrap');
+  if (!data || !data.weeks || !wrap) return;
+
+  const weeks = data.weeks;
+  const compSet = new Set();
+  weeks.forEach(w => Object.keys(w.competitors).forEach(c => compSet.add(c)));
+  const competitors = Array.from(compSet).sort();
+
+  const field = state.horizonCategory || '_overall';
+
+  // Collect all values for color scaling
+  const allVals = [];
+  weeks.forEach(w => {
+    competitors.forEach(c => {
+      const v = w.competitors[c]?.[field];
+      if (v != null && v > 0) allVals.push(v);
+    });
+  });
+  const minVal = Math.min(...allVals);
+  const maxVal = Math.max(...allVals);
+  const range  = maxVal - minVal || 1;
+
+  function heatStyle(val) {
+    if (val == null || val <= 0) return '';
+    const t = (val - minVal) / range; // 0 = cheapest, 1 = most expensive
+    // green (22c55e) → yellow (eab308) → red (ef4444)
+    let r, g, b;
+    if (t < 0.5) {
+      const s = t * 2;
+      r = Math.round(34  + s * (234 - 34));
+      g = Math.round(197 + s * (179 - 197));
+      b = Math.round(94  + s * (8   - 94));
+    } else {
+      const s = (t - 0.5) * 2;
+      r = Math.round(234 + s * (239 - 234));
+      g = Math.round(179 + s * (68  - 179));
+      b = Math.round(8   + s * (68  - 8));
+    }
+    const alpha = 0.25 + t * 0.55;
+    // Use dark text on light (cheap) cells, white on dark (expensive) cells
+    const textColor = t < 0.55 ? '#111827' : '#fff';
+    return `background:rgba(${r},${g},${b},${alpha});color:${textColor};font-weight:500`;
+  }
+
+  let html = '<table><thead><tr>';
+  html += '<th style="min-width:90px">Week</th>';
+  competitors.forEach(c => {
+    html += `<th style="text-align:center;white-space:nowrap;font-size:12px">${escHtml(c)}</th>`;
+  });
+  html += '<th style="text-align:center;min-width:80px">Cheapest</th>';
+  html += '</tr></thead><tbody>';
+
+  weeks.forEach(w => {
+    const noData = !w.has_data;
+
+    html += `<tr>`;
+    html += `<td style="white-space:nowrap">
+      <strong style="font-size:13px">${escHtml(w.week_label)}</strong>
+      <div style="font-size:11px;color:#9ca3af;margin-top:2px">${w.days_out}d out</div>
+    </td>`;
+
+    if (noData) {
+      html += `<td colspan="${competitors.length + 1}" style="text-align:center;color:#4b5563;font-size:12px;padding:10px;font-style:italic">
+        No data — click Scrape Horizon
+      </td>`;
+    } else {
+      // Find cheapest competitor for this week
+      let cheapComp = null, cheapVal = Infinity;
+      competitors.forEach(c => {
+        const v = w.competitors[c]?.[field];
+        if (v != null && v > 0 && v < cheapVal) { cheapVal = v; cheapComp = c; }
+      });
+
+      competitors.forEach(c => {
+        const val = w.competitors[c]?.[field];
+        const style = heatStyle(val);
+        const isCheap = c === cheapComp && val != null;
+        html += `<td style="text-align:center;font-size:12px;padding:8px 10px;${style}">`;
+        if (val != null && val > 0) {
+          html += isCheap ? `<strong>${formatISK(val)}</strong>` : formatISK(val);
+        } else {
+          html += '<span style="color:rgba(255,255,255,0.3)">—</span>';
+        }
+        html += '</td>';
+      });
+
+      if (cheapComp) {
+        html += `<td style="text-align:center;font-size:11px;color:#22c55e;font-weight:600">${escHtml(cheapComp.split(' ')[0])}<br><span style="font-weight:400;color:#9ca3af">${formatISK(cheapVal)}</span></td>`;
+      } else {
+        html += `<td style="text-align:center;color:#9ca3af">—</td>`;
+      }
+    }
+
+    html += '</tr>';
+  });
+
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+async function scrapeHorizon() {
+  if (state.horizonScraping) return;
+  state.horizonScraping = true;
+  const btn = document.getElementById('btn-scrape-horizon');
+  if (btn) { btn.disabled = true; btn.textContent = 'Scraping…'; }
+
+  const location = document.getElementById('filter-location').value;
+  const params = new URLSearchParams();
+  if (location) params.set('location', location);
+
+  showToast('Scraping horizon rates (12 weeks)… this may take ~1 minute', 'info', 70000);
+  try {
+    params.set('weeks', '16');
+  const result = await apiFetch(`/api/rates/scrape-horizon?${params}`, { method: 'POST' });
+    showToast(
+      `Scraped ${result.scraped} rates across ${result.weeks_scraped} weeks in ${result.duration_seconds}s`,
+      'success',
+    );
+    state.horizonData = null;
+    loadHorizon();
+  } catch (e) {
+    showToast(`Horizon scrape failed: ${e.message}`, 'error');
+  } finally {
+    state.horizonScraping = false;
+    if (btn) { btn.disabled = false; btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg> Scrape Horizon'; }
+  }
+}
+
+function exportHorizonCSV() {
+  const data = state.horizonData;
+  if (!data || !data.weeks || !data.weeks.length) {
+    showToast('No horizon data to export', 'warning');
+    return;
+  }
+  const weeks = data.weeks;
+  const compSet = new Set();
+  weeks.forEach(w => Object.keys(w.competitors).forEach(c => compSet.add(c)));
+  const competitors = Array.from(compSet).sort();
+  const field = state.horizonCategory || '_overall';
+  const catLabel = state.horizonCategory || 'Overall';
+
+  const rows = [['Week', 'Pickup Date', 'Days Out', ...competitors, 'Cheapest Competitor']];
+  weeks.forEach(w => {
+    const vals = competitors.map(c => w.competitors[c]?.[field] ?? '');
+    const prices = competitors.map((c, i) => ({ c, v: vals[i] })).filter(x => x.v);
+    const cheapest = prices.length ? prices.reduce((a, b) => a.v < b.v ? a : b).c : '';
+    rows.push([w.week_label, w.pickup_date, w.days_out, ...vals, cheapest]);
+  });
+
+  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `forward_rates_${catLabel}_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 // ── Security helper ────────────────────────────────────────────────────────

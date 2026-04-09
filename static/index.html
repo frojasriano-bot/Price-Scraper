@@ -193,6 +193,10 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
             Seasonal Analysis
           </button>
+          <button class="btn btn-secondary btn-sm view-toggle" id="btn-horizon-view" onclick="setRatesView('horizon-fwd')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            Forward Rates
+          </button>
         </div>
 
         <!-- LIST VIEW: Chart on top, full-width table below -->
@@ -451,6 +455,76 @@
           </div>
 
         </div><!-- /view-seasonal -->
+
+        <!-- FORWARD RATES VIEW -->
+        <div id="view-horizon-fwd" style="display:none">
+
+          <!-- Controls card -->
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-header" style="flex-wrap:wrap;gap:10px">
+              <div>
+                <div class="card-title">Forward Rate Horizon</div>
+                <div class="card-subtitle">Next 16 weeks of competitor pricing — per day, 7-night stay</div>
+              </div>
+              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                <button class="btn btn-secondary btn-sm" id="btn-scrape-horizon" onclick="scrapeHorizon()">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                  Scrape Horizon
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick="loadHorizon(true)">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                  Refresh
+                </button>
+                <span id="horizon-source-badge" class="badge badge-gray" style="display:none">Mock Data</span>
+              </div>
+            </div>
+            <!-- Category filter pills -->
+            <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;padding-top:12px;border-top:1px solid rgba(255,255,255,0.07);margin-top:4px">
+              <span style="font-size:12px;color:#9ca3af;margin-right:2px">Category:</span>
+              <button class="btn btn-secondary btn-sm active" id="hfwd-btn-"        onclick="setHorizonCategory('')">All</button>
+              <button class="btn btn-secondary btn-sm"        id="hfwd-btn-Economy"  onclick="setHorizonCategory('Economy')">🚗 Economy</button>
+              <button class="btn btn-secondary btn-sm"        id="hfwd-btn-Compact"  onclick="setHorizonCategory('Compact')">🚙 Compact</button>
+              <button class="btn btn-secondary btn-sm"        id="hfwd-btn-SUV"      onclick="setHorizonCategory('SUV')">🛻 SUV</button>
+              <button class="btn btn-secondary btn-sm"        id="hfwd-btn-4x4"      onclick="setHorizonCategory('4x4')">🏔️ 4x4</button>
+              <button class="btn btn-secondary btn-sm"        id="hfwd-btn-Minivan"  onclick="setHorizonCategory('Minivan')">🚐 Minivan</button>
+            </div>
+          </div>
+
+          <!-- Horizon line chart -->
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-header">
+              <div>
+                <div class="card-title" id="horizon-chart-title">Price Horizon — Next 12 Weeks</div>
+                <div class="card-subtitle">Average per-day ISK per competitor across upcoming pickup windows</div>
+              </div>
+              <div id="horizon-loading" style="font-size:12px;color:#6b7280;display:none">
+                <span class="spinner" style="border-color:rgba(0,0,0,.15);border-top-color:#2563eb;width:12px;height:12px"></span>
+                &nbsp;Loading…
+              </div>
+            </div>
+            <div style="position:relative;height:340px">
+              <canvas id="horizon-chart"></canvas>
+            </div>
+          </div>
+
+          <!-- Heatmap table -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Rate Heatmap</div>
+                <div class="card-subtitle">Per-day ISK by week and competitor — green = cheap · red = expensive</div>
+              </div>
+              <button class="btn btn-secondary btn-sm" onclick="exportHorizonCSV()" title="Export to CSV">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Export CSV
+              </button>
+            </div>
+            <div class="table-wrap" id="horizon-table-wrap">
+              <p style="padding:40px;text-align:center;color:#6b7280">Loading forward rates…</p>
+            </div>
+          </div>
+
+        </div><!-- /view-horizon-fwd -->
 
       </div><!-- /tab-rates -->
 

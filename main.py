@@ -146,6 +146,61 @@ async def scheduled_seasonal_scrape():
     )
 
 
+async def scheduled_horizon_scrape():
+    """
+    Scrape the next 12 weekly pickup windows and persist — feeds the Forward Rates view.
+    Runs daily at 07:15 (15 min after the main daily scrape).
+    """
+    import time
+    from scrapers import ALL_SCRAPERS
+    from database import insert_rates, log_scrape
+    from datetime import date, timedelta
+
+    logger.info("Scheduled horizon scrape starting (12 weeks)…")
+    scrape_loc = "Keflavik Airport"
+    today      = date.today()
+    started_at = time.monotonic()
+    total_rates = 0
+    errors: list[str] = []
+
+    for w in range(1, 17):
+        pickup_d = today + timedelta(weeks=w)
+        ret_d    = pickup_d + timedelta(days=7)
+        pickup   = pickup_d.isoformat()
+        ret      = ret_d.isoformat()
+
+        async def _scrape(ScraperClass, p=pickup, r=ret):
+            async with ScraperClass() as scraper:
+                try:
+                    return await asyncio.wait_for(
+                        scraper.scrape_rates(scrape_loc, p, r), timeout=15
+                    )
+                except Exception as e:
+                    errors.append(f"{ScraperClass.__name__} {p}: {e}")
+                    return []
+
+        results = await asyncio.gather(*[_scrape(Cls) for Cls in ALL_SCRAPERS])
+        week_rates: list[dict] = []
+        for r_list in results:
+            week_rates.extend(r_list)
+
+        if week_rates:
+            await insert_rates(week_rates)
+            total_rates += len(week_rates)
+
+    duration = time.monotonic() - started_at
+    logger.info(f"Horizon scrape complete: {total_rates} rates across 12 weeks in {duration:.1f}s.")
+
+    await log_scrape(
+        location=scrape_loc,
+        total_rates=total_rates,
+        competitors=len(ALL_SCRAPERS),
+        errors=errors[:20],
+        duration_seconds=duration,
+        trigger="horizon",
+    )
+
+
 async def scheduled_alert_check():
     """Run price alert check after scrape — called by APScheduler."""
     from routes.alerts import check_alerts
@@ -249,6 +304,14 @@ def setup_scheduler(schedule: str = "daily"):
         id="scrape_seasonal",
         replace_existing=True,
         name="Seasonal Anchor Scrape (12 months)",
+    )
+    # Horizon scrape: daily at 07:15 (15 min after main scrape) — feeds Forward Rates view
+    scheduler.add_job(
+        scheduled_horizon_scrape,
+        trigger=CronTrigger(hour=7, minute=15),
+        id="scrape_horizon",
+        replace_existing=True,
+        name="Horizon Rate Scrape (12 weeks)",
     )
 
     logger.info(f"Scheduler configured: {schedule} schedule active.")

@@ -28,6 +28,7 @@ from database import (
     get_seasonal_anchor_history,
     get_model_competitor_coverage,
     get_per_competitor_price_changes,
+    get_horizon_rates,
     log_scrape,
     get_scrape_log,
 )
@@ -790,3 +791,97 @@ async def create_mapping(body: MappingCreate):
 async def remove_mapping(mapping_id: int):
     await delete_car_mapping(mapping_id)
     return {"message": "Mapping deleted."}
+
+
+@router.get("/horizon")
+async def get_horizon(
+    location: Optional[str] = Query(None),
+    category: Optional[str] = Query(None),
+    weeks: int = Query(16, ge=4, le=26),
+):
+    """
+    Return forward-looking rate horizon: next N weeks of per-day pricing per competitor.
+    Shows only real scraped data — weeks with no data are returned empty.
+    """
+    import random
+
+    horizon = await get_horizon_rates(location=location, category=category, weeks=weeks)
+    has_any = any(w["has_data"] for w in horizon)
+    source = "database" if has_any else "none"
+    return {"weeks": horizon, "source": source}
+
+
+@router.post("/scrape-horizon")
+async def scrape_horizon(
+    location: Optional[str] = Query(None),
+    weeks: int = Query(16, ge=4, le=26),
+):
+    """
+    Scrape prices for each of the next N weeks (7-night rental window) and store in DB.
+    """
+    import time
+    from datetime import datetime as dt
+
+    scrape_loc = location or "Keflavik Airport"
+    today = date.today()
+    started_at = time.monotonic()
+    total_rates = 0
+    all_errors: list[str] = []
+    week_log: list[dict] = []
+
+    semaphore = asyncio.Semaphore(10)
+
+    async def _scrape_one(ScraperClass, pickup_iso: str, ret_iso: str):
+        async with semaphore:
+            async with ScraperClass() as scraper:
+                try:
+                    rates = await asyncio.wait_for(
+                        scraper.scrape_rates(scrape_loc, pickup_iso, ret_iso),
+                        timeout=15,
+                    )
+                    return rates, None
+                except Exception as e:
+                    return [], f"{ScraperClass.competitor_name}: {e}"
+
+    for w in range(1, weeks + 1):
+        pickup_d = today + timedelta(weeks=w)
+        ret_d    = pickup_d + timedelta(days=7)
+        pickup   = pickup_d.isoformat()
+        ret      = ret_d.isoformat()
+
+        tasks   = [_scrape_one(Cls, pickup, ret) for Cls in ALL_SCRAPERS]
+        results = await asyncio.gather(*tasks)
+
+        week_rates:  list[dict] = []
+        week_errors: list[str]  = []
+        for rates, err in results:
+            if err:
+                week_errors.append(err)
+            else:
+                week_rates.extend(rates)
+
+        if week_rates:
+            await insert_rates(week_rates)
+            total_rates += len(week_rates)
+
+        all_errors.extend(week_errors)
+        week_log.append({"week": w, "pickup": pickup, "rates": len(week_rates), "errors": week_errors})
+
+    duration = time.monotonic() - started_at
+
+    await log_scrape(
+        location=scrape_loc,
+        total_rates=total_rates,
+        competitors=len(ALL_SCRAPERS),
+        errors=all_errors[:20],
+        duration_seconds=duration,
+        trigger="horizon",
+    )
+
+    return {
+        "scraped":          total_rates,
+        "weeks_scraped":    len(week_log),
+        "duration_seconds": round(duration, 1),
+        "weeks":            week_log,
+        "errors":           all_errors[:20],
+    }

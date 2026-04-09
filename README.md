@@ -10,10 +10,20 @@ FastAPI backend · SQLite · APScheduler · Vanilla JS SPA · Chart.js
 
 | Tab | Description |
 |-----|-------------|
-| **Rate Intelligence** | Executive summary banner, live competitor rates, sortable table with per-competitor price-change arrows, bar chart, cross-competitor matrix, price history charts, seasonal analysis with price-evolution history mode, CSV export |
-| **Insurance Comparison** | Coverage matrix, per-category zero-excess pricing (editable), company package cards, deductible comparison, Trigger Research + Mark Reviewed workflow with audit log |
-| **SEO Rank Tracker** | Keyword ranking history with previous rank + change via SerpAPI; 10 Iceland-specific keywords pre-seeded |
-| **Settings** | Scraper status, schedule config, SerpAPI key, location management, car model mappings, Slack alerts, scrape history log |
+| **Rate Intelligence** | Executive summary banner, live competitor rates, sortable table with per-competitor price-change arrows, bar chart, cross-competitor matrix, price history charts, seasonal analysis with price-evolution history mode, forward rate horizon (next 16 weeks), CSV export |
+| **Insurance Comparison** | Coverage matrix, per-category zero-excess pricing (editable inline), company package cards, deductible comparison, Trigger Research + Mark Reviewed workflow with audit log |
+| **SEO Rank Tracker** | Keyword ranking history with previous rank + change delta via SerpAPI; 10 Iceland-specific keywords pre-seeded |
+| **Settings** | Scraper status, schedule config, SerpAPI key, location management, car model mappings, Slack alerts, scrape history log, category audit |
+
+### Rate Intelligence — View Modes
+
+| View | Description |
+|------|-------------|
+| **List View** | Sortable table of all live rates per competitor + model, with per-day price and Δ vs previous scrape |
+| **Car Model Matrix** | Cross-competitor price grid per canonical model; green = cheapest, red = most expensive |
+| **Price History** | Time-series line charts per model grouped by category — shows how scraped prices have evolved over the past 7/14/30/90 days |
+| **Seasonal Analysis** | Per-day pricing across the next 12 months (15th anchor date, 7-night stay); includes History mode to see how a single future month's price has evolved across weekly scrapes |
+| **Forward Rates** | Next 16 weeks of competitor pricing — horizon line chart + color-coded heatmap table; scrape-driven, no estimates |
 
 ---
 
@@ -57,17 +67,22 @@ Open **http://localhost:8000**
 ## Architecture
 
 ```
-main.py                  FastAPI app, APScheduler, lifespan setup
-canonical.py             Car name normalisation (canonicalize() function)
-database.py              SQLite schema, CAR_CATALOG, all DB helpers
+main.py                  FastAPI app, APScheduler (5 jobs), lifespan setup
+canonical.py             Car name normalisation (canonicalize()) +
+                         category normalisation (canonicalize_category()) +
+                         CANONICAL_CATEGORIES — single source of truth for
+                         all 95 canonical models and their categories
+database.py              SQLite schema, all DB helpers, migrations
 
 routes/
-  rates.py               /api/rates/* — scraper trigger, history, matrix, seasonal,
-                         per-competitor price-changes, scrape log
-  insurance.py           /api/insurance — comparison data, category pricing (with DB
-                         overrides), mark-reviewed workflow, review log
+  rates.py               /api/rates/* — scraper trigger, history, matrix,
+                         seasonal (DB-first), forward horizon, price-changes,
+                         scrape log
+  insurance.py           /api/insurance — comparison data, category pricing
+                         (with DB overrides), mark-reviewed workflow, review log
   seo.py                 /api/seo/* — rankings, keyword management
-  settings.py            /api/settings — config, locations, scraper status
+  settings.py            /api/settings — config, locations, scraper status,
+                         category audit
   alerts.py              /api/alerts/* — Slack webhook config & test
 
 scrapers/
@@ -90,7 +105,7 @@ static/
 
 ## Scrapers
 
-All scrapers inherit from `BaseScraper` and implement `scrape_rates(pickup_date, return_date, location)`. On failure the base class falls back to deterministic mock pricing from each scraper's `FLEET` definition.
+All scrapers inherit from `BaseScraper` and implement `scrape_rates(location, pickup_date, return_date)`. On failure the base class falls back to deterministic mock pricing from each scraper's `FLEET` definition.
 
 ### Supported locations
 
@@ -115,7 +130,7 @@ Keflavik Airport and Reykjavik only — the two locations Blue Car Rental operat
 
 ### Adding a live scraper
 
-1. Open the scraper file and implement `scrape_rates(self, pickup_date, return_date, location)`
+1. Open the scraper file and implement `scrape_rates(self, location, pickup_date, return_date)`
 2. Return a list of dicts:
 
 ```python
@@ -133,9 +148,15 @@ Keflavik Airport and Reykjavik only — the two locations Blue Car Rental operat
 }
 ```
 
-### Car name normalisation
+---
 
-`canonical.py` exposes `canonicalize(name)` which strips transmission/fuel suffixes (automatic, manual, petrol, diesel, hybrid, electric, awd, 4wd) and maps variant spellings to standard names via an `_EXACT` dict. Apostrophes are normalised so e.g. `"Kia Cee'd"` matches `"Kia Ceed"`.
+## Car Name & Category Normalisation
+
+`canonical.py` is the single source of truth for all car data. It exposes three things:
+
+### `canonicalize(name)` → str
+
+Strips transmission/fuel suffixes (automatic, manual, petrol, diesel, hybrid, electric, awd, 4wd) and maps variant spellings to standard names via the `_EXACT` dict. Apostrophes are normalised so e.g. `"Kia Cee'd"` matches `"Kia Ceed"`.
 
 ```
 "Toyota Landcruiser 150"            → "Toyota Land Cruiser 150"
@@ -146,6 +167,28 @@ Keflavik Airport and Reykjavik only — the two locations Blue Car Rental operat
 "Dacia Duster Used Model"           → "Dacia Duster"
 ```
 
+### `CANONICAL_CATEGORIES` → dict[str, str]
+
+Maps every canonical model name to its category. 95 models across 5 categories:
+
+| Category | Count |
+|----------|-------|
+| Economy  | 17 |
+| Compact  | 18 |
+| SUV      | 23 |
+| 4x4      | 24 |
+| Minivan  | 13 |
+
+This dict is the **authoritative source** — `car_catalog` DB table is seeded from it, and `insert_rates()` applies it at write time so no category conflicts accumulate.
+
+### `canonicalize_category(canonical_name, fallback)` → str
+
+Looks up `CANONICAL_CATEGORIES[canonical_name]` and returns it. Falls back to the provided value if the model is unknown.
+
+### Category Audit
+
+Settings → Category Audit shows a live table of every model currently in the DB, its stored category, the correct category from `CANONICAL_CATEGORIES`, and whether they match. Summary stats show total models, mapped count, unmapped count, and conflict count.
+
 ---
 
 ## Database
@@ -155,14 +198,23 @@ SQLite via `aiosqlite`. Schema initialised automatically on startup by `init_db(
 | Table | Purpose |
 |-------|---------|
 | `rates` | Scraped rental rates — one row per competitor/location/model/scrape. Accumulates over time; no overwrites. |
-| `car_catalog` | Master list of canonical car names and categories |
+| `car_catalog` | Master list of canonical car names and categories (seeded from `CANONICAL_CATEGORIES`) |
 | `car_mappings` | Competitor model name → canonical name (editable via Settings) |
 | `rankings` | SEO keyword rankings from SerpAPI |
 | `config` | Key-value store: SerpAPI key, schedule, webhook URL, locations, SEO keywords |
 | `seasonal_cache` | 30-minute response cache for the seasonal analysis endpoint |
-| `scrape_log` | History of every manual, scheduled, and seasonal scrape run (rates, duration, errors) |
+| `scrape_log` | History of every manual, scheduled, seasonal, and horizon scrape run (rates, duration, errors) |
 | `insurance_reviews` | Timestamped log of manual insurance data verifications |
 | `insurance_price_overrides` | Per-company/category zero-excess price overrides (editable via Insurance tab) |
+
+### Migrations
+
+Two one-time migrations run at startup (idempotent):
+
+| Migration | Function | What it fixes |
+|-----------|----------|---------------|
+| `recanonicalize_all_rates()` | v2 | Re-applies `canonicalize()` to all stored `canonical_name` values |
+| `recategorize_all_rates()` | v1 | Re-applies `canonicalize_category()` to all stored `car_category` values |
 
 ---
 
@@ -190,7 +242,7 @@ Export the full rates table as CSV from the list view header button. Includes pe
 
 ### Scrape History Log
 
-Settings → Scrape History shows every run: timestamp, trigger (manual / scheduled / seasonal), location, rates scraped, competitors hit, duration, and error count.
+Settings → Scrape History shows every run: timestamp, trigger (manual / scheduled / seasonal / horizon), location, rates scraped, competitors hit, duration, and error count.
 
 ---
 
@@ -207,8 +259,6 @@ The seasonal endpoint is **DB-first** — it reads from the `rates` table first 
 3. If no stored data → live-scrape that month and persist the result for future requests
 4. Response is cached for 30 minutes to avoid re-aggregating on every browser refresh
 
-This means the seasonal chart load is instant once data is stored, and the weekly cron keeps it current without any on-demand scraping overhead.
-
 ### Scraping anchor dates
 
 The **Scrape All** button (or `POST /api/rates/scrape-seasonal`) re-scrapes all 12 anchor months and stores fresh data. The weekly Monday cron does the same automatically.
@@ -223,15 +273,47 @@ The **History** toggle switches the chart to show how prices for a selected futu
 
 This reveals whether competitors are raising or lowering prices as a future season approaches — the most actionable competitive intelligence the tool provides.
 
-### Mock data vs live data
+---
 
-`SEASON_MULTIPLIERS` in `base.py` (Jan: 0.82× → Jul: 1.92×) are **only** used by the `get_mock_rates()` fallback when a live scrape fails entirely. They are never applied to real prices returned by competitor websites.
+## Forward Rate Horizon
+
+The Forward Rates view shows **actual scraped prices** for each of the next 16 weekly pickup windows (today+1w through today+16w, all 7-night stays). No estimates or interpolation — weeks with no scraped data show "No data — click Scrape Horizon".
+
+### How it works
+
+1. `GET /api/rates/horizon` queries the DB for the latest scraped rates for each weekly anchor date
+2. Per-day prices are calculated using the **actual rental duration** (`return_date − pickup_date`) so 3-night and 7-night scrapes both produce correct values
+3. Results are grouped by competitor and category; `_overall` is the cross-category average
+
+### Horizon line chart
+
+- X-axis: future pickup weeks (16 data points)
+- Y-axis: per-day ISK
+- One line per competitor, filtered by selected category pill
+- Lines end where data runs out — no phantom estimates
+
+### Rate heatmap table
+
+- Rows: each future week (with days-out indicator)
+- Columns: one per competitor
+- Cells: color-coded green → red (cheapest to most expensive within the 16-week window)
+- "Cheapest" column identifies the cheapest competitor per week at a glance
+
+### Category filter
+
+Pills (All / Economy / Compact / SUV / 4x4 / Minivan) re-fetch the API with a `?category=` filter so the chart and heatmap show apples-to-apples comparison within one segment.
+
+### Scraping
+
+The **Scrape Horizon** button (`POST /api/rates/scrape-horizon`) runs all 7 scrapers against each of the 16 weekly anchor dates sequentially (112 scrape calls total). Results are stored in the `rates` table and available immediately.
+
+The daily cron job also runs a horizon scrape at 07:15 automatically.
 
 ---
 
 ## Scheduler
 
-APScheduler (`AsyncIOScheduler`) runs four jobs:
+APScheduler (`AsyncIOScheduler`) runs five jobs:
 
 | Job | Schedule | Description |
 |-----|----------|-------------|
@@ -239,8 +321,9 @@ APScheduler (`AsyncIOScheduler`) runs four jobs:
 | `seo_check` | Daily 07:30 (configurable) | Checks stored keywords via SerpAPI |
 | `alert_check` | Daily 07:45 (configurable) | Fires Slack alerts if competitors undercut Blue |
 | `scrape_seasonal` | **Every Monday 08:00** | Re-scrapes all 12 anchor months; always weekly |
+| `scrape_horizon` | Daily 07:15 | Scrapes all 7 competitors × 16 future weekly windows |
 
-The daily/hourly/weekly setting (configurable via Settings) applies to `scrape_rates`, `seo_check`, and `alert_check`. The seasonal scrape always runs weekly regardless.
+The daily/hourly/weekly setting (configurable via Settings) applies to `scrape_rates`, `seo_check`, `alert_check`, and `scrape_horizon`. The seasonal scrape always runs weekly regardless.
 
 Change the main schedule via Settings or:
 
@@ -339,7 +422,7 @@ GET  /api/rates/deltas           Market-avg price delta between last two scrape 
 GET  /api/rates/price-changes    Per-competitor price delta (competitor::location::model key)
      ?location=  &category=
 
-GET  /api/rates/scrape-log       Recent scrape history (manual + scheduled + seasonal)
+GET  /api/rates/scrape-log       Recent scrape history (manual + scheduled + seasonal + horizon)
      ?limit=20
 
 GET  /api/rates/history
@@ -363,11 +446,25 @@ POST /api/rates/scrape-seasonal  Scrape all 12 anchor months and persist
 GET  /api/rates/seasonal/history Time series showing how prices for one anchor month evolved
      ?pickup_date=YYYY-MM-DD  &category=  &location=
 
+GET  /api/rates/horizon          Next N weeks of per-day pricing per competitor (real data only)
+     ?location=  &category=  &weeks=16
+
+POST /api/rates/scrape-horizon   Scrape all competitors × N weekly windows and persist
+     ?location=  &weeks=16
+
 GET  /api/rates/scraper-status
 GET  /api/rates/car-catalog
 GET  /api/rates/car-mappings
 POST /api/rates/car-mappings
 DELETE /api/rates/car-mappings/{id}
+```
+
+### Settings & Category Audit
+
+```
+GET  /api/settings
+POST /api/settings
+GET  /api/settings/category-audit   Per-model category status (mapped / unmapped / conflict)
 ```
 
 ### Insurance
@@ -397,12 +494,9 @@ POST   /api/seo/keywords?keyword=
 DELETE /api/seo/keywords/{keyword}
 ```
 
-### Settings & Alerts
+### Alerts
 
 ```
-GET  /api/settings
-POST /api/settings
-
 POST /api/alerts/test-webhook
 POST /api/alerts/check
 ```
@@ -433,3 +527,4 @@ Toggle via moon/sun icon in the top bar. Persisted to `localStorage`. Implemente
 
 - `blue_rental.db` and `.env` excluded via `.gitignore`
 - Secrets (SerpAPI key, Slack webhook URL) stored in `config` DB table at runtime
+- Python 3.9+ compatible (`from __future__ import annotations` used throughout)
