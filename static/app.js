@@ -12,6 +12,7 @@ function setSourceBadge(id, source) {
   document.querySelectorAll(`#${id}`).forEach(el => {
     el.textContent = isLive ? 'Live Data' : 'Mock Data';
     el.className = `badge ${isLive ? 'badge-green' : 'badge-gray'}`;
+    el.style.display = '';
   });
 }
 
@@ -2811,7 +2812,11 @@ function setHorizonRange(weeks) {
     if (btn) btn.classList.toggle('active', w === weeks);
   });
   state.horizonData = null;
-  loadHorizon();
+  if (state.horizonModel) {
+    renderModelHorizonChart(); // re-slice existing data to new range
+  } else {
+    loadHorizon();
+  }
 }
 
 async function loadHorizon(force = false) {
@@ -3131,10 +3136,16 @@ function renderModelHorizonChart() {
   const series = data.series;
   const competitors = Object.keys(series).sort();
 
-  // Collect and sort all unique future dates across all competitors
+  // Collect and sort all unique future dates, then slice to the selected range
   const dateSet = new Set();
   competitors.forEach(c => series[c].forEach(p => dateSet.add(p.pickup_date)));
-  const dates = Array.from(dateSet).sort();
+  const allDates = Array.from(dateSet).sort();
+
+  const weeks = state.horizonWeeks || 26;
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() + weeks * 7);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  const dates = allDates.filter(d => d <= cutoffStr);
 
   const labels = dates.map(d => {
     const dt = new Date(d + 'T00:00:00');
@@ -3167,7 +3178,8 @@ function renderModelHorizonChart() {
   const tickColor = isDark ? '#9ca3af' : '#6b7280';
 
   const titleEl = document.getElementById('model-horizon-title');
-  if (titleEl) titleEl.textContent = `${data.model} — Price per Day · All Future Dates`;
+  const rangeLabel = weeks === 13 ? '3 Months' : weeks === 52 ? '12 Months' : '6 Months';
+  if (titleEl) titleEl.textContent = `${data.model} — Price per Day · Next ${rangeLabel}`;
 
   state.modelHorizonChart = new Chart(ctx, {
     type: 'line',
@@ -3247,10 +3259,14 @@ function exportModelHorizonCSV() {
     showToast('No data for this model yet', 'warning');
     return;
   }
-  // Collect all pickup dates across all competitors
+  // Collect all pickup dates, then slice to the selected range
   const dateSet = new Set();
   competitors.forEach(c => (series[c] || []).forEach(r => dateSet.add(r.pickup_date)));
-  const dates = [...dateSet].sort();
+  const weeks = state.horizonWeeks || 26;
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() + weeks * 7);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  const dates = [...dateSet].sort().filter(d => d <= cutoffStr);
 
   const headers = ['Pickup Date', ...competitors.map(c => `${c} (ISK/day)`)];
   const rows = dates.map(date => {
@@ -3263,8 +3279,9 @@ function exportModelHorizonCSV() {
     ];
   });
   const slug = model.replace(/[^a-z0-9]+/gi, '_').toLowerCase();
-  downloadCSV(`model_horizon_${slug}_${new Date().toISOString().slice(0,10)}.csv`, [headers, ...rows]);
-  showToast(`Exported ${model} horizon data`, 'success');
+  const rangeLabel = weeks === 13 ? '3m' : weeks === 52 ? '12m' : '6m';
+  downloadCSV(`model_horizon_${slug}_${rangeLabel}_${new Date().toISOString().slice(0,10)}.csv`, [headers, ...rows]);
+  showToast(`Exported ${model} horizon data (${rangeLabel.toUpperCase()})`, 'success');
 }
 
 // ── Security helper ────────────────────────────────────────────────────────
@@ -3302,7 +3319,7 @@ function init() {
   ['filter-pickup', 'filter-return'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('change', () => {
-      if (id === 'filter-pickup') syncDateConstraints();
+      syncDateConstraints();
       clearTimeout(_dateDebounce);
       _dateDebounce = setTimeout(() => triggerScrape(), 800);
     });

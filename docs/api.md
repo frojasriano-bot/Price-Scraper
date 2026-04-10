@@ -124,12 +124,12 @@ Base URL (when running locally): `http://localhost:8000`
 
 - `GET /api/rates/horizon`
   - Next N weeks of per-day pricing per competitor (real scraped data only)
-  - Optional query params: `location`, `category`, `weeks` (default 16)
+  - Optional query params: `location`, `category`, `weeks` (default 26, min 4, max 52)
   - Response: `{ "weeks": [ { "pickup_date", "competitors": { "<name>": <per_day_isk> } } ] }`
 
 - `POST /api/rates/scrape-horizon`
   - Scrapes all 7 competitors × N weekly windows and persists results
-  - Optional query params: `location`, `weeks` (default 16)
+  - Optional query params: `location`, `weeks` (default 26, min 4, max 52)
 
 - `GET /api/rates/model-horizon`
   - All future scraped per-day prices for one specific canonical model, grouped by competitor

@@ -10,10 +10,11 @@ FastAPI backend · SQLite · APScheduler · Vanilla JS SPA · Chart.js
 
 | Tab | Description |
 |-----|-------------|
-| **Rate Intelligence** | Executive summary banner, live competitor rates, sortable table with per-competitor price-change arrows, bar chart, cross-competitor matrix, price history charts, seasonal analysis with price-evolution history mode, forward rate horizon (next 16 weeks), CSV export |
+| **Rate Intelligence** | Executive summary banner, live competitor rates, sortable table with per-competitor price-change arrows, bar chart, cross-competitor matrix, price history charts, seasonal analysis with price-evolution history mode, forward rate horizon (3M / 6M / 12M toggle), CSV export |
 | **Insurance Comparison** | Coverage matrix, per-category zero-excess pricing (editable inline), company package cards, deductible comparison, Trigger Research + Mark Reviewed workflow with audit log |
 | **SEO Rank Tracker** | Keyword ranking history with previous rank + change delta via SerpAPI; 10 Iceland-specific keywords pre-seeded |
 | **Settings** | Scraper status, schedule config, SerpAPI key, location management, car model mappings, Slack alerts, scrape history log, category audit |
+| **How to Use** | Step-by-step setup guide, automated schedule reference, view descriptions, and usage tips |
 
 ### Rate Intelligence — View Modes
 
@@ -23,7 +24,7 @@ FastAPI backend · SQLite · APScheduler · Vanilla JS SPA · Chart.js
 | **Car Model Matrix** | Cross-competitor price grid per canonical model; green = cheapest, red = most expensive |
 | **Price History** | Time-series line charts per model grouped by category — shows how scraped prices have evolved over the past 7/14/30/90 days |
 | **Seasonal Analysis** | Per-day pricing across the next 12 months (15th anchor date, 7-night stay); includes History mode to see how a single future month's price has evolved across weekly scrapes |
-| **Forward Rates** | Next 16 weeks of competitor pricing — horizon line chart + color-coded heatmap table; scrape-driven, no estimates |
+| **Forward Rates** | Up to 12 months of competitor pricing — horizon line chart + color-coded heatmap table with 3M / 6M / 12M range toggle; scrape-driven, no estimates |
 
 ---
 
@@ -234,11 +235,19 @@ The Δ column in the list view shows **per-competitor** price movement (not mark
 
 ### Date Picker → Auto Scrape
 
-Changing the pickup or return date triggers a live scrape after an 800 ms debounce, so the table always reflects actual live pricing for the selected window.
+Changing the pickup or return date triggers a live scrape after an 800 ms debounce, so the table always reflects actual live pricing for the selected window. The return date is constrained to be at least 1 day after the pickup date; if a return date is selected before the pickup date it is automatically corrected to pickup + 3 days.
 
 ### CSV Export
 
-Export the full rates table as CSV from the list view header button. Includes per-day pricing calculated from the rental window.
+Multiple export functions are available across views:
+
+| Button | View | Contents |
+|--------|------|----------|
+| Export CSV | List View | All rates for the selected window — competitor, model, category, total ISK, per-day ISK, pickup/return dates |
+| Export Matrix CSV | Car Model Matrix | Cross-competitor price grid with pickup/return dates and prices labelled "(ISK total)" |
+| Export Seasonal CSV | Seasonal Analysis | Month-by-month per-day ISK per competitor + season summary rows with "vs Blue %" column |
+| Export Horizon CSV | Forward Rates (all categories) | Weekly per-day ISK per competitor for the selected horizon range |
+| Export Model CSV | Forward Rates (per-model view) | Weekly per-day ISK per competitor for the selected canonical model |
 
 ### Scrape History Log
 
@@ -259,6 +268,10 @@ The seasonal endpoint is **DB-first** — it reads from the `rates` table first 
 3. If no stored data → live-scrape that month and persist the result for future requests
 4. Response is cached for 30 minutes to avoid re-aggregating on every browser refresh
 
+### Season summary tables
+
+Two summary tables below the chart show per-competitor and per-category averages broken down by season band (Low / Shoulder / High / Peak). Each row includes a **vs Blue %** column showing how each competitor's average compares to Blue Car Rental's average for that season — green means the competitor is more expensive than Blue, red means cheaper.
+
 ### Scraping anchor dates
 
 The **Scrape All** button (or `POST /api/rates/scrape-seasonal`) re-scrapes all 12 anchor months and stores fresh data. The weekly Monday cron does the same automatically.
@@ -277,7 +290,19 @@ This reveals whether competitors are raising or lowering prices as a future seas
 
 ## Forward Rate Horizon
 
-The Forward Rates view shows **actual scraped prices** for each of the next 16 weekly pickup windows (today+1w through today+16w, all 7-night stays). No estimates or interpolation — weeks with no scraped data show "No data — click Scrape Horizon".
+The Forward Rates view shows **actual scraped prices** for future weekly pickup windows (today+1w through today+Nw, all 7-night stays). No estimates or interpolation — weeks with no scraped data show "No data — click Scrape Horizon".
+
+### Range toggle
+
+A **3M / 6M / 12M** toggle controls how many weeks are displayed and scraped:
+
+| Button | Weeks | Scrape calls (7 competitors) |
+|--------|-------|------------------------------|
+| 3M | 13 | 91 |
+| **6M** | **26** | **182** ← default |
+| 12M | 52 | 364 |
+
+The daily cron job always scrapes the full 26-week (6M) range.
 
 ### How it works
 
@@ -287,7 +312,7 @@ The Forward Rates view shows **actual scraped prices** for each of the next 16 w
 
 ### Horizon line chart
 
-- X-axis: future pickup weeks (16 data points)
+- X-axis: future pickup weeks (up to 52 data points)
 - Y-axis: per-day ISK
 - One line per competitor, filtered by selected category pill
 - Lines end where data runs out — no phantom estimates
@@ -296,7 +321,7 @@ The Forward Rates view shows **actual scraped prices** for each of the next 16 w
 
 - Rows: each future week (with days-out indicator)
 - Columns: one per competitor
-- Cells: color-coded green → red (cheapest to most expensive within the 16-week window)
+- Cells: color-coded green → red (cheapest to most expensive within the selected window)
 - "Cheapest" column identifies the cheapest competitor per week at a glance
 
 ### Category filter
@@ -305,9 +330,9 @@ Pills (All / Economy / Compact / SUV / 4x4 / Minivan) re-fetch the API with a `?
 
 ### Scraping
 
-The **Scrape Horizon** button (`POST /api/rates/scrape-horizon`) runs all 7 scrapers against each of the 16 weekly anchor dates sequentially (112 scrape calls total). Results are stored in the `rates` table and available immediately.
+The **Scrape Horizon** button (`POST /api/rates/scrape-horizon`) runs all 7 scrapers against each weekly anchor date in the selected range. Results are stored in the `rates` table and available immediately.
 
-The daily cron job also runs a horizon scrape at 07:15 automatically.
+The daily cron job also runs a 26-week horizon scrape at 07:15 automatically.
 
 ---
 
@@ -321,7 +346,7 @@ APScheduler (`AsyncIOScheduler`) runs five jobs:
 | `seo_check` | Daily 07:30 (configurable) | Checks stored keywords via SerpAPI |
 | `alert_check` | Daily 07:45 (configurable) | Fires Slack alerts if competitors undercut Blue |
 | `scrape_seasonal` | **Every Monday 08:00** | Re-scrapes all 12 anchor months; always weekly |
-| `scrape_horizon` | Daily 07:15 | Scrapes all 7 competitors × 16 future weekly windows |
+| `scrape_horizon` | Daily 07:15 | Scrapes all 7 competitors × 26 future weekly windows (6 months) |
 
 The daily/hourly/weekly setting (configurable via Settings) applies to `scrape_rates`, `seo_check`, and `alert_check`. The horizon scrape always runs daily at 07:15 regardless. The seasonal scrape always runs weekly regardless.
 
@@ -447,10 +472,10 @@ GET  /api/rates/seasonal/history Time series showing how prices for one anchor m
      ?pickup_date=YYYY-MM-DD  &category=  &location=
 
 GET  /api/rates/horizon          Next N weeks of per-day pricing per competitor (real data only)
-     ?location=  &category=  &weeks=16
+     ?location=  &category=  &weeks=26  (default 26, max 52)
 
 POST /api/rates/scrape-horizon   Scrape all competitors × N weekly windows and persist
-     ?location=  &weeks=16
+     ?location=  &weeks=26  (default 26, max 52)
 
 GET  /api/rates/scraper-status
 GET  /api/rates/car-catalog
