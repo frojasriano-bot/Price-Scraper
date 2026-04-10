@@ -187,9 +187,9 @@ _EXACT: dict[str, str] = {
 
     # ── Dacia (additional variants) ──────────────────────────────────────────
     "dacia duster":                              "Dacia Duster",
-    "dacia duster (older model)":                "Dacia Duster",
+    "dacia duster (older model)":                "Dacia Duster (Older Model)",
     "dacia duster (new model)":                  "Dacia Duster",
-    "dacia duster (2022-2023) older model":      "Dacia Duster",
+    "dacia duster (2022-2023) older model":      "Dacia Duster (Older Model)",
     "dacia bigster":                             "Dacia Bigster",
 
     # ── Honda ───────────────────────────────────────────────────────────────
@@ -257,12 +257,12 @@ _EXACT: dict[str, str] = {
     "jm - ford tourneo":                         "Ford Tourneo",
 
     # ── Blue Car Rental live API variants ───────────────────────────────────
-    "dacia duster used model":                   "Dacia Duster",
-    "toyota rav4 used model":                    "Toyota RAV4",
+    "dacia duster used model":                   "Dacia Duster (Older Model)",
+    "toyota rav4 used model":                    "Toyota RAV4 (Older Model)",
     "toyota rav4 - 4x4":                         "Toyota RAV4",
-    "toyota rav4 - 4x4 (older model)":           "Toyota RAV4",
+    "toyota rav4 - 4x4 (older model)":           "Toyota RAV4 (Older Model)",
     "suzuki vitara mt":                          "Suzuki Vitara",
-    "suzuki vitara 4x4 (older model)":           "Suzuki Vitara",
+    "suzuki vitara 4x4 (older model)":           "Suzuki Vitara (Older Model)",
 
     # ── Lotus live API variants (long descriptive names) ────────────────────
     "kia sorento 4x4 - 7 seats":                 "Kia Sorento",
@@ -276,7 +276,7 @@ _EXACT: dict[str, str] = {
     "tesla model 3 - long range 4x4":            "Tesla Model 3",
     "suzuki jimny 4x4 - 2 seats only":           "Suzuki Jimny",
     "suzuki jimny 4x4 (manual) - 2 seats only":  "Suzuki Jimny",
-    "suzuki jimny 4x4 - 2 seats only (older model)": "Suzuki Jimny",
+    "suzuki jimny 4x4 - 2 seats only (older model)": "Suzuki Jimny (Older Model)",
     "volkswagen caravelle 4x4 - 9 seater":       "VW Caravelle",
     "mercedes benz vito tourer 4x4 - 9 seater":  "Mercedes Vito",
 
@@ -336,13 +336,17 @@ CANONICAL_CATEGORIES: dict[str, str] = {
     "Tesla Model 3":         "Compact",
 
     # ── SUV (crossovers, mid-size SUVs) ─────────────────────────────────────
-    "Dacia Duster":          "SUV",
-    "Dacia Bigster":         "SUV",
-    "Dacia Duster Camping":  "SUV",
-    "Suzuki Vitara":         "SUV",
-    "Suzuki Jimny":          "SUV",
+    "Dacia Duster":                "SUV",
+    "Dacia Duster (Older Model)":  "SUV",
+    "Dacia Bigster":               "SUV",
+    "Dacia Duster Camping":        "SUV",
+    "Suzuki Vitara":               "SUV",
+    "Suzuki Vitara (Older Model)": "SUV",
+    "Suzuki Jimny":                "SUV",
+    "Suzuki Jimny (Older Model)":  "SUV",
     "Kia Sportage":          "SUV",
-    "Toyota RAV4":           "SUV",
+    "Toyota RAV4":                "SUV",
+    "Toyota RAV4 (Older Model)":  "SUV",
     "Hyundai Tucson":        "SUV",
     "Nissan Qashqai":        "SUV",
     "Nissan Ariya":          "SUV",
