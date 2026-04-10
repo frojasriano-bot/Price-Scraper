@@ -922,9 +922,35 @@ function renderSeasonalCategoryTable() {
   const tbody = document.getElementById('seasonal-category-tbody');
   if (!tbody || !state.seasonalData) return;
 
-  const { category_season_summary } = state.seasonalData;
+  const { category_season_summary, months } = state.seasonalData;
   const SEASON_ORDER = ['low', 'shoulder', 'high', 'peak'];
   const CAT_ORDER = ['Economy', 'Compact', 'SUV', '4x4', 'Minivan'];
+
+  // Build Blue Car Rental's per-category average per season from monthly data
+  const blueBuckets = {};  // season → category → [prices]
+  (months || []).forEach(m => {
+    const s = m.season;
+    const blueCats = m.competitors?.['Blue Car Rental'] || {};
+    Object.entries(blueCats).forEach(([cat, price]) => {
+      if (price == null) return;
+      blueBuckets[s] = blueBuckets[s] || {};
+      blueBuckets[s][cat] = blueBuckets[s][cat] || [];
+      blueBuckets[s][cat].push(price);
+    });
+  });
+  // Average per season per category for Blue
+  const blueSeasonCat = {};
+  Object.entries(blueBuckets).forEach(([s, cats]) => {
+    blueSeasonCat[s] = {};
+    Object.entries(cats).forEach(([cat, vals]) => {
+      blueSeasonCat[s][cat] = vals.reduce((a, b) => a + b, 0) / vals.length;
+    });
+  });
+  // Blue's overall average per category (across all seasons with data)
+  function blueAvgForCat(cat) {
+    const vals = SEASON_ORDER.map(s => blueSeasonCat[s]?.[cat]).filter(v => v != null);
+    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+  }
 
   // Collect all categories present in the data, preserving preferred order
   const allCats = [...new Set([
@@ -939,11 +965,20 @@ function renderSeasonalCategoryTable() {
 
   tbody.innerHTML = allCats.map(cat => {
     const prices = SEASON_ORDER.map(s => category_season_summary[s]?.[cat] ?? null);
-    const lowPrice  = prices[0];
-    const peakPrice = prices[3];
-    const uplift    = (lowPrice && peakPrice)
-      ? `+${Math.round((peakPrice / lowPrice - 1) * 100)}%`
-      : '—';
+
+    // vs Blue: market average for this category vs Blue's average for same category
+    let vsBlue = '—';
+    let vsBlueClass = 'color:#6b7280';
+    const marketAvg = prices.filter(v => v != null);
+    const marketMean = marketAvg.length ? marketAvg.reduce((a, b) => a + b, 0) / marketAvg.length : null;
+    const blueMean = blueAvgForCat(cat);
+    if (marketMean != null && blueMean != null) {
+      const pct = Math.round((marketMean / blueMean - 1) * 100);
+      vsBlue = (pct >= 0 ? '+' : '') + pct + '%';
+      vsBlueClass = pct > 0 ? 'color:#16a34a;font-weight:700'   // market more expensive = Blue cheaper
+                  : pct < 0 ? 'color:#dc2626;font-weight:700'   // market cheaper = Blue more expensive
+                  : 'color:#6b7280';
+    }
 
     const cells = SEASON_ORDER.map((s, i) => {
       const p = prices[i];
@@ -954,14 +989,10 @@ function renderSeasonalCategoryTable() {
       </td>`;
     }).join('');
 
-    const upliftClass = parseInt(uplift) > 80 ? 'color:#dc2626;font-weight:700'
-      : parseInt(uplift) > 50 ? 'color:#f59e0b;font-weight:700'
-      : 'color:#6b7280';
-
     return `<tr>
       <td><strong>${escHtml(cat)}</strong></td>
       ${cells}
-      <td style="text-align:center;font-size:13px;${upliftClass}">${uplift}</td>
+      <td style="text-align:center;font-size:13px;${vsBlueClass}">${vsBlue}</td>
     </tr>`;
   }).join('');
 }
