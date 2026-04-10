@@ -63,6 +63,14 @@
         </svg>
         Settings
       </div>
+
+      <div class="nav-item" data-tab="guide">
+        <!-- Book icon -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+        </svg>
+        How to Use
+      </div>
     </nav>
 
     <div class="sidebar-footer">
@@ -1151,6 +1159,151 @@
         </div>
 
       </div><!-- /tab-insurance -->
+
+      <!-- ══════════════════════════════════════════════════════════════
+           TAB: HOW TO USE
+      ══════════════════════════════════════════════════════════════ -->
+      <div id="tab-guide" class="tab-panel" style="display:none">
+
+        <div style="max-width:780px;margin:0 auto">
+
+          <!-- Getting started -->
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Getting Started</div>
+                <div class="card-subtitle">What to do on a fresh install before any data has been scraped</div>
+              </div>
+            </div>
+            <div style="padding:0 20px 20px;font-size:14px;line-height:1.7;color:var(--text)">
+              <ol style="padding-left:20px;margin:0">
+                <li style="margin-bottom:12px">
+                  <strong>Start the server</strong><br>
+                  Run <code style="background:var(--bg-alt);padding:2px 6px;border-radius:4px;font-size:13px">uvicorn main:app --reload --port 8000</code> and open <strong>http://localhost:8000</strong>.
+                </li>
+                <li style="margin-bottom:12px">
+                  <strong>Run your first scrape</strong><br>
+                  Go to <strong>Rate Intelligence</strong>. The dashboard will show mock/placeholder data until real data exists.
+                  Click the <strong>Scrape Now</strong> button (or change the date picker) to pull live prices from all 7 competitors. This takes about 30–60 seconds.
+                </li>
+                <li style="margin-bottom:12px">
+                  <strong>Populate the Forward Rates horizon</strong><br>
+                  Go to <strong>Rate Intelligence → Forward Rates</strong> and click <strong>Scrape Horizon</strong>. This runs all 7 scrapers across the next 16 weekly pickup windows (112 scrape calls). Run this once manually — the daily scheduler will keep it fresh from 07:15 onwards.
+                </li>
+                <li style="margin-bottom:12px">
+                  <strong>Populate Seasonal Analysis</strong><br>
+                  Go to <strong>Rate Intelligence → Seasonal Analysis</strong> and click <strong>Scrape All</strong>. This scrapes the 15th of each of the next 12 months (7-night stays). The Monday weekly cron job will update it automatically after that.
+                </li>
+                <li style="margin-bottom:12px">
+                  <strong>Set up SEO tracking (optional)</strong><br>
+                  Go to <strong>Settings</strong> and enter your <strong>SerpAPI key</strong>. Then go to <strong>SEO Rank Tracker</strong> and click <strong>Check Rankings Now</strong>. 10 Iceland car rental keywords are pre-seeded — add or remove via the Keywords section in Settings.
+                </li>
+                <li>
+                  <strong>Configure Slack alerts (optional)</strong><br>
+                  Go to <strong>Settings → Slack Alerts</strong> and paste your webhook URL. The system will notify you automatically whenever a competitor undercuts Blue Car Rental's price on any model.
+                </li>
+              </ol>
+            </div>
+          </div>
+
+          <!-- Scheduler -->
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Automated Schedule</div>
+                <div class="card-subtitle">What runs automatically once the server is running</div>
+              </div>
+            </div>
+            <div style="padding:0 20px 20px">
+              <table style="width:100%;border-collapse:collapse;font-size:13px">
+                <thead>
+                  <tr style="border-bottom:1px solid var(--border)">
+                    <th style="text-align:left;padding:8px 12px 8px 0;color:var(--text-muted);font-weight:600">Job</th>
+                    <th style="text-align:left;padding:8px 12px;color:var(--text-muted);font-weight:600">When</th>
+                    <th style="text-align:left;padding:8px 0;color:var(--text-muted);font-weight:600">What it does</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr style="border-bottom:1px solid var(--border)">
+                    <td style="padding:8px 12px 8px 0;font-weight:500">Rate Scrape</td>
+                    <td style="padding:8px 12px;color:var(--text-muted)">Daily 07:00</td>
+                    <td style="padding:8px 0;color:var(--text-muted)">Live rates for today+7 → today+10, all 7 competitors</td>
+                  </tr>
+                  <tr style="border-bottom:1px solid var(--border)">
+                    <td style="padding:8px 12px 8px 0;font-weight:500">Horizon Scrape</td>
+                    <td style="padding:8px 12px;color:var(--text-muted)">Daily 07:15</td>
+                    <td style="padding:8px 0;color:var(--text-muted)">Next 16 weekly windows × 7 competitors (112 calls)</td>
+                  </tr>
+                  <tr style="border-bottom:1px solid var(--border)">
+                    <td style="padding:8px 12px 8px 0;font-weight:500">SEO Check</td>
+                    <td style="padding:8px 12px;color:var(--text-muted)">Daily 07:30</td>
+                    <td style="padding:8px 0;color:var(--text-muted)">Google rankings for all stored keywords via SerpAPI</td>
+                  </tr>
+                  <tr style="border-bottom:1px solid var(--border)">
+                    <td style="padding:8px 12px 8px 0;font-weight:500">Alert Check</td>
+                    <td style="padding:8px 12px;color:var(--text-muted)">Daily 07:45</td>
+                    <td style="padding:8px 0;color:var(--text-muted)">Fires Slack alert if any competitor undercuts Blue</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:8px 12px 8px 0;font-weight:500">Seasonal Scrape</td>
+                    <td style="padding:8px 12px;color:var(--text-muted)">Every Monday 08:00</td>
+                    <td style="padding:8px 0;color:var(--text-muted)">Re-scrapes all 12 monthly anchor dates (15th, 7-night stay)</td>
+                  </tr>
+                </tbody>
+              </table>
+              <p style="font-size:13px;color:var(--text-muted);margin-top:12px;margin-bottom:0">
+                The rate scrape, SEO check, and alert check schedule (daily / hourly / weekly) can be changed in <strong>Settings</strong>. The horizon and seasonal jobs always run on their fixed schedules.
+              </p>
+            </div>
+          </div>
+
+          <!-- Views explained -->
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-header">
+              <div>
+                <div class="card-title">What Each View Shows</div>
+                <div class="card-subtitle">Rate Intelligence tab breakdown</div>
+              </div>
+            </div>
+            <div style="padding:0 20px 20px;font-size:14px;line-height:1.7;color:var(--text)">
+              <dl style="margin:0">
+                <dt style="font-weight:600;margin-top:12px">List View</dt>
+                <dd style="margin:0 0 4px 0;color:var(--text-muted)">All live rates in a sortable table. Change the date picker at the top to trigger a fresh scrape for any pickup/return window. The Δ column shows the price movement for each competitor since their previous scrape.</dd>
+
+                <dt style="font-weight:600;margin-top:12px">Car Model Matrix</dt>
+                <dd style="margin:0 0 4px 0;color:var(--text-muted)">Side-by-side price grid for every canonical car model across all competitors. Green = cheapest on that model, red = most expensive. If no data exists for the selected dates, it falls back to the most recent data available.</dd>
+
+                <dt style="font-weight:600;margin-top:12px">Price History</dt>
+                <dd style="margin:0 0 4px 0;color:var(--text-muted)">Time-series line charts showing how prices have evolved over the last 7, 14, 30, or 90 days. Useful for spotting trend patterns and seasonal drift.</dd>
+
+                <dt style="font-weight:600;margin-top:12px">Seasonal Analysis</dt>
+                <dd style="margin:0 0 4px 0;color:var(--text-muted)">Per-day pricing across the next 12 months (pickup on the 15th, 7-night stay). Switch to <strong>History mode</strong> to see how prices for a specific future month have changed across successive scrapes — the clearest signal for competitor yield management.</dd>
+
+                <dt style="font-weight:600;margin-top:12px">Forward Rates</dt>
+                <dd style="margin:0 0 4px 0;color:var(--text-muted)">Horizon chart and heatmap for the next 16 weekly pickup windows. Use the category filter pills to compare within a segment, or select a specific car model from the dropdown to see per-model competitor lines.</dd>
+              </dl>
+            </div>
+          </div>
+
+          <!-- Tips -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Tips</div>
+              </div>
+            </div>
+            <div style="padding:0 20px 20px;font-size:14px;line-height:1.7;color:var(--text)">
+              <ul style="padding-left:20px;margin:0">
+                <li style="margin-bottom:8px"><strong>Unknown car models</strong> — go to Settings → Category Audit to see any models that haven't been mapped to a canonical name yet. You can add mappings via Settings → Car Model Mappings.</li>
+                <li style="margin-bottom:8px"><strong>Mock data badge</strong> — if you see a "Mock Data" badge in the top bar, the DB has no real scraped data for the current filters. Run a scrape to populate it.</li>
+                <li style="margin-bottom:8px"><strong>Insurance tab</strong> — click any price cell in the Price by Category table to edit it inline. Prices persist in the database and survive restarts. Use <strong>Trigger Research</strong> to open all competitor insurance pages at once, then <strong>Mark Reviewed</strong> when done.</li>
+                <li><strong>Locations</strong> — Keflavik Airport and Reykjavik are the two Blue Car Rental locations. Lava and Lotus only operate from KEF. Add or rename locations via Settings if needed.</li>
+              </ul>
+            </div>
+          </div>
+
+        </div>
+      </div><!-- /tab-guide -->
 
     </div><!-- /content -->
   </div><!-- /main -->

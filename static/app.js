@@ -126,6 +126,7 @@ function switchTab(tab) {
     seo: 'SEO Rank Tracker',
     insurance: 'Insurance Comparison',
     settings: 'Settings',
+    guide: 'How to Use',
   };
   document.getElementById('page-title').textContent = titles[tab] || tab;
 

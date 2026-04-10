@@ -42,6 +42,20 @@ Base URL (when running locally): `http://localhost:8000`
   - Response:
     - `{ "deltas": {...}, "available": boolean }`
 
+- `GET /api/rates/price-changes`
+  - Per-competitor price delta between the two most recent scrape dates (keyed by `competitor::location::model`)
+  - Optional query params:
+    - `location`, `category`
+  - Response:
+    - `{ "changes": { "<key>": { "prev": n, "curr": n, "delta": n } } }`
+
+- `GET /api/rates/scrape-log`
+  - History of every scrape run (manual, scheduled, seasonal, horizon)
+  - Optional query params:
+    - `limit` (default 20)
+  - Response:
+    - `{ "log": [ { "triggered_at", "trigger", "location", "rates_scraped", "competitors_hit", "duration_seconds", "error_count" } ] }`
+
 - `GET /api/rates/history`
   - Optional query params:
     - `location`, `car_category`, `competitor`, `days` (1..365)
@@ -53,6 +67,13 @@ Base URL (when running locally): `http://localhost:8000`
     - `location`, `competitor`, `days`
   - Response:
     - `{ "data": { "<category>": { "<model>": [ ... ] } }, "source": "database" | "mock" }`
+
+- `GET /api/rates/history/coverage`
+  - Which competitors have data per day over the lookback window
+  - Optional query params:
+    - `location`, `days`
+  - Response:
+    - `{ "coverage": { "<date>": ["<competitor>", ...] } }`
 
 - `GET /api/rates/matrix`
   - Optional query params:
@@ -90,6 +111,35 @@ Base URL (when running locally): `http://localhost:8000`
     ```
   - `season_summary` — average per-day ISK per competitor across all months in each season band
   - `category_season_summary` — average per-day ISK per car category (Economy/Compact/SUV/4x4/Minivan) across all competitors and months in each season band; powers the **Season Price Summary by Category** dashboard table
+
+- `POST /api/rates/scrape-seasonal`
+  - Re-scrapes all 12 anchor months and persists results
+  - Optional query params: `location`
+
+- `GET /api/rates/seasonal/history`
+  - Time series showing how prices for one anchor month have evolved across successive scrapes
+  - Required query params: `pickup_date` (`YYYY-MM-15`)
+  - Optional query params: `category`, `location`
+  - Response: `{ "history": [ { "scraped_at", "competitor", "per_day" } ] }`
+
+- `GET /api/rates/horizon`
+  - Next N weeks of per-day pricing per competitor (real scraped data only)
+  - Optional query params: `location`, `category`, `weeks` (default 16)
+  - Response: `{ "weeks": [ { "pickup_date", "competitors": { "<name>": <per_day_isk> } } ] }`
+
+- `POST /api/rates/scrape-horizon`
+  - Scrapes all 7 competitors × N weekly windows and persists results
+  - Optional query params: `location`, `weeks` (default 16)
+
+- `GET /api/rates/model-horizon`
+  - All future scraped per-day prices for one specific canonical model, grouped by competitor
+  - Required query params: `model` (canonical name, URL-encoded)
+  - Optional query params: `location`
+  - Response: `{ "<competitor>": [ { "pickup_date", "per_day", "car_model" } ] }`
+
+- `GET /api/rates/scraper-status`
+  - Live and mock status for each configured scraper
+  - Response: `{ "scrapers": [ { "name", "status", "last_scraped_at", "rates_count" } ] }`
 
 ### Car catalog & mappings
 
@@ -154,4 +204,37 @@ Base URL (when running locally): `http://localhost:8000`
     - `serpapi_key`
     - `scrape_schedule` (`hourly|daily|weekly`)
     - `locations`: list of `{name, address}`
+
+- `GET /api/settings/category-audit`
+  - Per-model category status: mapped, unmapped, or conflict (DB category ≠ canonical)
+  - Response: `{ "models": [ { "canonical_name", "db_category", "canonical_category", "status" } ], "summary": { "total", "mapped", "unmapped", "conflicts" } }`
+
+## Insurance (`/api/insurance`)
+
+- `GET /api/insurance`
+  - Full insurance data including coverage matrix, company cards, deductibles, and category pricing with any DB overrides applied
+  - Response: `{ "companies": [...], "category_pricing": { "<company>": { "<category>": { "price_isk", "note" } } } }`
+
+- `GET /api/insurance/category-pricing`
+  - Base category pricing without DB overrides applied
+
+- `POST /api/insurance/prices`
+  - Save a price override for one company + category cell
+  - Body: `{ "company": str, "category": str, "price_isk": int, "note": str }`
+  - Response: `{ "company", "category", "price_isk", "price_note", "updated_at" }`
+
+- `GET /api/insurance/review-log`
+  - Timestamped history of manual insurance review events
+  - Response: `{ "log": [ { "reviewed_at", "reviewed_by" } ] }`
+
+- `POST /api/insurance/mark-reviewed`
+  - Records a manual review event in the audit log
+
+## Alerts (`/api/alerts`)
+
+- `POST /api/alerts/test-webhook`
+  - Sends a test message to the configured Slack webhook URL
+
+- `POST /api/alerts/check`
+  - Runs the price alert check immediately and fires Slack alerts if any competitor undercuts Blue Car Rental
 

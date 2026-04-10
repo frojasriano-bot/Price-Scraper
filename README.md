@@ -71,7 +71,7 @@ main.py                  FastAPI app, APScheduler (5 jobs), lifespan setup
 canonical.py             Car name normalisation (canonicalize()) +
                          category normalisation (canonicalize_category()) +
                          CANONICAL_CATEGORIES — single source of truth for
-                         all 95 canonical models and their categories
+                         all 100 canonical models and their categories
 database.py              SQLite schema, all DB helpers, migrations
 
 routes/
@@ -164,19 +164,19 @@ Strips transmission/fuel suffixes (automatic, manual, petrol, diesel, hybrid, el
 "Volkswagen Caravelle"              → "VW Caravelle"
 "Kia Ceed Sportswagon"              → "Kia Ceed Wagon"
 "Toyota Land Cruiser 4x4 35\" ..."  → "Toyota Land Cruiser 150"
-"Dacia Duster Used Model"           → "Dacia Duster"
+"Dacia Duster Used Model"           → "Dacia Duster (Older Model)"
 ```
 
 ### `CANONICAL_CATEGORIES` → dict[str, str]
 
-Maps every canonical model name to its category. 95 models across 5 categories:
+Maps every canonical model name to its category. 100 models across 5 categories:
 
 | Category | Count |
 |----------|-------|
 | Economy  | 17 |
 | Compact  | 18 |
-| SUV      | 23 |
-| 4x4      | 24 |
+| SUV      | 27 |
+| 4x4      | 25 |
 | Minivan  | 13 |
 
 This dict is the **authoritative source** — `car_catalog` DB table is seeded from it, and `insert_rates()` applies it at write time so no category conflicts accumulate.
@@ -323,7 +323,7 @@ APScheduler (`AsyncIOScheduler`) runs five jobs:
 | `scrape_seasonal` | **Every Monday 08:00** | Re-scrapes all 12 anchor months; always weekly |
 | `scrape_horizon` | Daily 07:15 | Scrapes all 7 competitors × 16 future weekly windows |
 
-The daily/hourly/weekly setting (configurable via Settings) applies to `scrape_rates`, `seo_check`, `alert_check`, and `scrape_horizon`. The seasonal scrape always runs weekly regardless.
+The daily/hourly/weekly setting (configurable via Settings) applies to `scrape_rates`, `seo_check`, and `alert_check`. The horizon scrape always runs daily at 07:15 regardless. The seasonal scrape always runs weekly regardless.
 
 Change the main schedule via Settings or:
 

@@ -311,7 +311,7 @@ def setup_scheduler(schedule: str = "daily"):
         trigger=CronTrigger(hour=7, minute=15),
         id="scrape_horizon",
         replace_existing=True,
-        name="Horizon Rate Scrape (12 weeks)",
+        name="Horizon Rate Scrape (16 weeks)",
     )
 
     logger.info(f"Scheduler configured: {schedule} schedule active.")
