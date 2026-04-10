@@ -1163,7 +1163,7 @@ function renderRatesTable() {
       <td class="${priceClass}">${formatISK(r.price_isk)}</td>
       <td>${formatISK(r._per_day)}/day</td>
       <td style="text-align:center;font-size:12px;font-weight:600">${deltaHtml}</td>
-      <td><span class="badge badge-gray">${escHtml(r.location)}</span></td>
+      <td><span class="badge badge-gray" style="white-space:nowrap">${escHtml(r.location)}</span></td>
       <td style="color:#6b7280;font-size:12px">${timeAgo(r.scraped_at)}</td>
     </tr>`;
   }).join('');
