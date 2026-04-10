@@ -478,23 +478,33 @@
                 <span id="horizon-source-badge" class="badge badge-gray" style="display:none">Mock Data</span>
               </div>
             </div>
-            <!-- Category filter pills -->
-            <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;padding-top:12px;border-top:1px solid rgba(255,255,255,0.07);margin-top:4px">
-              <span style="font-size:12px;color:#9ca3af;margin-right:2px">Category:</span>
-              <button class="btn btn-secondary btn-sm active" id="hfwd-btn-"        onclick="setHorizonCategory('')">All</button>
-              <button class="btn btn-secondary btn-sm"        id="hfwd-btn-Economy"  onclick="setHorizonCategory('Economy')">🚗 Economy</button>
-              <button class="btn btn-secondary btn-sm"        id="hfwd-btn-Compact"  onclick="setHorizonCategory('Compact')">🚙 Compact</button>
-              <button class="btn btn-secondary btn-sm"        id="hfwd-btn-SUV"      onclick="setHorizonCategory('SUV')">🛻 SUV</button>
-              <button class="btn btn-secondary btn-sm"        id="hfwd-btn-4x4"      onclick="setHorizonCategory('4x4')">🏔️ 4x4</button>
-              <button class="btn btn-secondary btn-sm"        id="hfwd-btn-Minivan"  onclick="setHorizonCategory('Minivan')">🚐 Minivan</button>
+            <!-- Filter row -->
+            <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;padding-top:12px;border-top:1px solid rgba(255,255,255,0.07);margin-top:4px">
+              <!-- Category pills -->
+              <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
+                <span style="font-size:12px;color:#9ca3af;margin-right:2px">Category:</span>
+                <button class="btn btn-secondary btn-sm active" id="hfwd-btn-"        onclick="setHorizonCategory('')">All</button>
+                <button class="btn btn-secondary btn-sm"        id="hfwd-btn-Economy"  onclick="setHorizonCategory('Economy')">🚗 Economy</button>
+                <button class="btn btn-secondary btn-sm"        id="hfwd-btn-Compact"  onclick="setHorizonCategory('Compact')">🚙 Compact</button>
+                <button class="btn btn-secondary btn-sm"        id="hfwd-btn-SUV"      onclick="setHorizonCategory('SUV')">🛻 SUV</button>
+                <button class="btn btn-secondary btn-sm"        id="hfwd-btn-4x4"      onclick="setHorizonCategory('4x4')">🏔️ 4x4</button>
+                <button class="btn btn-secondary btn-sm"        id="hfwd-btn-Minivan"  onclick="setHorizonCategory('Minivan')">🚐 Minivan</button>
+              </div>
+              <!-- Model selector -->
+              <div style="display:flex;gap:6px;align-items:center">
+                <span style="font-size:12px;color:#9ca3af;white-space:nowrap">Model:</span>
+                <select id="horizon-model-select" class="form-select" onchange="setHorizonModel(this.value)" style="min-width:200px;height:30px;font-size:12px">
+                  <option value="">— Aggregate view —</option>
+                </select>
+              </div>
             </div>
           </div>
 
-          <!-- Horizon line chart -->
-          <div class="card" style="margin-bottom:16px">
+          <!-- Aggregate horizon chart (hidden when a model is selected) -->
+          <div class="card" style="margin-bottom:16px" id="horizon-chart-card">
             <div class="card-header">
               <div>
-                <div class="card-title" id="horizon-chart-title">Price Horizon — Next 12 Weeks</div>
+                <div class="card-title" id="horizon-chart-title">Price Horizon — Next 16 Weeks</div>
                 <div class="card-subtitle">Average per-day ISK per competitor across upcoming pickup windows</div>
               </div>
               <div id="horizon-loading" style="font-size:12px;color:#6b7280;display:none">
@@ -507,8 +517,28 @@
             </div>
           </div>
 
-          <!-- Heatmap table -->
-          <div class="card">
+          <!-- Per-model horizon chart (shown when a model is selected) -->
+          <div class="card" style="margin-bottom:16px;display:none" id="model-horizon-chart-card">
+            <div class="card-header">
+              <div>
+                <div class="card-title" id="model-horizon-title">Model Price Horizon</div>
+                <div class="card-subtitle">Per-day ISK per competitor — all future pickup dates in DB (weekly + monthly anchors)</div>
+              </div>
+              <div id="model-horizon-loading" style="font-size:12px;color:#6b7280;display:none">
+                <span class="spinner" style="border-color:rgba(0,0,0,.15);border-top-color:#2563eb;width:12px;height:12px"></span>
+                &nbsp;Loading…
+              </div>
+            </div>
+            <div style="position:relative;height:360px">
+              <canvas id="model-horizon-chart"></canvas>
+            </div>
+            <div id="model-horizon-empty" style="display:none;padding:40px;text-align:center;color:#6b7280;font-size:13px">
+              No future data for this model yet — click <strong>Scrape Horizon</strong> or run <strong>Scrape All</strong> in Seasonal Analysis.
+            </div>
+          </div>
+
+          <!-- Heatmap table (hidden when a model is selected) -->
+          <div class="card" id="horizon-heatmap-card">
             <div class="card-header">
               <div>
                 <div class="card-title">Rate Heatmap</div>

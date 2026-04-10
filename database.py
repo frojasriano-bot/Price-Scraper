@@ -1262,6 +1262,74 @@ async def set_insurance_price_override(
     return {"company": company, "category": category, "price_isk": price_isk, "price_note": price_note, "updated_at": now}
 
 
+async def get_model_horizon(canonical_name: str, location: str = None) -> dict:
+    """
+    Return all future scraped per-day prices for a specific canonical model,
+    grouped by competitor. Covers both weekly horizon and monthly seasonal anchors.
+    Returns {competitor: [{pickup_date, per_day, car_model}]} sorted by pickup_date.
+    """
+    from datetime import date as _date
+
+    today = _date.today().isoformat()
+
+    inner_conds = ["canonical_name = ?", "pickup_date >= ?"]
+    inner_params: list = [canonical_name, today]
+    if location:
+        inner_conds.append("location = ?")
+        inner_params.append(location)
+
+    outer_conds = ["r.canonical_name = ?", "r.pickup_date >= ?"]
+    outer_params: list = [canonical_name, today]
+    if location:
+        outer_conds.append("r.location = ?")
+        outer_params.append(location)
+
+    inner_where = "WHERE " + " AND ".join(inner_conds)
+    outer_where = "WHERE " + " AND ".join(outer_conds)
+
+    query = f"""
+        SELECT r.competitor, r.pickup_date, r.return_date, r.price_isk, r.car_model
+        FROM rates r
+        INNER JOIN (
+            SELECT competitor, location, pickup_date, MAX(scraped_at) AS max_scraped
+            FROM rates
+            {inner_where}
+            GROUP BY competitor, location, pickup_date
+        ) latest
+        ON  r.competitor  = latest.competitor
+        AND r.location    = latest.location
+        AND r.pickup_date = latest.pickup_date
+        AND r.scraped_at  = latest.max_scraped
+        {outer_where}
+        ORDER BY r.pickup_date, r.competitor
+    """
+
+    all_params = inner_params + outer_params
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(query, all_params) as cursor:
+            rows = await cursor.fetchall()
+
+    series: dict = {}
+    for row in rows:
+        comp = row["competitor"]
+        try:
+            rental_days = (
+                _date.fromisoformat(row["return_date"]) - _date.fromisoformat(row["pickup_date"])
+            ).days
+        except Exception:
+            rental_days = 0
+        per_day = round(row["price_isk"] / rental_days) if rental_days > 0 else row["price_isk"]
+        series.setdefault(comp, []).append({
+            "pickup_date": row["pickup_date"],
+            "per_day":     per_day,
+            "car_model":   row["car_model"],
+        })
+
+    return series
+
+
 async def get_horizon_rates(
     location: str = None,
     category: str = None,

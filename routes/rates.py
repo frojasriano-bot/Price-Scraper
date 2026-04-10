@@ -29,6 +29,7 @@ from database import (
     get_model_competitor_coverage,
     get_per_competitor_price_changes,
     get_horizon_rates,
+    get_model_horizon,
     log_scrape,
     get_scrape_log,
 )
@@ -327,6 +328,10 @@ async def get_matrix(
         return_date=return_date,
         category=category,
     )
+
+    # If the exact pickup_date has no data, fall back to the most recent data in the DB
+    if not result["cars"] and pickup_date:
+        result = await get_rates_matrix(location=location, category=category)
 
     if result["cars"]:
         return {**result, "source": "database"}
@@ -884,4 +889,21 @@ async def scrape_horizon(
         "duration_seconds": round(duration, 1),
         "weeks":            week_log,
         "errors":           all_errors[:20],
+    }
+
+
+@router.get("/model-horizon")
+async def get_model_horizon_endpoint(
+    model:    str            = Query(..., description="Canonical model name, e.g. Toyota RAV4"),
+    location: Optional[str] = Query(None),
+):
+    """
+    Return all future scraped per-day prices for a specific canonical model across competitors.
+    Combines weekly horizon anchors and monthly seasonal anchors into a single time series.
+    """
+    series = await get_model_horizon(canonical_name=model, location=location)
+    return {
+        "model":  model,
+        "series": series,
+        "source": "database" if series else "none",
     }

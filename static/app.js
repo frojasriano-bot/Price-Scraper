@@ -56,6 +56,9 @@ const state = {
   horizonChart: null,
   horizonCategory: '',
   horizonScraping: false,
+  horizonModel: '',
+  modelHorizonData: null,
+  modelHorizonChart: null,
   deltas: {},
   deltasAvailable: false,
   priceChanges: {},
@@ -2684,6 +2687,8 @@ async function loadHorizon(force = false) {
   const loading = document.getElementById('horizon-loading');
   if (loading) loading.style.display = '';
 
+  populateModelSelector();
+
   const location = document.getElementById('filter-location').value;
   const params = new URLSearchParams();
   if (location)               params.set('location', location);
@@ -2915,6 +2920,153 @@ async function scrapeHorizon() {
     state.horizonScraping = false;
     if (btn) { btn.disabled = false; btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg> Scrape Horizon'; }
   }
+}
+
+// ── PER-MODEL HORIZON ──────────────────────────────────────────────────────
+
+async function populateModelSelector() {
+  const sel = document.getElementById('horizon-model-select');
+  if (!sel || sel.options.length > 1) return; // already populated
+  try {
+    const { catalog } = await apiFetch('/api/rates/car-catalog');
+    const CATEGORY_ORDER = ['Economy', 'Compact', 'SUV', '4x4', 'Minivan'];
+    const byCategory = {};
+    catalog.forEach(c => {
+      byCategory[c.category] = byCategory[c.category] || [];
+      byCategory[c.category].push(c.canonical_name);
+    });
+    CATEGORY_ORDER.forEach(cat => {
+      if (!byCategory[cat]) return;
+      const group = document.createElement('optgroup');
+      group.label = cat;
+      byCategory[cat].sort().forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        group.appendChild(opt);
+      });
+      sel.appendChild(group);
+    });
+  } catch (_) {}
+}
+
+function setHorizonModel(model) {
+  state.horizonModel = model;
+  state.modelHorizonData = null;
+  // Show/hide the aggregate vs model charts
+  const aggChart  = document.getElementById('horizon-chart-card');
+  const modChart  = document.getElementById('model-horizon-chart-card');
+  const heatCard  = document.getElementById('horizon-heatmap-card');
+  if (aggChart)  aggChart.style.display  = model ? 'none' : '';
+  if (heatCard)  heatCard.style.display  = model ? 'none' : '';
+  if (modChart)  modChart.style.display  = model ? ''     : 'none';
+  if (model) loadModelHorizon();
+}
+
+async function loadModelHorizon() {
+  const model = state.horizonModel;
+  if (!model) return;
+  const location = document.getElementById('filter-location').value;
+  const params = new URLSearchParams({ model });
+  if (location) params.set('location', location);
+
+  const loading = document.getElementById('model-horizon-loading');
+  if (loading) loading.style.display = '';
+
+  try {
+    const data = await apiFetch(`/api/rates/model-horizon?${params}`);
+    state.modelHorizonData = data;
+    renderModelHorizonChart();
+  } catch (e) {
+    showToast(`Failed to load model horizon: ${e.message}`, 'error');
+  } finally {
+    if (loading) loading.style.display = 'none';
+  }
+}
+
+function renderModelHorizonChart() {
+  const data = state.modelHorizonData;
+  if (!data || !data.series) return;
+
+  const series = data.series;
+  const competitors = Object.keys(series).sort();
+
+  // Collect and sort all unique future dates across all competitors
+  const dateSet = new Set();
+  competitors.forEach(c => series[c].forEach(p => dateSet.add(p.pickup_date)));
+  const dates = Array.from(dateSet).sort();
+
+  const labels = dates.map(d => {
+    const dt = new Date(d + 'T00:00:00');
+    return dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+  });
+
+  const datasets = competitors.map((comp, i) => {
+    const priceMap = {};
+    series[comp].forEach(p => { priceMap[p.pickup_date] = p.per_day; });
+    return {
+      label: comp,
+      data: dates.map(d => priceMap[d] ?? null),
+      borderColor: compColor(comp, i),
+      backgroundColor: compColor(comp, i) + '18',
+      tension: 0.35,
+      pointRadius: 5,
+      pointHoverRadius: 7,
+      borderWidth: 2,
+      spanGaps: false,
+    };
+  });
+
+  if (state.modelHorizonChart) state.modelHorizonChart.destroy();
+
+  const ctx = document.getElementById('model-horizon-chart')?.getContext('2d');
+  if (!ctx) return;
+
+  const isDark = document.body.classList.contains('dark-mode');
+  const gridColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
+  const tickColor = isDark ? '#9ca3af' : '#6b7280';
+
+  const titleEl = document.getElementById('model-horizon-title');
+  if (titleEl) titleEl.textContent = `${data.model} — Price per Day · All Future Dates`;
+
+  state.modelHorizonChart = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'bottom',
+          labels: { color: tickColor, boxWidth: 12, padding: 16, font: { size: 12 } },
+        },
+        tooltip: {
+          callbacks: {
+            title: items => {
+              const d = dates[items[0].dataIndex];
+              const dt = new Date(d + 'T00:00:00');
+              return dt.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
+            },
+            label: ctx => ctx.parsed.y != null
+              ? ` ${ctx.dataset.label}: ${formatISK(ctx.parsed.y)}/day`
+              : ` ${ctx.dataset.label}: no data`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          grid: { color: gridColor },
+          ticks: { color: tickColor, font: { size: 11 }, maxRotation: 45 },
+        },
+        y: {
+          grid: { color: gridColor },
+          ticks: { color: tickColor, font: { size: 11 }, callback: v => formatISK(v) },
+        },
+      },
+    },
+  });
 }
 
 function exportHorizonCSV() {
