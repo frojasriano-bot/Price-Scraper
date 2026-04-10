@@ -2095,10 +2095,21 @@ function exportMatrixCSV() {
   }
   const { cars, competitors } = data;
   const shortName = c => c.replace(' Car Rental', '').replace(' Iceland', '');
-  const headers = ['Category', 'Model', ...competitors.map(shortName), 'Cheapest Competitor'];
+  // Derive date window from the first rate that has dates
+  let pickupDate = '', returnDate = '';
+  for (const car of cars) {
+    for (const comp of competitors) {
+      const entry = car.prices[comp];
+      if (entry && entry.scraped_at) { pickupDate = document.getElementById('filter-pickup')?.value || ''; returnDate = document.getElementById('filter-return')?.value || ''; break; }
+    }
+    if (pickupDate) break;
+  }
+  const headers = ['Category', 'Model', 'Pickup Date', 'Return Date', ...competitors.map(c => `${shortName(c)} (ISK total)`), 'Cheapest Competitor'];
   const rows = cars.map(car => [
     car.category,
     car.canonical_name,
+    pickupDate,
+    returnDate,
     ...competitors.map(c => car.prices[c] ? car.prices[c].price_isk : ''),
     car.cheapest_competitor || '',
   ]);
@@ -2110,21 +2121,38 @@ function exportSeasonalCSV() {
   const data = state.seasonalData;
   if (!data) return showToast('No seasonal data to export. Load seasonal analysis first.', 'error');
 
-  const { season_summary } = data;
-  const SEASON_ORDER  = ['low', 'shoulder', 'high', 'peak'];
-  const competitors   = [...new Set(SEASON_ORDER.flatMap(s => Object.keys(season_summary[s] || {})))].sort();
+  const { season_summary, months } = data;
+  const SEASON_ORDER = ['low', 'shoulder', 'high', 'peak'];
+  const competitors  = [...new Set(SEASON_ORDER.flatMap(s => Object.keys(season_summary[s] || {})))].sort();
 
-  const headers = ['Competitor', 'Low Season (ISK/day)', 'Shoulder (ISK/day)', 'High Season (ISK/day)', 'Peak Season (ISK/day)', 'Peak vs Low Uplift %'];
-  const rows = competitors.map(comp => {
+  // Sheet 1: month-by-month per-day prices
+  const monthHeaders = ['Month', 'Season', ...competitors];
+  const monthRows = (months || []).map(m => [
+    m.month_label,
+    m.season_label || m.season,
+    ...competitors.map(c => m.comp_overall?.[c] ?? ''),
+  ]);
+
+  // Sheet 2: season-band summary
+  const summaryHeaders = ['', 'Competitor', 'Low (ISK/day)', 'Shoulder (ISK/day)', 'High (ISK/day)', 'Peak (ISK/day)', 'Peak vs Low %'];
+  const summaryRows = competitors.map(comp => {
     const prices = SEASON_ORDER.map(s => season_summary[s]?.[comp] ?? '');
     const low  = season_summary['low']?.[comp];
     const peak = season_summary['peak']?.[comp];
     const uplift = (low && peak) ? `${Math.round(((peak - low) / low) * 100)}%` : '';
-    return [comp, ...prices, uplift];
+    return ['', comp, ...prices, uplift];
   });
 
-  downloadCSV(`seasonal_summary_${new Date().toISOString().slice(0,10)}.csv`, [headers, ...rows]);
-  showToast('Seasonal summary exported!', 'success');
+  const rows = [
+    monthHeaders,
+    ...monthRows,
+    [],  // blank separator row
+    ['Season Band Summary'],
+    summaryHeaders,
+    ...summaryRows,
+  ];
+  downloadCSV(`seasonal_${new Date().toISOString().slice(0,10)}.csv`, rows);
+  showToast('Seasonal data exported!', 'success');
 }
 
 function exportRatesCSV() {
@@ -3091,14 +3119,41 @@ function exportHorizonCSV() {
     rows.push([w.week_label, w.pickup_date, w.days_out, ...vals, cheapest]);
   });
 
-  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href     = url;
-  a.download = `forward_rates_${catLabel}_${new Date().toISOString().slice(0,10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadCSV(`forward_rates_${catLabel}_${new Date().toISOString().slice(0,10)}.csv`, rows);
+  showToast('Forward rates exported!', 'success');
+}
+
+function exportModelHorizonCSV() {
+  const data = state.modelHorizonData;
+  const model = state.horizonModel;
+  if (!data || !data.series || !model) {
+    showToast('No model data to export', 'warning');
+    return;
+  }
+  const series = data.series;
+  const competitors = Object.keys(series).sort();
+  if (!competitors.length) {
+    showToast('No data for this model yet', 'warning');
+    return;
+  }
+  // Collect all pickup dates across all competitors
+  const dateSet = new Set();
+  competitors.forEach(c => (series[c] || []).forEach(r => dateSet.add(r.pickup_date)));
+  const dates = [...dateSet].sort();
+
+  const headers = ['Pickup Date', ...competitors.map(c => `${c} (ISK/day)`)];
+  const rows = dates.map(date => {
+    return [
+      date,
+      ...competitors.map(c => {
+        const entry = (series[c] || []).find(r => r.pickup_date === date);
+        return entry ? entry.per_day : '';
+      }),
+    ];
+  });
+  const slug = model.replace(/[^a-z0-9]+/gi, '_').toLowerCase();
+  downloadCSV(`model_horizon_${slug}_${new Date().toISOString().slice(0,10)}.csv`, [headers, ...rows]);
+  showToast(`Exported ${model} horizon data`, 'success');
 }
 
 // ── Security helper ────────────────────────────────────────────────────────
