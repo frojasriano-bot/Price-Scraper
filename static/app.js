@@ -876,13 +876,30 @@ function renderSeasonalTable() {
     return;
   }
 
+  // Compute each competitor's overall average across seasons with data
+  function compAvg(name) {
+    const vals = SEASON_ORDER.map(s => activeSummary[s]?.[name]).filter(v => v != null);
+    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+  }
+  const blueAvg = compAvg('Blue Car Rental');
+
   tbody.innerHTML = compNames.map(comp => {
     const prices = SEASON_ORDER.map(s => activeSummary[s]?.[comp] ?? null);
-    const lowPrice  = prices[0];
-    const peakPrice = prices[3];
-    const uplift    = (lowPrice && peakPrice)
-      ? `+${Math.round((peakPrice / lowPrice - 1) * 100)}%`
-      : '—';
+
+    let vsBlue = '—';
+    let vsBlueClass = 'color:#6b7280';
+    if (comp === 'Blue Car Rental') {
+      vsBlue = 'base';
+    } else {
+      const avg = compAvg(comp);
+      if (avg != null && blueAvg != null) {
+        const pct = Math.round((avg / blueAvg - 1) * 100);
+        vsBlue = (pct >= 0 ? '+' : '') + pct + '%';
+        vsBlueClass = pct > 0 ? 'color:#16a34a;font-weight:700'   // competitor more expensive = good for Blue
+                    : pct < 0 ? 'color:#dc2626;font-weight:700'   // competitor cheaper = bad for Blue
+                    : 'color:#6b7280';
+      }
+    }
 
     const cells = SEASON_ORDER.map((s, i) => {
       const p = prices[i];
@@ -893,14 +910,10 @@ function renderSeasonalTable() {
       </td>`;
     }).join('');
 
-    const upliftClass = parseInt(uplift) > 80 ? 'color:#dc2626;font-weight:700'
-      : parseInt(uplift) > 50 ? 'color:#f59e0b;font-weight:700'
-      : 'color:#6b7280';
-
     return `<tr>
       <td><strong>${escHtml(comp)}</strong></td>
       ${cells}
-      <td style="text-align:center;font-size:13px;${upliftClass}">${uplift}</td>
+      <td style="text-align:center;font-size:13px;${vsBlueClass}">${vsBlue}</td>
     </tr>`;
   }).join('');
 }
@@ -2134,13 +2147,23 @@ function exportSeasonalCSV() {
   ]);
 
   // Sheet 2: season-band summary
-  const summaryHeaders = ['', 'Competitor', 'Low (ISK/day)', 'Shoulder (ISK/day)', 'High (ISK/day)', 'Peak (ISK/day)', 'Peak vs Low %'];
+  const blueVals = SEASON_ORDER.map(s => season_summary[s]?.['Blue Car Rental']).filter(v => v != null);
+  const blueAvgCSV = blueVals.length ? blueVals.reduce((a, b) => a + b, 0) / blueVals.length : null;
+  const summaryHeaders = ['', 'Competitor', 'Low (ISK/day)', 'Shoulder (ISK/day)', 'High (ISK/day)', 'Peak (ISK/day)', 'vs Blue'];
   const summaryRows = competitors.map(comp => {
     const prices = SEASON_ORDER.map(s => season_summary[s]?.[comp] ?? '');
-    const low  = season_summary['low']?.[comp];
-    const peak = season_summary['peak']?.[comp];
-    const uplift = (low && peak) ? `${Math.round(((peak - low) / low) * 100)}%` : '';
-    return ['', comp, ...prices, uplift];
+    let vsBlue = '';
+    if (comp === 'Blue Car Rental') {
+      vsBlue = 'base';
+    } else {
+      const vals = SEASON_ORDER.map(s => season_summary[s]?.[comp]).filter(v => v != null);
+      if (vals.length && blueAvgCSV != null) {
+        const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+        const pct = Math.round((avg / blueAvgCSV - 1) * 100);
+        vsBlue = (pct >= 0 ? '+' : '') + pct + '%';
+      }
+    }
+    return ['', comp, ...prices, vsBlue];
   });
 
   const rows = [
