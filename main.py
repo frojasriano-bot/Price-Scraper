@@ -156,14 +156,14 @@ async def scheduled_horizon_scrape():
     from database import insert_rates, log_scrape
     from datetime import date, timedelta
 
-    logger.info("Scheduled horizon scrape starting (12 weeks)…")
+    logger.info("Scheduled horizon scrape starting (26 weeks)…")
     scrape_loc = "Keflavik Airport"
     today      = date.today()
     started_at = time.monotonic()
     total_rates = 0
     errors: list[str] = []
 
-    for w in range(1, 17):
+    for w in range(1, 27):
         pickup_d = today + timedelta(weeks=w)
         ret_d    = pickup_d + timedelta(days=7)
         pickup   = pickup_d.isoformat()
@@ -189,7 +189,7 @@ async def scheduled_horizon_scrape():
             total_rates += len(week_rates)
 
     duration = time.monotonic() - started_at
-    logger.info(f"Horizon scrape complete: {total_rates} rates across 12 weeks in {duration:.1f}s.")
+    logger.info(f"Horizon scrape complete: {total_rates} rates across 26 weeks in {duration:.1f}s.")
 
     await log_scrape(
         location=scrape_loc,
@@ -311,7 +311,7 @@ def setup_scheduler(schedule: str = "daily"):
         trigger=CronTrigger(hour=7, minute=15),
         id="scrape_horizon",
         replace_existing=True,
-        name="Horizon Rate Scrape (16 weeks)",
+        name="Horizon Rate Scrape (26 weeks / 6 months)",
     )
 
     logger.info(f"Scheduler configured: {schedule} schedule active.")

@@ -473,7 +473,7 @@
             <div class="card-header" style="flex-wrap:wrap;gap:10px">
               <div>
                 <div class="card-title">Forward Rate Horizon</div>
-                <div class="card-subtitle">Next 16 weeks of competitor pricing — per day, 7-night stay</div>
+                <div class="card-subtitle">Competitor pricing per day, 7-night stay — up to 12 months ahead</div>
               </div>
               <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
                 <button class="btn btn-secondary btn-sm" id="btn-scrape-horizon" onclick="scrapeHorizon()">
@@ -499,6 +499,13 @@
                 <button class="btn btn-secondary btn-sm"        id="hfwd-btn-4x4"      onclick="setHorizonCategory('4x4')">🏔️ 4x4</button>
                 <button class="btn btn-secondary btn-sm"        id="hfwd-btn-Minivan"  onclick="setHorizonCategory('Minivan')">🚐 Minivan</button>
               </div>
+              <!-- Horizon range toggle -->
+              <div style="display:flex;gap:4px;align-items:center">
+                <span style="font-size:12px;color:#9ca3af;margin-right:2px;white-space:nowrap">Range:</span>
+                <button class="btn btn-secondary btn-sm"        id="hfwd-range-13" onclick="setHorizonRange(13)">3M</button>
+                <button class="btn btn-secondary btn-sm active" id="hfwd-range-26" onclick="setHorizonRange(26)">6M</button>
+                <button class="btn btn-secondary btn-sm"        id="hfwd-range-52" onclick="setHorizonRange(52)">12M</button>
+              </div>
               <!-- Model selector -->
               <div style="display:flex;gap:6px;align-items:center">
                 <span style="font-size:12px;color:#9ca3af;white-space:nowrap">Model:</span>
@@ -513,7 +520,7 @@
           <div class="card" style="margin-bottom:16px" id="horizon-chart-card">
             <div class="card-header">
               <div>
-                <div class="card-title" id="horizon-chart-title">Price Horizon — Next 16 Weeks</div>
+                <div class="card-title" id="horizon-chart-title">Price Horizon — All Categories · Next 6 Months</div>
                 <div class="card-subtitle">Average per-day ISK per competitor across upcoming pickup windows</div>
               </div>
               <div id="horizon-loading" style="font-size:12px;color:#6b7280;display:none">
@@ -1195,7 +1202,7 @@
                 </li>
                 <li style="margin-bottom:12px">
                   <strong>Populate the Forward Rates horizon</strong><br>
-                  Go to <strong>Rate Intelligence → Forward Rates</strong> and click <strong>Scrape Horizon</strong>. This runs all 7 scrapers across the next 16 weekly pickup windows (112 scrape calls). Run this once manually — the daily scheduler will keep it fresh from 07:15 onwards.
+                  Go to <strong>Rate Intelligence → Forward Rates</strong> and click <strong>Scrape Horizon</strong>. This scrapes all 7 competitors across the next 26 weekly windows (6 months) by default — use the 3M / 6M / 12M toggle to change the range. Run this once manually; the daily scheduler keeps it fresh from 07:15 onwards.
                 </li>
                 <li style="margin-bottom:12px">
                   <strong>Populate Seasonal Analysis</strong><br>
@@ -1239,7 +1246,7 @@
                   <tr style="border-bottom:1px solid var(--border)">
                     <td style="padding:8px 12px 8px 0;font-weight:500">Horizon Scrape</td>
                     <td style="padding:8px 12px;color:var(--text-muted)">Daily 07:15</td>
-                    <td style="padding:8px 0;color:var(--text-muted)">Next 16 weekly windows × 7 competitors (112 calls)</td>
+                    <td style="padding:8px 0;color:var(--text-muted)">Next 26 weekly windows × 7 competitors (182 calls); 3M / 6M / 12M selectable in the view</td>
                   </tr>
                   <tr style="border-bottom:1px solid var(--border)">
                     <td style="padding:8px 12px 8px 0;font-weight:500">SEO Check</td>
@@ -1287,7 +1294,7 @@
                 <dd style="margin:0 0 4px 0;color:var(--text-muted)">Per-day pricing across the next 12 months (pickup on the 15th, 7-night stay). Switch to <strong>History mode</strong> to see how prices for a specific future month have changed across successive scrapes — the clearest signal for competitor yield management.</dd>
 
                 <dt style="font-weight:600;margin-top:12px">Forward Rates</dt>
-                <dd style="margin:0 0 4px 0;color:var(--text-muted)">Horizon chart and heatmap for the next 16 weekly pickup windows. Use the category filter pills to compare within a segment, or select a specific car model from the dropdown to see per-model competitor lines.</dd>
+                <dd style="margin:0 0 4px 0;color:var(--text-muted)">Horizon chart and heatmap for up to 12 months ahead. Use the <strong>3M / 6M / 12M</strong> toggle to set the window, category pills to compare within a segment, or select a specific car model for per-model competitor lines.</dd>
               </dl>
             </div>
           </div>

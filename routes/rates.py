@@ -802,7 +802,7 @@ async def remove_mapping(mapping_id: int):
 async def get_horizon(
     location: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
-    weeks: int = Query(16, ge=4, le=26),
+    weeks: int = Query(26, ge=4, le=52),
 ):
     """
     Return forward-looking rate horizon: next N weeks of per-day pricing per competitor.
@@ -819,7 +819,7 @@ async def get_horizon(
 @router.post("/scrape-horizon")
 async def scrape_horizon(
     location: Optional[str] = Query(None),
-    weeks: int = Query(16, ge=4, le=26),
+    weeks: int = Query(26, ge=4, le=52),
 ):
     """
     Scrape prices for each of the next N weeks (7-night rental window) and store in DB.

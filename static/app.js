@@ -55,6 +55,7 @@ const state = {
   horizonData: null,
   horizonChart: null,
   horizonCategory: '',
+  horizonWeeks: 26,
   horizonScraping: false,
   horizonModel: '',
   modelHorizonData: null,
@@ -2803,6 +2804,16 @@ function setHorizonCategory(cat) {
   loadHorizon();
 }
 
+function setHorizonRange(weeks) {
+  state.horizonWeeks = weeks;
+  [13, 26, 52].forEach(w => {
+    const btn = document.getElementById(`hfwd-range-${w}`);
+    if (btn) btn.classList.toggle('active', w === weeks);
+  });
+  state.horizonData = null;
+  loadHorizon();
+}
+
 async function loadHorizon(force = false) {
   if (state.horizonData && !force) {
     renderHorizonChart();
@@ -2821,7 +2832,7 @@ async function loadHorizon(force = false) {
   if (state.horizonCategory)  params.set('category', state.horizonCategory);
 
   try {
-    params.set('weeks', '16');
+    params.set('weeks', String(state.horizonWeeks || 26));
   const data = await apiFetch(`/api/rates/horizon?${params}`);
     state.horizonData = data;
     setSourceBadge('horizon-source-badge', data.source);
@@ -2850,9 +2861,10 @@ function renderHorizonChart() {
   const field = state.horizonCategory || '_overall';
   const titleEl = document.getElementById('horizon-chart-title');
   if (titleEl) {
+    const rangeLabel = state.horizonWeeks === 13 ? '3 Months' : state.horizonWeeks === 52 ? '12 Months' : '6 Months';
     titleEl.textContent = state.horizonCategory
-      ? `Price Horizon — ${state.horizonCategory} · Next 16 Weeks`
-      : 'Price Horizon — All Categories · Next 16 Weeks';
+      ? `Price Horizon — ${state.horizonCategory} · Next ${rangeLabel}`
+      : `Price Horizon — All Categories · Next ${rangeLabel}`;
   }
 
   const datasets = competitors.map((comp, i) => ({
@@ -3030,9 +3042,11 @@ async function scrapeHorizon() {
   const params = new URLSearchParams();
   if (location) params.set('location', location);
 
-  showToast('Scraping horizon rates (12 weeks)… this may take ~1 minute', 'info', 70000);
+  const scrapeWeeks = state.horizonWeeks || 26;
+  const rangeLabel = scrapeWeeks === 13 ? '3 months' : scrapeWeeks === 52 ? '12 months' : '6 months';
+  showToast(`Scraping horizon rates (${rangeLabel})… this may take a few minutes`, 'info', 120000);
   try {
-    params.set('weeks', '16');
+    params.set('weeks', String(scrapeWeeks));
   const result = await apiFetch(`/api/rates/scrape-horizon?${params}`, { method: 'POST' });
     showToast(
       `Scraped ${result.scraped} rates across ${result.weeks_scraped} weeks in ${result.duration_seconds}s`,
