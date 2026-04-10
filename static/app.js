@@ -112,6 +112,18 @@ function showToast(message, type = 'info', duration = 3500) {
 
 // ── Navigation ─────────────────────────────────────────────────────────────
 function switchTab(tab) {
+  // Reset seasonal history mode when leaving the rates tab
+  if (state.currentTab === 'rates' && tab !== 'rates' && state.historyMode) {
+    state.historyMode = false;
+    const btn = document.getElementById('btn-history-mode');
+    if (btn) btn.classList.remove('active');
+    const monthSel = document.getElementById('history-month-select');
+    if (monthSel) monthSel.style.display = 'none';
+    const overviewCard = document.getElementById('seasonal-chart-card');
+    if (overviewCard) overviewCard.style.display = '';
+    const historyCard = document.getElementById('history-chart-card');
+    if (historyCard) historyCard.style.display = 'none';
+  }
   state.currentTab = tab;
 
   document.querySelectorAll('.nav-item').forEach(el => {
@@ -129,6 +141,12 @@ function switchTab(tab) {
     guide: 'How to Use',
   };
   document.getElementById('page-title').textContent = titles[tab] || tab;
+
+  // Hide all source badges — each loadX() will re-show its own
+  ['rates-source-badge', 'seo-source-badge', 'insurance-source-badge'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
 
   if (tab === 'rates') loadRates();
   if (tab === 'seo') loadRankings();
@@ -173,6 +191,25 @@ function defaultReturn() {
   const d = new Date();
   d.setDate(d.getDate() + 10);
   return d.toISOString().slice(0, 10);
+}
+
+function syncDateConstraints() {
+  const pickupEl = document.getElementById('filter-pickup');
+  const returnEl = document.getElementById('filter-return');
+  if (!pickupEl || !returnEl || !pickupEl.value) return;
+
+  // Return date must be at least 1 day after pickup
+  const pickupDate = new Date(pickupEl.value + 'T00:00:00');
+  const minReturn  = new Date(pickupDate);
+  minReturn.setDate(minReturn.getDate() + 1);
+  returnEl.min = minReturn.toISOString().slice(0, 10);
+
+  // If current return date is on or before pickup, auto-advance it to pickup + 3 days
+  if (returnEl.value && returnEl.value <= pickupEl.value) {
+    const autoReturn = new Date(pickupDate);
+    autoReturn.setDate(autoReturn.getDate() + 3);
+    returnEl.value = autoReturn.toISOString().slice(0, 10);
+  }
 }
 
 // ── VIEW TOGGLE ────────────────────────────────────────────────────────────
@@ -1159,7 +1196,7 @@ function renderRatesTable() {
     return `<tr>
       <td><strong>${escHtml(r.competitor)}</strong></td>
       <td>${escHtml(modelName)}${canonicalNote}</td>
-      <td><span class="badge badge-blue">${escHtml(r.car_category)}</span></td>
+      <td><span class="badge badge-blue" style="white-space:nowrap">${escHtml(r.car_category)}</span></td>
       <td class="${priceClass}">${formatISK(r.price_isk)}</td>
       <td>${formatISK(r._per_day)}/day</td>
       <td style="text-align:center;font-size:12px;font-weight:600">${deltaHtml}</td>
@@ -2256,6 +2293,12 @@ async function loadInsurance() {
     const data = await apiFetch('/api/insurance');
     state.insuranceData = data;
     renderInsurance(data);
+    const badge = document.getElementById('insurance-source-badge');
+    if (badge) {
+      badge.textContent = 'Manual Data';
+      badge.className = 'badge badge-gray';
+      badge.style.display = '';
+    }
   } catch (e) {
     showToast(`Failed to load insurance data: ${e.message}`, 'error');
   }
@@ -3227,6 +3270,7 @@ function init() {
   const returnEl = document.getElementById('filter-return');
   if (pickupEl && !pickupEl.value) pickupEl.value = defaultPickup();
   if (returnEl && !returnEl.value) returnEl.value = defaultReturn();
+  syncDateConstraints();
 
   // Nav click handlers
   document.querySelectorAll('.nav-item').forEach(el => {
@@ -3244,6 +3288,7 @@ function init() {
   ['filter-pickup', 'filter-return'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('change', () => {
+      if (id === 'filter-pickup') syncDateConstraints();
       clearTimeout(_dateDebounce);
       _dateDebounce = setTimeout(() => triggerScrape(), 800);
     });
