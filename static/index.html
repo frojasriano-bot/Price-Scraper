@@ -428,12 +428,12 @@
               <canvas id="history-chart"></canvas>
             </div>
             <div id="history-no-data" style="display:none;padding:40px;text-align:center;color:#6b7280;font-size:13px">
-              Only one scrape on record for this month — come back after the next weekly scrape to see price trends.
+              <span id="history-no-data-msg">Not enough scrape history yet — need at least 2 weekly snapshots to show a trend.</span>
             </div>
           </div>
 
           <!-- Season summary table -->
-          <div class="card">
+          <div class="card" id="seasonal-summary-card">
             <div class="card-header">
               <div>
                 <div class="card-title">Season Price Summary</div>
@@ -464,7 +464,7 @@
           </div>
 
           <!-- Category season summary table -->
-          <div class="card" style="margin-top:16px">
+          <div class="card" id="seasonal-category-card" style="margin-top:16px">
             <div class="card-header">
               <div class="card-title">Season Price Summary by Category</div>
               <div class="card-subtitle">Average market per-day ISK per car category (all competitors combined)</div>

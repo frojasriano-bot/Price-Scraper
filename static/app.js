@@ -121,18 +121,25 @@ function switchTab(tab) {
   if (state.currentTab === 'rates' && tab !== 'rates') {
     if (state.historyMode) {
       state.historyMode = false;
-      const btn = document.getElementById('btn-history-mode');
-      if (btn) btn.classList.remove('active');
+      document.getElementById('btn-history-mode')?.classList.remove('active');
       const monthSel = document.getElementById('history-month-select');
       if (monthSel) monthSel.style.display = 'none';
-      document.getElementById('history-chart-card')?.style && (document.getElementById('history-chart-card').style.display = 'none');
-      document.getElementById('seasonal-chart-card')?.style && (document.getElementById('seasonal-chart-card').style.display = '');
+      const hc = document.getElementById('history-chart-card');
+      if (hc) hc.style.display = 'none';
+      const sc = document.getElementById('seasonal-chart-card');
+      if (sc) sc.style.display = '';
+      const sm = document.getElementById('seasonal-summary-card');
+      if (sm) sm.style.display = '';
+      const cc = document.getElementById('seasonal-category-card');
+      if (cc) cc.style.display = '';
     }
     if (state.heatmapMode) {
       state.heatmapMode = false;
       document.getElementById('btn-heatmap-mode')?.classList.remove('active');
-      document.getElementById('heatmap-card') && (document.getElementById('heatmap-card').style.display = 'none');
-      document.getElementById('seasonal-chart-card') && (document.getElementById('seasonal-chart-card').style.display = '');
+      const hc2 = document.getElementById('heatmap-card');
+      if (hc2) hc2.style.display = 'none';
+      const sc2 = document.getElementById('seasonal-chart-card');
+      if (sc2) sc2.style.display = '';
     }
   }
   state.currentTab = tab;
@@ -607,16 +614,26 @@ function toggleHistoryMode() {
   state.historyMode = !state.historyMode;
   const btn          = document.getElementById('btn-history-mode');
   const monthSel     = document.getElementById('history-month-select');
-  const catSel       = document.getElementById('seasonal-category');
   const overviewCard = document.getElementById('seasonal-chart-card');
+  const heatmapCard  = document.getElementById('heatmap-card');
   const historyCard  = document.getElementById('history-chart-card');
-  const tables       = document.querySelectorAll('#seasonal-table, #seasonal-category-table, .card:has(#seasonal-tbody), .card:has(#seasonal-category-tbody)');
+  const summaryCard  = document.getElementById('seasonal-summary-card');
+  const catCard      = document.getElementById('seasonal-category-card');
 
   if (state.historyMode) {
+    // Exit heatmap mode if active
+    if (state.heatmapMode) {
+      state.heatmapMode = false;
+      document.getElementById('btn-heatmap-mode')?.classList.remove('active');
+      if (heatmapCard) heatmapCard.style.display = 'none';
+    }
+
     btn.classList.add('active');
     monthSel.style.display     = '';
     overviewCard.style.display = 'none';
     historyCard.style.display  = '';
+    if (summaryCard) summaryCard.style.display = 'none';
+    if (catCard)     catCard.style.display     = 'none';
 
     // Populate month selector from loaded seasonal data
     if (state.seasonalData?.months) {
@@ -634,10 +651,16 @@ function toggleHistoryMode() {
   } else {
     btn.classList.remove('active');
     monthSel.style.display     = 'none';
-    overviewCard.style.display = '';
     historyCard.style.display  = 'none';
-    renderSeasonalChart();
+    if (summaryCard) summaryCard.style.display = '';
+    if (catCard)     catCard.style.display     = '';
+    // Only restore overview chart if heatmap mode is not active
+    if (!state.heatmapMode) {
+      overviewCard.style.display = '';
+      renderSeasonalChart();
+    }
     renderSeasonalTable();
+    renderSeasonalCategoryTable();
   }
 }
 
@@ -695,9 +718,17 @@ function renderHistoryChart() {
   )].sort();
 
   // Need at least 2 dates to show a trend
-  if (allDates.length === 0) {
+  if (allDates.length < 2) {
     canvas.style.display   = 'none';
-    if (noDataEl) noDataEl.style.display = '';
+    if (noDataEl) {
+      const msgEl = document.getElementById('history-no-data-msg');
+      if (msgEl) {
+        msgEl.textContent = allDates.length === 0
+          ? 'No prices scraped for this anchor month yet — click Scrape All to collect data.'
+          : 'Only one scrape on record for this month — need at least 2 weekly snapshots to show a trend.';
+      }
+      noDataEl.style.display = '';
+    }
     return;
   }
   canvas.style.display = '';
@@ -2812,18 +2843,21 @@ function renderScrapeLog(entries) {
 
 function toggleHeatmapMode() {
   state.heatmapMode = !state.heatmapMode;
-  const btn          = document.getElementById('btn-heatmap-mode');
-  const heatCard     = document.getElementById('heatmap-card');
-  const chartCard    = document.getElementById('seasonal-chart-card');
-  const histBtn      = document.getElementById('btn-history-mode');
+  const btn         = document.getElementById('btn-heatmap-mode');
+  const heatCard    = document.getElementById('heatmap-card');
+  const chartCard   = document.getElementById('seasonal-chart-card');
+  const summaryCard = document.getElementById('seasonal-summary-card');
+  const catCard     = document.getElementById('seasonal-category-card');
 
   if (state.heatmapMode) {
-    // Exit history mode if active
+    // Exit history mode if active — restore tables it hid
     if (state.historyMode) {
       state.historyMode = false;
-      document.getElementById('btn-history-mode').classList.remove('active');
+      document.getElementById('btn-history-mode')?.classList.remove('active');
       document.getElementById('history-month-select').style.display = 'none';
-      document.getElementById('history-chart-card').style.display = 'none';
+      document.getElementById('history-chart-card').style.display   = 'none';
+      if (summaryCard) summaryCard.style.display = '';
+      if (catCard)     catCard.style.display     = '';
     }
     btn.classList.add('active');
     chartCard.style.display = 'none';
@@ -2869,26 +2903,28 @@ function renderPriceGapHeatmap() {
   });
 
   // Color scale: gap% → background color
+  const isDark = document.body.classList.contains('dark-mode');
   function gapColor(pct) {
     if (pct === null) return { bg: 'var(--bg-alt)', text: 'var(--text-muted)', label: '—' };
     const abs = Math.abs(pct);
     const label = (pct >= 0 ? '+' : '') + pct + '%';
-    if (Math.abs(pct) <= 3) return { bg: 'var(--bg-alt)', text: 'var(--text)', label };
+    if (abs <= 3) return { bg: 'var(--bg-alt)', text: 'var(--text)', label };
     if (pct > 0) {
       // Blue more expensive — green gradient
       const intensity = Math.min(abs / 40, 1);
       const g = Math.round(180 + intensity * 40);
       const r = Math.round(220 - intensity * 100);
-      return { bg: `rgba(${r},${g},100,${0.15 + intensity * 0.5})`, text: '#14532d', label };
+      const text = isDark ? (intensity > 0.4 ? '#bbf7d0' : '#86efac') : '#14532d';
+      return { bg: `rgba(${r},${g},100,${0.15 + intensity * 0.5})`, text, label };
     } else {
       // Blue cheaper — red gradient
       const intensity = Math.min(abs / 40, 1);
-      return { bg: `rgba(220,50,50,${0.12 + intensity * 0.45})`, text: '#7f1d1d', label };
+      const text = isDark ? (intensity > 0.4 ? '#fecaca' : '#fca5a5') : '#7f1d1d';
+      return { bg: `rgba(220,50,50,${0.12 + intensity * 0.45})`, text, label };
     }
   }
 
   const colWidth = '72px';
-  const isDark   = document.body.classList.contains('dark-mode');
 
   let html = `<table style="border-collapse:collapse;width:100%;font-size:12px">
     <thead>
