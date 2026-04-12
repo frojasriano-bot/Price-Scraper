@@ -584,6 +584,7 @@ function onSeasonalCategoryChange() {
   } else {
     renderSeasonalChart();
     renderSeasonalTable();
+    renderSeasonalCategoryTable();
   }
 }
 
