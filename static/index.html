@@ -94,6 +94,24 @@
       </div>
     </header>
 
+    <!-- ── Today's Market Bar ──────────────────────────────────────────── -->
+    <div id="market-bar">
+      <div id="market-bar-items">
+        <div class="mbar-chip mbar-loading">
+          <span class="mbar-label">Loading market data…</span>
+        </div>
+      </div>
+      <span id="market-bar-ts">—</span>
+    </div>
+
+    <!-- ── Stale Data Warning ───────────────────────────────────────────── -->
+    <div id="stale-banner" style="display:none">
+      <span style="font-size:15px">⚠️</span>
+      <span id="stale-banner-msg"></span>
+      <div style="flex:1"></div>
+      <button class="stale-dismiss" onclick="dismissStaleBanner()" title="Dismiss">×</button>
+    </div>
+
     <!-- Content area -->
     <div class="content">
 
