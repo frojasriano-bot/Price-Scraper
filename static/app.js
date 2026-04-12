@@ -286,114 +286,7 @@ async function loadSchedulerStatus() {
   }
 }
 
-// ── TODAY'S MARKET BAR ────────────────────────────────────────────────────
-/**
- * Compute market bar chips from current state.rates + state.priceChanges and
- * check scheduler freshness to show/hide the stale-data warning banner.
- * Called after every loadRates() and on the 5-minute auto-refresh tick.
- */
-function updateMarketBar() {
-  const bar     = document.getElementById('market-bar-items');
-  const tsEl    = document.getElementById('market-bar-ts');
-  if (!bar) return;
 
-  const rates = state.rates || [];
-  if (!rates.length) {
-    bar.innerHTML = '<div class="mbar-chip mbar-loading"><span class="mbar-label">No rate data available</span></div>';
-    return;
-  }
-
-  const blueRates = rates.filter(r => r.competitor === 'Blue Car Rental');
-  const compRates = rates.filter(r => r.competitor !== 'Blue Car Rental');
-
-  const avg = arr => arr.length ? Math.round(arr.reduce((s, r) => s + r.price_isk, 0) / arr.length) : null;
-  const blueAvg = avg(blueRates);
-  const mktAvg  = avg(compRates);
-
-  // Cheapest single rate in the entire market
-  const marketMin = compRates.length ? [...compRates].sort((a, b) => a.price_isk - b.price_isk)[0] : null;
-
-  // How many competitors undercut Blue on at least one model
-  const blueByModel = {};
-  blueRates.forEach(r => {
-    const k = r.canonical_name || r.car_model;
-    if (!blueByModel[k] || r.price_isk < blueByModel[k]) blueByModel[k] = r.price_isk;
-  });
-  const undercutters = new Set();
-  compRates.forEach(r => {
-    const k = r.canonical_name || r.car_model;
-    if (blueByModel[k] && r.price_isk < blueByModel[k]) undercutters.add(r.competitor);
-  });
-
-  // Price movement counts from last scrape delta
-  const allMovers = Object.values(state.priceChanges || {});
-  const upCount   = allMovers.filter(c => c.direction === 'up').length;
-  const downCount = allMovers.filter(c => c.direction === 'down').length;
-
-  const chip = (icon, label, value, color) =>
-    `<div class="mbar-chip">
-      <span style="font-size:13px">${icon}</span>
-      <span class="mbar-label">${label}</span>
-      <span class="mbar-value" style="color:${color}">${value}</span>
-    </div>`;
-
-  const pctDiff = (a, b) => b ? `${a > b ? '+' : ''}${Math.round(((a - b) / b) * 100)}%` : '—';
-
-  let html = '';
-
-  // Blue's average
-  if (blueAvg) {
-    html += chip('🔵', 'Blue avg', `${formatISK(blueAvg)}/day`, '#93c5fd');
-  }
-
-  // Market average
-  if (mktAvg) {
-    html += chip('📊', 'Market avg', `${formatISK(mktAvg)}/day`, '#cbd5e1');
-  }
-
-  // Blue vs market gap
-  if (blueAvg && mktAvg) {
-    const isAbove = blueAvg > mktAvg;
-    html += chip(
-      isAbove ? '📈' : '📉',
-      'vs Market',
-      pctDiff(blueAvg, mktAvg),
-      isAbove ? '#f87171' : '#4ade80'
-    );
-  }
-
-  html += '<div class="mbar-divider"></div>';
-
-  // Cheapest in market
-  if (marketMin) {
-    const name = marketMin.competitor.replace(' Car Rental','').replace(' Iceland','');
-    html += chip('💰', 'Market low', `${formatISK(marketMin.price_isk)} · ${name}`, '#fbbf24');
-  }
-
-  // Undercutters
-  html += chip(
-    undercutters.size > 0 ? '⚠️' : '✅',
-    'Undercutting',
-    undercutters.size > 0 ? `${undercutters.size} competitor${undercutters.size > 1 ? 's' : ''}` : 'None',
-    undercutters.size > 0 ? '#f87171' : '#4ade80'
-  );
-
-  // Price moves
-  if (upCount + downCount > 0) {
-    html += '<div class="mbar-divider"></div>';
-    html += chip('🔄', 'Price moves', `↑${upCount} ↓${downCount}`, '#a5b4fc');
-  }
-
-  bar.innerHTML = html;
-
-  // Timestamp
-  const mostRecent = rates
-    .filter(r => r.scraped_at)
-    .sort((a, b) => new Date(b.scraped_at) - new Date(a.scraped_at))[0];
-  if (tsEl && mostRecent?.scraped_at) {
-    tsEl.textContent = `Updated ${timeAgo(mostRecent.scraped_at)}`;
-  }
-}
 
 /**
  * Check scheduler status and show the stale-data banner if the last scrape
@@ -1272,7 +1165,6 @@ async function loadRates() {
     renderRateChart();
     updateRateStats();
     renderExecutiveSummary();
-    updateMarketBar();
     // Reset matrix so it reloads with new filters if active
     state.matrix = null;
     if (state.ratesView === 'matrix') loadMatrix();
