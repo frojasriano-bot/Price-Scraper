@@ -66,6 +66,14 @@ body.dark-mode td           { border-color: rgba(255,255,255,0.05); color: #d1d5
 body.dark-mode tr:hover td  { background: rgba(255,255,255,0.04); }
 body.dark-mode .form-control,
 body.dark-mode .form-select { background: #1e293b; border-color: rgba(255,255,255,0.12); color: #d1d5db; color-scheme: dark; }
+/* Force WebKit date-input segments to use the light text colour in dark mode.
+   Without this, each day/month/year field renders dark-on-dark. */
+body.dark-mode input[type="date"]::-webkit-datetime-edit,
+body.dark-mode input[type="date"]::-webkit-datetime-edit-fields-wrapper,
+body.dark-mode input[type="date"]::-webkit-datetime-edit-text,
+body.dark-mode input[type="date"]::-webkit-datetime-edit-month-field,
+body.dark-mode input[type="date"]::-webkit-datetime-edit-day-field,
+body.dark-mode input[type="date"]::-webkit-datetime-edit-year-field { color: #d1d5db; }
 body.dark-mode .btn-secondary { background: #1e293b; border-color: rgba(255,255,255,0.12); color: #d1d5db; }
 body.dark-mode .btn-secondary:hover { background: #334155; }
 body.dark-mode .btn-secondary.active { background: var(--blue-500); color: #ffffff; border-color: var(--blue-500); }
