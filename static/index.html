@@ -618,13 +618,16 @@
                   <option value="30" selected>Last 30 days</option>
                   <option value="90">Last 90 days</option>
                 </select>
-                <select id="timeline-category" class="form-select" onchange="loadTimeline()" style="width:auto">
+                <select id="timeline-category" class="form-select" onchange="onTimelineCategoryChange()" style="width:auto">
                   <option value="">All Categories</option>
                   <option value="Economy">Economy</option>
                   <option value="Compact">Compact</option>
                   <option value="SUV">SUV</option>
                   <option value="4x4">4x4</option>
                   <option value="Minivan">Minivan</option>
+                </select>
+                <select id="timeline-model" class="form-select" onchange="loadTimeline()" style="width:auto;max-width:220px">
+                  <option value="">— All Models —</option>
                 </select>
                 <select id="timeline-min-pct" class="form-select" onchange="loadTimeline()" style="width:auto">
                   <option value="3">≥ 3% moves</option>
@@ -659,13 +662,16 @@
                   <label style="font-size:11px;color:#6b7280;margin-bottom:2px;display:block">Pickup Date</label>
                   <input type="date" id="booking-pickup-date" class="form-select" style="width:auto" onchange="loadBookingWindow()"/>
                 </div>
-                <select id="booking-category" class="form-select" onchange="loadBookingWindow()" style="width:auto;align-self:flex-end">
+                <select id="booking-category" class="form-select" onchange="onBookingCategoryChange()" style="width:auto;align-self:flex-end">
                   <option value="">All Categories</option>
                   <option value="Economy">Economy</option>
                   <option value="Compact">Compact</option>
                   <option value="SUV">SUV</option>
                   <option value="4x4">4x4</option>
                   <option value="Minivan">Minivan</option>
+                </select>
+                <select id="booking-model" class="form-select" onchange="loadBookingWindow()" style="width:auto;max-width:220px;align-self:flex-end">
+                  <option value="">— All Models —</option>
                 </select>
                 <button class="btn btn-secondary btn-sm" style="align-self:flex-end" onclick="loadBookingWindow()">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>

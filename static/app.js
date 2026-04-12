@@ -54,6 +54,7 @@ const state = {
   historyEvolutionChart: null,
   historyEvolutionMonth: null,
   heatmapMode: false,
+  timelineModelChart: null,
   horizonData: null,
   horizonChart: null,
   horizonCategory: '',
@@ -2924,9 +2925,55 @@ function renderPriceGapHeatmap() {
 
 // ── COMPETITOR PRICE CHANGE TIMELINE ──────────────────────────────────────
 
+function onTimelineCategoryChange() {
+  // Reset model selector when category changes, then repopulate and reload
+  const modelSel = document.getElementById('timeline-model');
+  if (modelSel) { modelSel.innerHTML = '<option value="">— All Models —</option>'; }
+  const cat = document.getElementById('timeline-category')?.value || '';
+  populateViewModelSelector('timeline-model', cat);
+  loadTimeline();
+}
+
+function onBookingCategoryChange() {
+  const modelSel = document.getElementById('booking-model');
+  if (modelSel) { modelSel.innerHTML = '<option value="">— All Models —</option>'; }
+  const cat = document.getElementById('booking-category')?.value || '';
+  populateViewModelSelector('booking-model', cat);
+  loadBookingWindow();
+}
+
+async function populateViewModelSelector(selectId, categoryFilter = '') {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  try {
+    const { catalog } = await apiFetch('/api/rates/car-catalog');
+    const CATEGORY_ORDER = ['Economy', 'Compact', 'SUV', '4x4', 'Minivan'];
+    const byCategory = {};
+    catalog.forEach(c => {
+      if (categoryFilter && c.category !== categoryFilter) return;
+      byCategory[c.category] = byCategory[c.category] || [];
+      byCategory[c.category].push(c.canonical_name);
+    });
+    sel.innerHTML = '<option value="">— All Models —</option>';
+    CATEGORY_ORDER.forEach(cat => {
+      if (!byCategory[cat]) return;
+      const group = document.createElement('optgroup');
+      group.label = cat;
+      byCategory[cat].sort().forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        group.appendChild(opt);
+      });
+      sel.appendChild(group);
+    });
+  } catch (_) {}
+}
+
 async function loadTimeline() {
   const days     = document.getElementById('timeline-days')?.value || 30;
   const category = document.getElementById('timeline-category')?.value || '';
+  const model    = document.getElementById('timeline-model')?.value || '';
   const minPct   = document.getElementById('timeline-min-pct')?.value || 5;
   const location = document.getElementById('filter-location')?.value || '';
 
@@ -2938,9 +2985,10 @@ async function loadTimeline() {
   try {
     const params = new URLSearchParams({ days, min_change_pct: minPct });
     if (category) params.set('category', category);
+    if (model)    params.set('model', model);
     if (location) params.set('location', location);
     const data = await apiFetch(`/api/rates/price-timeline?${params}`);
-    renderTimeline(data.events || []);
+    renderTimeline(data.events || [], model);
   } catch (e) {
     if (feed) feed.innerHTML = `<div style="padding:40px;text-align:center;color:#6b7280;font-size:13px">Failed to load: ${escHtml(e.message)}</div>`;
   } finally {
@@ -2948,7 +2996,7 @@ async function loadTimeline() {
   }
 }
 
-function renderTimeline(events) {
+function renderTimeline(events, modelFilter = '') {
   const feed = document.getElementById('timeline-feed');
   if (!feed) return;
 
@@ -2957,6 +3005,12 @@ function renderTimeline(events) {
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:36px;height:36px;margin-bottom:10px;opacity:.4;display:block;margin-left:auto;margin-right:auto"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
       No price changes found matching these filters. Try a wider date range or lower threshold.
     </div>`;
+    return;
+  }
+
+  // When a specific model is selected, render a chart showing its price history per competitor
+  if (modelFilter) {
+    renderTimelineModelChart(events, modelFilter);
     return;
   }
 
@@ -3007,6 +3061,129 @@ function renderTimeline(events) {
   feed.innerHTML = html;
 }
 
+function renderTimelineModelChart(events, model) {
+  const feed = document.getElementById('timeline-feed');
+  if (!feed) return;
+
+  // Build per-competitor time series from events
+  // Each event = a price change snapshot; we want absolute price over time
+  // Reconstruct: starting from prev_per_day at first event, then curr_per_day at each change
+  const byComp = {};
+  events.forEach(ev => {
+    byComp[ev.competitor] = byComp[ev.competitor] || [];
+    byComp[ev.competitor].push(ev);
+  });
+
+  // Sort each competitor's events chronologically
+  Object.values(byComp).forEach(arr => arr.sort((a, b) => a.scraped_at.localeCompare(b.scraped_at)));
+
+  const competitors = Object.keys(byComp).sort();
+
+  // Collect all unique dates across all competitor events (both prev and curr points)
+  const dateSet = new Set();
+  Object.values(byComp).forEach(arr => {
+    arr.forEach(ev => dateSet.add(ev.scraped_at.slice(0, 10)));
+  });
+  const dates = Array.from(dateSet).sort();
+
+  if (!dates.length) {
+    feed.innerHTML = '<div style="padding:40px;text-align:center;color:#6b7280;font-size:13px">No price change data for this model yet.</div>';
+    return;
+  }
+
+  const isDark    = document.body.classList.contains('dark-mode');
+  const gridColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
+  const tickColor = isDark ? '#9ca3af' : '#6b7280';
+
+  const datasets = competitors.map((comp, i) => {
+    // Build a price-at-date map: for each date we have curr_per_day
+    const priceMap = {};
+    byComp[comp].forEach(ev => {
+      priceMap[ev.scraped_at.slice(0, 10)] = ev.curr_per_day;
+    });
+    return {
+      label: comp,
+      data: dates.map(d => priceMap[d] ?? null),
+      borderColor: compColor(comp, i),
+      backgroundColor: compColor(comp, i) + '18',
+      tension: 0.35,
+      pointRadius: 5,
+      pointHoverRadius: 7,
+      borderWidth: 2.5,
+      spanGaps: true,
+    };
+  });
+
+  const labels = dates.map(d => {
+    const dt = new Date(d + 'T00:00:00');
+    return dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+  });
+
+  // Render chart container + summary cards
+  feed.innerHTML = `
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">
+        <div>
+          <div class="card-title">${escHtml(model)} — Price History</div>
+          <div class="card-subtitle">Price at each scrape where a change was detected — per competitor</div>
+        </div>
+      </div>
+      <div style="position:relative;height:320px"><canvas id="timeline-model-chart"></canvas></div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:16px" id="timeline-model-cards"></div>
+  `;
+
+  const ctx = document.getElementById('timeline-model-chart')?.getContext('2d');
+  if (!ctx) return;
+
+  if (state.timelineModelChart) state.timelineModelChart.destroy();
+  state.timelineModelChart = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { color: tickColor, boxWidth: 12, padding: 16, font: { size: 12 } } },
+        tooltip: {
+          callbacks: {
+            label: ctx => ctx.parsed.y != null
+              ? ` ${ctx.dataset.label}: ${formatISK(ctx.parsed.y)}/day`
+              : ` ${ctx.dataset.label}: no change recorded`,
+          },
+        },
+      },
+      scales: {
+        x: { grid: { color: gridColor }, ticks: { color: tickColor, font: { size: 11 }, maxRotation: 45 } },
+        y: { grid: { color: gridColor }, ticks: { color: tickColor, font: { size: 11 }, callback: v => formatISK(v) } },
+      },
+    },
+  });
+
+  // Summary cards: last known price + net change per competitor
+  const cardsEl = document.getElementById('timeline-model-cards');
+  if (cardsEl) {
+    cardsEl.innerHTML = competitors.map((comp, i) => {
+      const arr     = byComp[comp];
+      const first   = arr[0];
+      const last    = arr[arr.length - 1];
+      const netPct  = ((last.curr_per_day / first.prev_per_day) - 1) * 100;
+      const isUp    = netPct > 0;
+      const trend   = Math.abs(netPct) < 1 ? 'Stable' : (isUp ? `↑ +${netPct.toFixed(1)}%` : `↓ ${netPct.toFixed(1)}%`);
+      const tColor  = Math.abs(netPct) < 1 ? '#6b7280' : isUp ? '#dc2626' : '#16a34a';
+      return `<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px 16px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <div style="width:10px;height:10px;border-radius:50%;background:${compColor(comp, i)};flex-shrink:0"></div>
+          <div style="font-size:12px;font-weight:600;color:var(--text)">${escHtml(comp)}</div>
+        </div>
+        <div style="font-size:20px;font-weight:700;color:var(--text)">${formatISK(last.curr_per_day)}<span style="font-size:11px;font-weight:400;color:var(--text-muted)">/day</span></div>
+        <div style="font-size:11px;margin-top:4px;font-weight:600;color:${tColor}">${trend} overall · ${arr.length} change${arr.length !== 1 ? 's' : ''}</div>
+      </div>`;
+    }).join('');
+  }
+}
+
 // ── BOOKING WINDOW / LEAD TIME ANALYSIS ───────────────────────────────────
 
 function initBookingWindow() {
@@ -3018,12 +3195,14 @@ function initBookingWindow() {
     d.setDate(15);
     el.value = d.toISOString().slice(0, 10);
   }
-  // Don't auto-load — let user pick the date
+  populateViewModelSelector('booking-model');
+  populateViewModelSelector('timeline-model');
 }
 
 async function loadBookingWindow() {
   const pickupDate = document.getElementById('booking-pickup-date')?.value;
   const category   = document.getElementById('booking-category')?.value || '';
+  const model      = document.getElementById('booking-model')?.value || '';
   const location   = document.getElementById('filter-location')?.value || '';
 
   const prompt    = document.getElementById('booking-prompt');
@@ -3049,11 +3228,13 @@ async function loadBookingWindow() {
   const titleEl = document.getElementById('booking-chart-title');
   const dt = new Date(pickupDate + 'T00:00:00');
   const dateLabel = dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-  if (titleEl) titleEl.textContent = `Price Trajectory — Pickup ${dateLabel}${category ? ' · ' + category : ''}`;
+  const modelLabel = model ? ` · ${model}` : (category ? ` · ${category}` : '');
+  if (titleEl) titleEl.textContent = `Price Trajectory — Pickup ${dateLabel}${modelLabel}`;
 
   try {
     const params = new URLSearchParams({ pickup_date: pickupDate });
-    if (category) params.set('category', category);
+    if (model)    params.set('model', model);
+    else if (category) params.set('category', category);
     if (location) params.set('location', location);
     const data = await apiFetch(`/api/rates/booking-window?${params}`);
     renderBookingChart(data, pickupDate);

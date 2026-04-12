@@ -917,6 +917,7 @@ async def get_price_timeline_endpoint(
     min_change_pct: float          = Query(5.0, ge=0.5, le=50.0),
     category:       Optional[str]  = Query(None),
     location:       Optional[str]  = Query(None),
+    model:          Optional[str]  = Query(None),
 ):
     """
     Return all meaningful per-day price changes across competitors within the lookback window.
@@ -927,6 +928,7 @@ async def get_price_timeline_endpoint(
         min_change_pct=min_change_pct,
         category=category,
         location=location,
+        model=model,
     )
     return {"events": events, "count": len(events)}
 
@@ -936,6 +938,7 @@ async def get_booking_window_endpoint(
     pickup_date: str           = Query(..., description="YYYY-MM-DD — the future pickup date to analyse"),
     category:    Optional[str] = Query(None),
     location:    Optional[str] = Query(None),
+    model:       Optional[str] = Query(None),
 ):
     """
     For a specific future pickup date, return how competitor prices have changed
@@ -945,5 +948,6 @@ async def get_booking_window_endpoint(
         pickup_date=pickup_date,
         category=category,
         location=location,
+        model=model,
     )
     return data

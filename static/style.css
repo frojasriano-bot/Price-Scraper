@@ -49,7 +49,7 @@ body.dark-mode th           { background: #1e293b; color: #9ca3af; border-color:
 body.dark-mode td           { border-color: rgba(255,255,255,0.05); color: #d1d5db; }
 body.dark-mode tr:hover td  { background: rgba(255,255,255,0.04); }
 body.dark-mode .form-control,
-body.dark-mode .form-select { background: #1e293b; border-color: rgba(255,255,255,0.12); color: #d1d5db; }
+body.dark-mode .form-select { background: #1e293b; border-color: rgba(255,255,255,0.12); color: #d1d5db; color-scheme: dark; }
 body.dark-mode .btn-secondary { background: #1e293b; border-color: rgba(255,255,255,0.12); color: #d1d5db; }
 body.dark-mode .btn-secondary:hover { background: #334155; }
 body.dark-mode .btn-secondary.active { background: var(--blue-500); color: #ffffff; border-color: var(--blue-500); }

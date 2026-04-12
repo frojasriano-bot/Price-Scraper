@@ -1465,6 +1465,7 @@ async def get_price_timeline(
     min_change_pct: float = 5.0,
     category: str = None,
     location: str = None,
+    model: str = None,
 ) -> list[dict]:
     """
     Return all meaningful price changes across competitors within the lookback window.
@@ -1482,6 +1483,9 @@ async def get_price_timeline(
     if location:
         conds.append("location = ?")
         params.append(location)
+    if model:
+        conds.append("canonical_name = ?")
+        params.append(model)
 
     where = "WHERE " + " AND ".join(conds)
 
@@ -1549,14 +1553,19 @@ async def get_booking_window(
     pickup_date: str,
     category: str = None,
     location: str = None,
+    model: str = None,
 ) -> dict:
     """
     For a specific future pickup date, return how per-day prices have changed
     across successive scrape snapshots — one entry per competitor per scrape date.
+    Optionally filtered to a specific canonical model name.
     """
     conds = ["pickup_date = ?"]
     params: list = [pickup_date]
-    if category:
+    if model:
+        conds.append("canonical_name = ?")
+        params.append(model)
+    elif category:
         conds.append("car_category = ?")
         params.append(category)
     if location:
