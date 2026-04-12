@@ -1329,7 +1329,7 @@
               <ol style="padding-left:20px;margin:0">
                 <li style="margin-bottom:12px">
                   <strong>Start the server</strong><br>
-                  Run <code style="background:var(--bg-alt);padding:2px 6px;border-radius:4px;font-size:13px">uvicorn main:app --reload --port 8000</code> and open <strong>http://localhost:8000</strong>.
+                  Run <code style="background:var(--bg-alt);padding:2px 6px;border-radius:4px;font-size:13px">python main.py</code> (or <code style="background:var(--bg-alt);padding:2px 6px;border-radius:4px;font-size:13px">uvicorn main:app --reload</code>) and open <strong>http://localhost:8000</strong>.
                 </li>
                 <li style="margin-bottom:12px">
                   <strong>Run your first scrape</strong><br>
@@ -1338,19 +1338,19 @@
                 </li>
                 <li style="margin-bottom:12px">
                   <strong>Populate the Forward Rates horizon</strong><br>
-                  Go to <strong>Rate Intelligence → Forward Rates</strong> and click <strong>Scrape Horizon</strong>. This scrapes all 7 competitors across the next 26 weekly windows (6 months) by default — use the 3M / 6M / 12M toggle to change the range. Run this once manually; the daily scheduler keeps it fresh from 07:15 onwards.
+                  Go to <strong>Rate Intelligence → Forward Rates</strong> and click <strong>Scrape Horizon</strong>. This scrapes all 7 competitors across the next 26 weekly windows (6 months) by default — use the 3M / 6M / 12M toggle to change the range. Run this once manually; the daily scheduler keeps it fresh from 07:15 onwards. The more regularly this runs, the more lead-time history accumulates for the Booking Window view.
                 </li>
                 <li style="margin-bottom:12px">
                   <strong>Populate Seasonal Analysis</strong><br>
-                  Go to <strong>Rate Intelligence → Seasonal Analysis</strong> and click <strong>Scrape All</strong>. This scrapes the 15th of each of the next 12 months (7-night stays). The Monday weekly cron job will update it automatically after that.
+                  Go to <strong>Rate Intelligence → Seasonal Analysis</strong> and click <strong>Scrape All</strong>. This scrapes the 15th of each of the next 12 months (7-night stays). The Monday weekly cron job will update it automatically after that. Multiple weekly scrapes are needed before the History and Booking Window views show meaningful trends.
                 </li>
                 <li style="margin-bottom:12px">
                   <strong>Set up SEO tracking (optional)</strong><br>
-                  Go to <strong>Settings</strong> and enter your <strong>SerpAPI key</strong>. Then go to <strong>SEO Rank Tracker</strong> and click <strong>Check Rankings Now</strong>. 10 Iceland car rental keywords are pre-seeded — add or remove via the Keywords section in Settings.
+                  Go to <strong>Settings → API Configuration</strong>, enter your <strong>SerpAPI key</strong>, and click <strong>Save Settings</strong>. Then go to <strong>SEO Rank Tracker</strong> and click <strong>Check Rankings Now</strong>. 10 Iceland car rental keywords are pre-seeded — add or remove via Settings → Keywords.
                 </li>
                 <li>
-                  <strong>Configure Slack alerts (optional)</strong><br>
-                  Go to <strong>Settings → Slack Alerts</strong> and paste your webhook URL. The system will notify you automatically whenever a competitor undercuts Blue Car Rental's price on any model.
+                  <strong>Configure price alerts (optional)</strong><br>
+                  Go to <strong>Settings → Price Alerts</strong>, paste your Slack webhook URL, set the alert threshold (default 10% — fires when a competitor is cheaper by at least this amount), and click <strong>Save Alerts Config</strong>. Use <strong>Test Webhook</strong> to confirm delivery. Alerts also fire automatically after every scheduled scrape.
                 </li>
               </ol>
             </div>
@@ -1441,6 +1441,40 @@
             </div>
           </div>
 
+          <!-- Settings Reference -->
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Settings Reference</div>
+                <div class="card-subtitle">What each section in the Settings tab does</div>
+              </div>
+            </div>
+            <div style="padding:0 20px 20px;font-size:14px;line-height:1.7;color:var(--text)">
+              <dl style="margin:0">
+                <dt style="font-weight:600;margin-top:12px">API Configuration</dt>
+                <dd style="margin:0 0 4px 0;color:var(--text-muted)"><strong>SerpAPI Key</strong> — required for live Google rank tracking. Get a free key at serpapi.com. <strong>Auto-Scrape Schedule</strong> — controls how often the rate scrape, SEO check, and alert check run (hourly / daily / weekly). Click <strong>Save Settings</strong> at the bottom of the page after making any changes here.</dd>
+
+                <dt style="font-weight:600;margin-top:12px">Tracked Locations</dt>
+                <dd style="margin:0 0 4px 0;color:var(--text-muted)">Add or remove pickup locations. Keflavik Airport and Reykjavik are pre-configured. Note: Lava Car Rental and Lotus Car Rental only operate from Keflavik Airport — data for those competitors will be empty for Reykjavik.</dd>
+
+                <dt style="font-weight:600;margin-top:12px">Price Alerts</dt>
+                <dd style="margin:0 0 4px 0;color:var(--text-muted)">Paste your Slack incoming webhook URL and set the <strong>Alert Threshold %</strong> (fires when a competitor is cheaper by at least this %). Click <strong>Save Alerts Config</strong> to persist. <strong>Check Now</strong> runs the alert check immediately; <strong>Test Webhook</strong> sends a test message to confirm delivery.</dd>
+
+                <dt style="font-weight:600;margin-top:12px">Tracked Competitors</dt>
+                <dd style="margin:0 0 4px 0;color:var(--text-muted)">Shows the live/mock status for each of the 6 scrapers and the timestamp of the last successful scrape. A green badge means real data has been collected from that competitor; gray means only mock data is available.</dd>
+
+                <dt style="font-weight:600;margin-top:12px">Category Audit</dt>
+                <dd style="margin:0 0 4px 0;color:var(--text-muted)">Lists every car model in the DB with its stored category, the correct category from the canonical list, and a status (Mapped / Unmapped / Conflict). Filter to "Conflicts Only" to find any misclassified models and fix them via Car Model Mappings.</dd>
+
+                <dt style="font-weight:600;margin-top:12px">Car Model Mappings</dt>
+                <dd style="margin:0 0 4px 0;color:var(--text-muted)">Maps a competitor's raw model name (e.g. "Toyota Landcruiser 150 series") to a canonical name (e.g. "Toyota Land Cruiser 150") so it appears correctly in the matrix and history charts. Most mappings are handled automatically — only add here if a model shows up as "Unknown" or with a wrong name.</dd>
+
+                <dt style="font-weight:600;margin-top:12px">Scrape History</dt>
+                <dd style="margin:0 0 4px 0;color:var(--text-muted)">Log of every scrape run — manual, scheduled, seasonal, and horizon — showing timestamp, trigger type, location, number of rates collected, duration, and error count. Useful for diagnosing why data is stale or a competitor is showing mock data.</dd>
+              </dl>
+            </div>
+          </div>
+
           <!-- Tips -->
           <div class="card">
             <div class="card-header">
@@ -1450,10 +1484,12 @@
             </div>
             <div style="padding:0 20px 20px;font-size:14px;line-height:1.7;color:var(--text)">
               <ul style="padding-left:20px;margin:0">
-                <li style="margin-bottom:8px"><strong>Unknown car models</strong> — go to Settings → Category Audit to see any models that haven't been mapped to a canonical name yet. You can add mappings via Settings → Car Model Mappings.</li>
                 <li style="margin-bottom:8px"><strong>Mock data badge</strong> — if you see a "Mock Data" badge in the top bar, the DB has no real scraped data for the current filters. Run a scrape to populate it.</li>
+                <li style="margin-bottom:8px"><strong>Unknown car models</strong> — if a model appears as "Unknown" in the matrix, go to Settings → Category Audit to find it, then add a mapping in Settings → Car Model Mappings.</li>
+                <li style="margin-bottom:8px"><strong>Price Changes &amp; Booking Window need history</strong> — these views require multiple weekly scrape runs to be useful. The more scrape snapshots exist for a pickup date, the richer the lead-time curve. Make sure the Horizon Scrape runs regularly (it's automatic daily at 07:15).</li>
                 <li style="margin-bottom:8px"><strong>Insurance tab</strong> — click any price cell in the Price by Category table to edit it inline. Prices persist in the database and survive restarts. Use <strong>Trigger Research</strong> to open all competitor insurance pages at once, then <strong>Mark Reviewed</strong> when done.</li>
-                <li><strong>Locations</strong> — Keflavik Airport and Reykjavik are the two Blue Car Rental locations. Lava and Lotus only operate from KEF. Add or rename locations via Settings if needed.</li>
+                <li style="margin-bottom:8px"><strong>Dark mode</strong> — toggle via the moon/sun icon in the top bar. Preference is saved in your browser.</li>
+                <li><strong>Locations</strong> — Keflavik Airport and Reykjavik are the two Blue Car Rental locations. Lava and Lotus only operate from KEF. Add or rename locations via Settings → Tracked Locations if needed.</li>
               </ul>
             </div>
           </div>
