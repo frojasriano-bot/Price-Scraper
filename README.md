@@ -79,8 +79,9 @@ database.py              SQLite schema, all DB helpers, migrations
 
 routes/
   rates.py               /api/rates/* — scraper trigger, history, matrix,
-                         seasonal (DB-first), forward horizon, price-changes,
-                         scrape log
+                         seasonal (DB-first + history + gap map), forward
+                         horizon (aggregate + per-model), price-timeline,
+                         booking-window, scrape log
   insurance.py           /api/insurance — comparison data, category pricing
                          (with DB overrides), mark-reviewed workflow, review log
   seo.py                 /api/seo/* — rankings, keyword management

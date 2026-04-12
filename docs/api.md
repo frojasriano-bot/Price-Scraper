@@ -120,7 +120,19 @@ Base URL (when running locally): `http://localhost:8000`
   - Time series showing how prices for one anchor month have evolved across successive scrapes
   - Required query params: `pickup_date` (`YYYY-MM-15`)
   - Optional query params: `category`, `location`
-  - Response: `{ "history": [ { "scraped_at", "competitor", "per_day" } ] }`
+  - Response:
+    ```json
+    {
+      "series": {
+        "<competitor>": [
+          { "date": "YYYY-MM-DD", "avg_per_day": 12000, "car_count": 3, "category": "Economy" }
+        ]
+      },
+      "pickup_date": "YYYY-MM-15",
+      "return_date": "YYYY-MM-22",
+      "source": "database | none"
+    }
+    ```
 
 - `GET /api/rates/horizon`
   - Next N weeks of per-day pricing per competitor (real scraped data only)
