@@ -135,7 +135,52 @@ Base URL (when running locally): `http://localhost:8000`
   - All future scraped per-day prices for one specific canonical model, grouped by competitor
   - Required query params: `model` (canonical name, URL-encoded)
   - Optional query params: `location`
-  - Response: `{ "<competitor>": [ { "pickup_date", "per_day", "car_model" } ] }`
+  - Response: `{ "model": "Toyota Yaris", "series": { "<competitor>": [ { "pickup_date", "per_day", "car_model" } ] }, "source": "database|none" }`
+
+- `GET /api/rates/price-timeline`
+  - Chronological list of meaningful per-day price changes across all competitors, comparing consecutive scrape snapshots
+  - Optional query params:
+    - `days` (1..365, default 30) — lookback window
+    - `min_change_pct` (0.5..50, default 5.0) — minimum abs change % to include
+    - `category` — filter to one car category
+    - `location`
+    - `model` — filter to one canonical model name
+  - Response:
+    ```json
+    {
+      "events": [
+        {
+          "competitor": "Hertz Iceland",
+          "canonical_name": "Toyota Yaris",
+          "car_category": "Economy",
+          "scraped_at": "2026-04-10T07:15:00",
+          "prev_per_day": 8200,
+          "curr_per_day": 9700,
+          "change_pct": 18.3,
+          "direction": "up"
+        }
+      ],
+      "count": 42
+    }
+    ```
+
+- `GET /api/rates/booking-window`
+  - For a specific future pickup date, shows how each competitor's per-day price has evolved across successive weekly scrapes
+  - Required query params: `pickup_date` (`YYYY-MM-DD`)
+  - Optional query params: `category`, `location`, `model`
+  - Response:
+    ```json
+    {
+      "pickup_date": "2026-07-15",
+      "series": {
+        "Blue Car Rental": [
+          { "scraped_at": "2026-04-10", "per_day": 12000 },
+          { "scraped_at": "2026-04-17", "per_day": 11800 }
+        ],
+        "Hertz Iceland": [ ... ]
+      }
+    }
+    ```
 
 - `GET /api/rates/scraper-status`
   - Live and mock status for each configured scraper

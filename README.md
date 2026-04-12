@@ -10,7 +10,7 @@ FastAPI backend · SQLite · APScheduler · Vanilla JS SPA · Chart.js
 
 | Tab | Description |
 |-----|-------------|
-| **Rate Intelligence** | Executive summary banner, live competitor rates, sortable table with per-competitor price-change arrows, bar chart, cross-competitor matrix, price history charts, seasonal analysis with price-evolution history mode, forward rate horizon (3M / 6M / 12M toggle), CSV export |
+| **Rate Intelligence** | Executive summary banner, live competitor rates, sortable table with per-competitor price-change arrows, bar chart, cross-competitor matrix, price history charts, seasonal analysis with history + gap map modes, forward rate horizon (3M / 6M / 12M), price change timeline, booking window analysis, CSV export |
 | **Insurance Comparison** | Coverage matrix, per-category zero-excess pricing (editable inline), company package cards, deductible comparison, Trigger Research + Mark Reviewed workflow with audit log |
 | **SEO Rank Tracker** | Keyword ranking history with previous rank + change delta via SerpAPI; 10 Iceland-specific keywords pre-seeded |
 | **Settings** | Scraper status, schedule config, SerpAPI key, location management, car model mappings, Slack alerts, scrape history log, category audit |
@@ -23,8 +23,10 @@ FastAPI backend · SQLite · APScheduler · Vanilla JS SPA · Chart.js
 | **List View** | Sortable table of all live rates per competitor + model, with per-day price and Δ vs previous scrape |
 | **Car Model Matrix** | Cross-competitor price grid per canonical model; green = cheapest, red = most expensive |
 | **Price History** | Time-series line charts per model grouped by category — shows how scraped prices have evolved over the past 7/14/30/90 days |
-| **Seasonal Analysis** | Per-day pricing across the next 12 months (15th anchor date, 7-night stay); includes History mode to see how a single future month's price has evolved across weekly scrapes |
-| **Forward Rates** | Up to 12 months of competitor pricing — horizon line chart + color-coded heatmap table with 3M / 6M / 12M range toggle; scrape-driven, no estimates |
+| **Seasonal Analysis** | Per-day pricing across the next 12 months (15th anchor date, 7-night stay). Three modes: default chart; **History** to see how a future month evolved across weekly scrapes; **Gap Map** — a 5×12 category×month heatmap showing Blue's price vs market average (green = Blue pricier, red = Blue cheaper) |
+| **Forward Rates** | Up to 12 months of competitor pricing — horizon line chart + color-coded heatmap table with 3M / 6M / 12M range toggle; scrape-driven, no estimates. Select a model from the dropdown for per-model competitor lines |
+| **Price Changes** | Chronological activity feed of every meaningful competitor price move (≥5% by default). Filter by lookback window, category, and minimum change %. Select a specific model to view a line chart of its full scraped price history per competitor |
+| **Booking Window** | Pick any future pickup date to see how each competitor's price has changed across successive weekly scrapes as that date approaches — reveals early-bird vs last-minute pricing strategy. Model drill-down available |
 
 ---
 
@@ -284,7 +286,17 @@ The **History** toggle switches the chart to show how prices for a selected futu
 - Y-axis: per-day ISK
 - One line per competitor
 
-This reveals whether competitors are raising or lowering prices as a future season approaches — the most actionable competitive intelligence the tool provides.
+Requires at least 2 weekly snapshots for the selected anchor month. Shows "not enough data" message until then.
+
+### Price Gap Heatmap (Gap Map mode)
+
+The **Gap Map** toggle shows a 5×12 grid: 5 car categories (rows) × 12 future months (columns). Each cell shows `((Blue - market_avg) / market_avg) × 100`:
+
+- **Green** = Blue is more expensive than market (potential to reduce price or accept premium)
+- **Red** = Blue is cheaper than market (competitive advantage, potential pricing room)
+- **Neutral** = within ±3% of market average
+
+Uses the same `state.seasonalData` already loaded — no extra API call required.
 
 ---
 
@@ -333,6 +345,39 @@ Pills (All / Economy / Compact / SUV / 4x4 / Minivan) re-fetch the API with a `?
 The **Scrape Horizon** button (`POST /api/rates/scrape-horizon`) runs all 7 scrapers against each weekly anchor date in the selected range. Results are stored in the `rates` table and available immediately.
 
 The daily cron job also runs a 26-week horizon scrape at 07:15 automatically.
+
+---
+
+## Price Change Timeline
+
+`GET /api/rates/price-timeline` compares consecutive scrape snapshots per competitor × model and returns only events where `abs(change_pct) ≥ min_change_pct` (default 5%).
+
+### Feed view (no model selected)
+Grouped by date, newest first. Each card shows: competitor colour dot, model name + category, ↑/↓ percentage change, and before/after per-day prices.
+
+### Model drill-down (model selected)
+Switches to a Chart.js line chart showing the absolute price per scrape date for each competitor carrying that model. Summary cards show each competitor's latest price and net overall change since the first recorded snapshot.
+
+### Filters
+- **Days back**: 7 / 14 / 30
+- **Category**: all or a single category
+- **Model**: all or a specific canonical model (resets when category changes)
+- **Min change %**: 5% default; lower to capture smaller moves
+
+---
+
+## Booking Window Analysis
+
+`GET /api/rates/booking-window` groups rates by competitor × scrape date for a specific future pickup date and returns the per-day price at each snapshot.
+
+### How to read it
+X-axis shows "X weeks before pickup" (e.g. "8 weeks before"). Y-axis shows per-day ISK. A line that drops sharply near pickup = last-minute discounting. A flat or rising line = yield management / early-bird pricing.
+
+### Requirements
+Needs at least 2 scrape snapshots for the selected pickup date (i.e. the same pickup date must have been scraped on at least two different days). Run **Scrape Horizon** regularly to accumulate lead-time history.
+
+### Model drill-down
+Select a model to filter to that canonical model only — useful for watching a specific vehicle class's lead-time curve.
 
 ---
 

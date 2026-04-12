@@ -2950,9 +2950,11 @@ function renderPriceGapHeatmap() {
   html += `</tbody></table>`;
 
   // Legend
+  const legendGreen = isDark ? '#86efac' : '#14532d';
+  const legendRed   = isDark ? '#fca5a5' : '#7f1d1d';
   html += `<div style="margin-top:14px;display:flex;gap:20px;font-size:11px;color:var(--text-muted);flex-wrap:wrap">
-    <span><strong style="color:#14532d">+%</strong> = Blue is more expensive than market average</span>
-    <span><strong style="color:#7f1d1d">−%</strong> = Blue is cheaper than market average</span>
+    <span><strong style="color:${legendGreen}">+%</strong> = Blue is more expensive than market average</span>
+    <span><strong style="color:${legendRed}">−%</strong> = Blue is cheaper than market average</span>
     <span><strong style="color:var(--text-muted)">±3%</strong> = at market (neutral)</span>
   </div>`;
 
@@ -3012,6 +3014,12 @@ async function loadTimeline() {
   const model    = document.getElementById('timeline-model')?.value || '';
   const minPct   = document.getElementById('timeline-min-pct')?.value || 5;
   const location = document.getElementById('filter-location')?.value || '';
+
+  // Populate model selector on first load (no-op if already populated)
+  const modelSel = document.getElementById('timeline-model');
+  if (modelSel && modelSel.options.length <= 1) {
+    populateViewModelSelector('timeline-model', category);
+  }
 
   const loading = document.getElementById('timeline-loading');
   const feed    = document.getElementById('timeline-feed');
@@ -3232,7 +3240,6 @@ function initBookingWindow() {
     el.value = d.toISOString().slice(0, 10);
   }
   populateViewModelSelector('booking-model');
-  populateViewModelSelector('timeline-model');
 }
 
 async function loadBookingWindow() {
@@ -3439,7 +3446,7 @@ async function loadHorizon(force = false) {
 
   try {
     params.set('weeks', String(state.horizonWeeks || 26));
-  const data = await apiFetch(`/api/rates/horizon?${params}`);
+    const data = await apiFetch(`/api/rates/horizon?${params}`);
     state.horizonData = data;
     setSourceBadge('horizon-source-badge', data.source);
     document.querySelectorAll('#horizon-source-badge').forEach(el => el.style.display = '');
@@ -3653,7 +3660,7 @@ async function scrapeHorizon() {
   showToast(`Scraping horizon rates (${rangeLabel})… this may take a few minutes`, 'info', 120000);
   try {
     params.set('weeks', String(scrapeWeeks));
-  const result = await apiFetch(`/api/rates/scrape-horizon?${params}`, { method: 'POST' });
+    const result = await apiFetch(`/api/rates/scrape-horizon?${params}`, { method: 'POST' });
     showToast(
       `Scraped ${result.scraped} rates across ${result.weeks_scraped} weeks in ${result.duration_seconds}s`,
       'success',

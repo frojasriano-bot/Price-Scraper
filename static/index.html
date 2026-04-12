@@ -1427,10 +1427,16 @@
                 <dd style="margin:0 0 4px 0;color:var(--text-muted)">Time-series line charts showing how prices have evolved over the last 7, 14, 30, or 90 days. Useful for spotting trend patterns and seasonal drift.</dd>
 
                 <dt style="font-weight:600;margin-top:12px">Seasonal Analysis</dt>
-                <dd style="margin:0 0 4px 0;color:var(--text-muted)">Per-day pricing across the next 12 months (pickup on the 15th, 7-night stay). Switch to <strong>History mode</strong> to see how prices for a specific future month have changed across successive scrapes — the clearest signal for competitor yield management.</dd>
+                <dd style="margin:0 0 4px 0;color:var(--text-muted)">Per-day pricing across the next 12 months (pickup on the 15th, 7-night stay). Three modes: the default line chart; <strong>History</strong> mode to see how a specific month's price evolved across successive scrapes (clearest signal for competitor yield management); and <strong>Gap Map</strong> — a 5×12 heatmap showing how Blue's price compares to the market average across every category and month. Green = Blue is pricier, red = Blue is cheaper.</dd>
 
                 <dt style="font-weight:600;margin-top:12px">Forward Rates</dt>
-                <dd style="margin:0 0 4px 0;color:var(--text-muted)">Horizon chart and heatmap for up to 12 months ahead. Use the <strong>3M / 6M / 12M</strong> toggle to set the window, category pills to compare within a segment, or select a specific car model for per-model competitor lines.</dd>
+                <dd style="margin:0 0 4px 0;color:var(--text-muted)">Horizon chart and heatmap for up to 12 months ahead. Use the <strong>3M / 6M / 12M</strong> toggle to set the window, category pills to compare within a segment, or select a specific car model for per-model competitor lines. The range toggle applies to both the aggregate chart and per-model view.</dd>
+
+                <dt style="font-weight:600;margin-top:12px">Price Changes</dt>
+                <dd style="margin:0 0 4px 0;color:var(--text-muted)">Chronological feed of every meaningful competitor price move. Filter by days back (7 / 14 / 30), category, and minimum change %. Select a specific model to switch to a line chart showing the full price history per competitor for that model.</dd>
+
+                <dt style="font-weight:600;margin-top:12px">Booking Window</dt>
+                <dd style="margin:0 0 4px 0;color:var(--text-muted)">Pick any future pickup date and see how each competitor's price has moved across successive weekly scrapes as that date approaches. Reveals last-minute vs early-bird pricing behaviour — e.g. who drops rates 3 weeks out vs who holds firm. Select a specific model for model-level lead-time analysis. Needs multiple scrape snapshots for the same pickup date to show trends.</dd>
               </dl>
             </div>
           </div>
