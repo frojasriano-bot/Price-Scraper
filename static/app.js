@@ -53,10 +53,12 @@ const state = {
   historyEvolutionData: null,
   historyEvolutionChart: null,
   historyEvolutionMonth: null,
+  heatmapMode: false,
   horizonData: null,
   horizonChart: null,
   horizonCategory: '',
   horizonWeeks: 26,
+  bookingChart: null,
   horizonScraping: false,
   horizonModel: '',
   modelHorizonData: null,
@@ -114,17 +116,23 @@ function showToast(message, type = 'info', duration = 3500) {
 
 // ── Navigation ─────────────────────────────────────────────────────────────
 function switchTab(tab) {
-  // Reset seasonal history mode when leaving the rates tab
-  if (state.currentTab === 'rates' && tab !== 'rates' && state.historyMode) {
-    state.historyMode = false;
-    const btn = document.getElementById('btn-history-mode');
-    if (btn) btn.classList.remove('active');
-    const monthSel = document.getElementById('history-month-select');
-    if (monthSel) monthSel.style.display = 'none';
-    const overviewCard = document.getElementById('seasonal-chart-card');
-    if (overviewCard) overviewCard.style.display = '';
-    const historyCard = document.getElementById('history-chart-card');
-    if (historyCard) historyCard.style.display = 'none';
+  // Reset seasonal history + heatmap modes when leaving the rates tab
+  if (state.currentTab === 'rates' && tab !== 'rates') {
+    if (state.historyMode) {
+      state.historyMode = false;
+      const btn = document.getElementById('btn-history-mode');
+      if (btn) btn.classList.remove('active');
+      const monthSel = document.getElementById('history-month-select');
+      if (monthSel) monthSel.style.display = 'none';
+      document.getElementById('history-chart-card')?.style && (document.getElementById('history-chart-card').style.display = 'none');
+      document.getElementById('seasonal-chart-card')?.style && (document.getElementById('seasonal-chart-card').style.display = '');
+    }
+    if (state.heatmapMode) {
+      state.heatmapMode = false;
+      document.getElementById('btn-heatmap-mode')?.classList.remove('active');
+      document.getElementById('heatmap-card') && (document.getElementById('heatmap-card').style.display = 'none');
+      document.getElementById('seasonal-chart-card') && (document.getElementById('seasonal-chart-card').style.display = '');
+    }
   }
   state.currentTab = tab;
 
@@ -217,20 +225,26 @@ function syncDateConstraints() {
 // ── VIEW TOGGLE ────────────────────────────────────────────────────────────
 function setRatesView(view) {
   state.ratesView = view;
-  document.getElementById('view-list').style.display         = view === 'list'         ? '' : 'none';
-  document.getElementById('view-matrix').style.display       = view === 'matrix'       ? '' : 'none';
-  document.getElementById('view-history').style.display      = view === 'history'      ? '' : 'none';
-  document.getElementById('view-seasonal').style.display     = view === 'seasonal'     ? '' : 'none';
-  document.getElementById('view-horizon-fwd').style.display  = view === 'horizon-fwd'  ? '' : 'none';
+  document.getElementById('view-list').style.display           = view === 'list'           ? '' : 'none';
+  document.getElementById('view-matrix').style.display         = view === 'matrix'         ? '' : 'none';
+  document.getElementById('view-history').style.display        = view === 'history'        ? '' : 'none';
+  document.getElementById('view-seasonal').style.display       = view === 'seasonal'       ? '' : 'none';
+  document.getElementById('view-horizon-fwd').style.display    = view === 'horizon-fwd'    ? '' : 'none';
+  document.getElementById('view-timeline').style.display       = view === 'timeline'       ? '' : 'none';
+  document.getElementById('view-booking-window').style.display = view === 'booking-window' ? '' : 'none';
   document.getElementById('btn-list-view').classList.toggle('active',     view === 'list');
   document.getElementById('btn-matrix-view').classList.toggle('active',   view === 'matrix');
   document.getElementById('btn-history-view').classList.toggle('active',  view === 'history');
   document.getElementById('btn-seasonal-view').classList.toggle('active', view === 'seasonal');
   document.getElementById('btn-horizon-view').classList.toggle('active',  view === 'horizon-fwd');
-  if (view === 'matrix'      && !state.matrix)       loadMatrix();
-  if (view === 'history')                            loadHistory();
-  if (view === 'seasonal'    && !state.seasonalData) loadSeasonal();
-  if (view === 'horizon-fwd' && !state.horizonData)  loadHorizon();
+  document.getElementById('btn-timeline-view').classList.toggle('active', view === 'timeline');
+  document.getElementById('btn-booking-view').classList.toggle('active',  view === 'booking-window');
+  if (view === 'matrix'         && !state.matrix)       loadMatrix();
+  if (view === 'history')                               loadHistory();
+  if (view === 'seasonal'       && !state.seasonalData) loadSeasonal();
+  if (view === 'horizon-fwd'    && !state.horizonData)  loadHorizon();
+  if (view === 'timeline')                              loadTimeline();
+  if (view === 'booking-window')                        initBookingWindow();
 }
 
 // ── SCHEDULER STATUS ───────────────────────────────────────────────────────
@@ -2791,6 +2805,376 @@ function renderScrapeLog(entries) {
       <td>${statusHtml}</td>
     </tr>`;
   }).join('');
+}
+
+// ── PRICE GAP HEATMAP ─────────────────────────────────────────────────────
+
+function toggleHeatmapMode() {
+  state.heatmapMode = !state.heatmapMode;
+  const btn          = document.getElementById('btn-heatmap-mode');
+  const heatCard     = document.getElementById('heatmap-card');
+  const chartCard    = document.getElementById('seasonal-chart-card');
+  const histBtn      = document.getElementById('btn-history-mode');
+
+  if (state.heatmapMode) {
+    // Exit history mode if active
+    if (state.historyMode) {
+      state.historyMode = false;
+      document.getElementById('btn-history-mode').classList.remove('active');
+      document.getElementById('history-month-select').style.display = 'none';
+      document.getElementById('history-chart-card').style.display = 'none';
+    }
+    btn.classList.add('active');
+    chartCard.style.display = 'none';
+    heatCard.style.display  = '';
+    renderPriceGapHeatmap();
+  } else {
+    btn.classList.remove('active');
+    heatCard.style.display  = 'none';
+    chartCard.style.display = '';
+    renderSeasonalChart();
+  }
+}
+
+function renderPriceGapHeatmap() {
+  const grid = document.getElementById('heatmap-grid');
+  if (!grid || !state.seasonalData) {
+    if (grid) grid.innerHTML = '<p style="color:#6b7280;font-size:13px;padding:20px">No seasonal data loaded. Go to Seasonal Analysis and click Refresh first.</p>';
+    return;
+  }
+
+  const { months } = state.seasonalData;
+  if (!months?.length) return;
+
+  const CATEGORIES = ['Economy', 'Compact', 'SUV', '4x4', 'Minivan'];
+  const CAT_EMOJI  = { Economy: '🚗', Compact: '🚙', SUV: '🛻', '4x4': '🏔️', Minivan: '🚐' };
+
+  // Build Blue's per-day and market avg per-day for each month × category
+  // month.competitors = { competitor: { category: avg_per_day } }
+  // month.market_avg  = { category: avg_per_day }  (all competitors avg)
+  const monthLabels = months.map(m => m.month_label);
+
+  // For each category, compute gap% per month: (blue - market) / market * 100
+  // Positive = Blue is MORE expensive than market
+  // Negative = Blue is CHEAPER than market
+  const rows = CATEGORIES.map(cat => {
+    const gaps = months.map(m => {
+      const bluePrice  = m.competitors?.['Blue Car Rental']?.[cat];
+      const marketAvg  = m.market_avg?.[cat];
+      if (bluePrice == null || marketAvg == null || marketAvg === 0) return null;
+      return Math.round((bluePrice / marketAvg - 1) * 100);
+    });
+    return { cat, gaps };
+  });
+
+  // Color scale: gap% → background color
+  function gapColor(pct) {
+    if (pct === null) return { bg: 'var(--bg-alt)', text: 'var(--text-muted)', label: '—' };
+    const abs = Math.abs(pct);
+    const label = (pct >= 0 ? '+' : '') + pct + '%';
+    if (Math.abs(pct) <= 3) return { bg: 'var(--bg-alt)', text: 'var(--text)', label };
+    if (pct > 0) {
+      // Blue more expensive — green gradient
+      const intensity = Math.min(abs / 40, 1);
+      const g = Math.round(180 + intensity * 40);
+      const r = Math.round(220 - intensity * 100);
+      return { bg: `rgba(${r},${g},100,${0.15 + intensity * 0.5})`, text: '#14532d', label };
+    } else {
+      // Blue cheaper — red gradient
+      const intensity = Math.min(abs / 40, 1);
+      return { bg: `rgba(220,50,50,${0.12 + intensity * 0.45})`, text: '#7f1d1d', label };
+    }
+  }
+
+  const colWidth = '72px';
+  const isDark   = document.body.classList.contains('dark-mode');
+
+  let html = `<table style="border-collapse:collapse;width:100%;font-size:12px">
+    <thead>
+      <tr>
+        <th style="text-align:left;padding:8px 12px 8px 0;color:var(--text-muted);font-weight:600;white-space:nowrap;min-width:100px">Category</th>
+        ${monthLabels.map(l => `<th style="text-align:center;padding:6px 4px;color:var(--text-muted);font-weight:600;min-width:${colWidth};font-size:11px;white-space:nowrap">${l}</th>`).join('')}
+      </tr>
+    </thead>
+    <tbody>`;
+
+  rows.forEach(({ cat, gaps }) => {
+    html += `<tr>
+      <td style="padding:6px 12px 6px 0;font-weight:600;white-space:nowrap;color:var(--text)">${CAT_EMOJI[cat] || ''} ${cat}</td>
+      ${gaps.map(pct => {
+        const { bg, text, label } = gapColor(pct);
+        return `<td style="text-align:center;padding:5px 3px">
+          <div style="background:${bg};color:${text};border-radius:6px;padding:6px 4px;font-weight:700;font-size:12px;min-width:52px">${label}</div>
+        </td>`;
+      }).join('')}
+    </tr>`;
+  });
+
+  html += `</tbody></table>`;
+
+  // Legend
+  html += `<div style="margin-top:14px;display:flex;gap:20px;font-size:11px;color:var(--text-muted);flex-wrap:wrap">
+    <span><strong style="color:#14532d">+%</strong> = Blue is more expensive than market average</span>
+    <span><strong style="color:#7f1d1d">−%</strong> = Blue is cheaper than market average</span>
+    <span><strong style="color:var(--text-muted)">±3%</strong> = at market (neutral)</span>
+  </div>`;
+
+  grid.innerHTML = html;
+}
+
+// ── COMPETITOR PRICE CHANGE TIMELINE ──────────────────────────────────────
+
+async function loadTimeline() {
+  const days     = document.getElementById('timeline-days')?.value || 30;
+  const category = document.getElementById('timeline-category')?.value || '';
+  const minPct   = document.getElementById('timeline-min-pct')?.value || 5;
+  const location = document.getElementById('filter-location')?.value || '';
+
+  const loading = document.getElementById('timeline-loading');
+  const feed    = document.getElementById('timeline-feed');
+  if (loading) loading.style.display = '';
+  if (feed)    feed.innerHTML = '';
+
+  try {
+    const params = new URLSearchParams({ days, min_change_pct: minPct });
+    if (category) params.set('category', category);
+    if (location) params.set('location', location);
+    const data = await apiFetch(`/api/rates/price-timeline?${params}`);
+    renderTimeline(data.events || []);
+  } catch (e) {
+    if (feed) feed.innerHTML = `<div style="padding:40px;text-align:center;color:#6b7280;font-size:13px">Failed to load: ${escHtml(e.message)}</div>`;
+  } finally {
+    if (loading) loading.style.display = 'none';
+  }
+}
+
+function renderTimeline(events) {
+  const feed = document.getElementById('timeline-feed');
+  if (!feed) return;
+
+  if (!events.length) {
+    feed.innerHTML = `<div style="padding:60px;text-align:center;color:#6b7280;font-size:13px">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:36px;height:36px;margin-bottom:10px;opacity:.4;display:block;margin-left:auto;margin-right:auto"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      No price changes found matching these filters. Try a wider date range or lower threshold.
+    </div>`;
+    return;
+  }
+
+  // Group events by date (scraped_at date)
+  const byDate = {};
+  events.forEach(ev => {
+    const date = ev.scraped_at.slice(0, 10);
+    byDate[date] = byDate[date] || [];
+    byDate[date].push(ev);
+  });
+
+  const dateKeys = Object.keys(byDate).sort().reverse();
+
+  let html = '';
+  dateKeys.forEach(date => {
+    const dt = new Date(date + 'T00:00:00');
+    const dateLabel = dt.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+    html += `<div style="margin-bottom:6px;padding:6px 0 2px;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--border)">${dateLabel}</div>`;
+
+    byDate[date].forEach(ev => {
+      const isUp   = ev.direction === 'up';
+      const color  = compColor(ev.competitor);
+      const arrow  = isUp ? '↑' : '↓';
+      const pctStr = (isUp ? '+' : '') + ev.change_pct.toFixed(1) + '%';
+      const pctColor = isUp ? '#dc2626' : '#16a34a'; // up = more expensive = red; down = cheaper = green for Blue
+      const cat    = ev.car_category;
+      const CAT_EMOJI = { Economy:'🚗', Compact:'🚙', SUV:'🛻', '4x4':'🏔️', Minivan:'🚐' };
+
+      html += `<div style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;margin-bottom:6px">
+        <!-- Competitor pill -->
+        <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0"></div>
+        <div style="font-size:12px;font-weight:600;color:var(--text);min-width:110px;flex-shrink:0">${escHtml(ev.competitor)}</div>
+        <!-- Model + category -->
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(ev.canonical_name)}</div>
+          <div style="font-size:11px;color:var(--text-muted)">${CAT_EMOJI[cat] || ''} ${cat}</div>
+        </div>
+        <!-- Price change -->
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-size:13px;font-weight:700;color:${pctColor}">${arrow} ${pctStr}</div>
+          <div style="font-size:11px;color:var(--text-muted)">${formatISK(ev.prev_per_day)} → ${formatISK(ev.curr_per_day)}<span style="color:#9ca3af">/day</span></div>
+        </div>
+      </div>`;
+    });
+  });
+
+  feed.innerHTML = html;
+}
+
+// ── BOOKING WINDOW / LEAD TIME ANALYSIS ───────────────────────────────────
+
+function initBookingWindow() {
+  // Set a sensible default pickup date — next month's 15th
+  const el = document.getElementById('booking-pickup-date');
+  if (el && !el.value) {
+    const d = new Date();
+    d.setMonth(d.getMonth() + 1);
+    d.setDate(15);
+    el.value = d.toISOString().slice(0, 10);
+  }
+  // Don't auto-load — let user pick the date
+}
+
+async function loadBookingWindow() {
+  const pickupDate = document.getElementById('booking-pickup-date')?.value;
+  const category   = document.getElementById('booking-category')?.value || '';
+  const location   = document.getElementById('filter-location')?.value || '';
+
+  const prompt    = document.getElementById('booking-prompt');
+  const chartCard = document.getElementById('booking-chart-card');
+  const loading   = document.getElementById('booking-loading');
+  const noData    = document.getElementById('booking-no-data');
+  const insights  = document.getElementById('booking-insights');
+
+  if (!pickupDate) {
+    if (prompt)    prompt.style.display = '';
+    if (chartCard) chartCard.style.display = 'none';
+    if (insights)  insights.style.display = 'none';
+    return;
+  }
+
+  if (prompt)    prompt.style.display = 'none';
+  if (chartCard) chartCard.style.display = '';
+  if (loading)   loading.style.display = '';
+  if (noData)    noData.style.display = 'none';
+  if (insights)  insights.style.display = 'none';
+
+  // Update title
+  const titleEl = document.getElementById('booking-chart-title');
+  const dt = new Date(pickupDate + 'T00:00:00');
+  const dateLabel = dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  if (titleEl) titleEl.textContent = `Price Trajectory — Pickup ${dateLabel}${category ? ' · ' + category : ''}`;
+
+  try {
+    const params = new URLSearchParams({ pickup_date: pickupDate });
+    if (category) params.set('category', category);
+    if (location) params.set('location', location);
+    const data = await apiFetch(`/api/rates/booking-window?${params}`);
+    renderBookingChart(data, pickupDate);
+  } catch (e) {
+    if (noData) noData.style.display = '';
+    showToast(`Booking window load failed: ${e.message}`, 'error');
+  } finally {
+    if (loading) loading.style.display = 'none';
+  }
+}
+
+function renderBookingChart(data, pickupDate) {
+  const series    = data.series || {};
+  const noData    = document.getElementById('booking-no-data');
+  const insights  = document.getElementById('booking-insights');
+  const insCards  = document.getElementById('booking-insight-cards');
+
+  const competitors = Object.keys(series).sort();
+  if (!competitors.length) {
+    if (noData)   noData.style.display = '';
+    if (insights) insights.style.display = 'none';
+    return;
+  }
+
+  // Collect all scrape dates, sorted ascending
+  const dateSet = new Set();
+  competitors.forEach(c => series[c].forEach(p => dateSet.add(p.scraped_at.slice(0,10))));
+  const scrapeDates = Array.from(dateSet).sort();
+
+  const pickup = new Date(pickupDate + 'T00:00:00');
+
+  // Labels: "X weeks before pickup" (or the date if too close)
+  const labels = scrapeDates.map(d => {
+    const scrape = new Date(d + 'T00:00:00');
+    const diffMs = pickup - scrape;
+    const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+    const diffWeeks = Math.round(diffDays / 7);
+    if (diffDays <= 0) return 'Pickup day';
+    if (diffDays < 7)  return `${diffDays}d before`;
+    return `${diffWeeks}w before`;
+  });
+
+  const datasets = competitors.map((comp, i) => {
+    const priceMap = {};
+    series[comp].forEach(p => { priceMap[p.scraped_at.slice(0,10)] = p.per_day; });
+    return {
+      label: comp,
+      data: scrapeDates.map(d => priceMap[d] ?? null),
+      borderColor: compColor(comp, i),
+      backgroundColor: compColor(comp, i) + '18',
+      tension: 0.35,
+      pointRadius: 5,
+      pointHoverRadius: 7,
+      borderWidth: 2.5,
+      spanGaps: false,
+    };
+  });
+
+  const isDark    = document.body.classList.contains('dark-mode');
+  const gridColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
+  const tickColor = isDark ? '#9ca3af' : '#6b7280';
+
+  const canvas = document.getElementById('booking-chart');
+  if (!canvas) return;
+
+  if (state.bookingChart) state.bookingChart.destroy();
+  state.bookingChart = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { color: tickColor, boxWidth: 12, padding: 16, font: { size: 12 } } },
+        tooltip: {
+          callbacks: {
+            title: items => {
+              const d = scrapeDates[items[0].dataIndex];
+              const dt2 = new Date(d + 'T00:00:00');
+              return 'Scraped: ' + dt2.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+            },
+            label: ctx => ctx.parsed.y != null
+              ? ` ${ctx.dataset.label}: ${formatISK(ctx.parsed.y)}/day`
+              : ` ${ctx.dataset.label}: no data`,
+          },
+        },
+      },
+      scales: {
+        x: { grid: { color: gridColor }, ticks: { color: tickColor, font: { size: 11 } } },
+        y: { grid: { color: gridColor }, ticks: { color: tickColor, font: { size: 11 }, callback: v => formatISK(v) } },
+      },
+    },
+  });
+
+  // Insight cards: first vs last price per competitor
+  if (insCards && scrapeDates.length >= 2) {
+    const firstDate = scrapeDates[0];
+    const lastDate  = scrapeDates[scrapeDates.length - 1];
+    insCards.innerHTML = competitors.map((comp, i) => {
+      const priceMap = {};
+      series[comp].forEach(p => { priceMap[p.scraped_at.slice(0,10)] = p.per_day; });
+      const first = priceMap[firstDate];
+      const last  = priceMap[lastDate];
+      if (!first || !last) return '';
+      const pct  = Math.round((last / first - 1) * 100);
+      const isUp = pct > 0;
+      const color = compColor(comp, i);
+      const trend = pct === 0 ? 'Stable' : (isUp ? `↑ +${pct}% since first scrape` : `↓ ${pct}% since first scrape`);
+      const trendColor = pct === 0 ? '#6b7280' : isUp ? '#dc2626' : '#16a34a';
+      return `<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px 16px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0"></div>
+          <div style="font-size:12px;font-weight:600;color:var(--text)">${escHtml(comp)}</div>
+        </div>
+        <div style="font-size:20px;font-weight:700;color:var(--text)">${formatISK(last)}<span style="font-size:11px;color:var(--text-muted);font-weight:400">/day</span></div>
+        <div style="font-size:11px;margin-top:4px;color:${trendColor};font-weight:600">${trend}</div>
+      </div>`;
+    }).join('');
+    insights.style.display = '';
+  }
 }
 
 // ── FORWARD RATES (HORIZON) VIEW ───────────────────────────────────────────

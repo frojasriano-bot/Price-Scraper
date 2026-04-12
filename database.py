@@ -1458,3 +1458,138 @@ async def get_insurance_reviews(limit: int = 10) -> list[dict]:
             d["companies_verified"] = []
         result.append(d)
     return result
+
+
+async def get_price_timeline(
+    days: int = 30,
+    min_change_pct: float = 5.0,
+    category: str = None,
+    location: str = None,
+) -> list[dict]:
+    """
+    Return all meaningful price changes across competitors within the lookback window.
+    Compares consecutive scrape snapshots per competitor × canonical_name × location.
+    Returns events sorted by scraped_at DESC.
+    """
+    from datetime import date as _date, timedelta
+    cutoff = (_date.today() - timedelta(days=days)).isoformat()
+
+    conds = ["scraped_at >= ?"]
+    params: list = [cutoff]
+    if category:
+        conds.append("car_category = ?")
+        params.append(category)
+    if location:
+        conds.append("location = ?")
+        params.append(location)
+
+    where = "WHERE " + " AND ".join(conds)
+
+    # Get per-competitor × canonical_name × scrape-day avg per-day price
+    query = f"""
+        SELECT
+            competitor,
+            location,
+            canonical_name,
+            car_category,
+            DATE(scraped_at) AS scrape_date,
+            MAX(scraped_at)  AS scraped_at,
+            AVG(CAST(price_isk AS REAL) / (julianday(return_date) - julianday(pickup_date))) AS per_day
+        FROM rates
+        {where}
+          AND julianday(return_date) > julianday(pickup_date)
+        GROUP BY competitor, location, canonical_name, car_category, DATE(scraped_at)
+        ORDER BY competitor, location, canonical_name, scrape_date ASC
+    """
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(query, params) as cur:
+            rows = [dict(r) for r in await cur.fetchall()]
+
+    if not rows:
+        return []
+
+    # Group into time series per competitor × model × location
+    from collections import defaultdict
+    series: dict = defaultdict(list)
+    for r in rows:
+        key = (r["competitor"], r["location"], r["canonical_name"], r["car_category"])
+        series[key].append(r)
+
+    events = []
+    for key, snapshots in series.items():
+        competitor, loc, model, cat = key
+        for i in range(1, len(snapshots)):
+            prev = snapshots[i - 1]
+            curr = snapshots[i]
+            if not prev["per_day"] or not curr["per_day"] or prev["per_day"] == 0:
+                continue
+            change_pct = (curr["per_day"] / prev["per_day"] - 1) * 100
+            if abs(change_pct) < min_change_pct:
+                continue
+            events.append({
+                "competitor":     competitor,
+                "location":       loc,
+                "canonical_name": model,
+                "car_category":   cat,
+                "scraped_at":     curr["scraped_at"],
+                "prev_per_day":   round(prev["per_day"]),
+                "curr_per_day":   round(curr["per_day"]),
+                "change_pct":     round(change_pct, 1),
+                "direction":      "up" if change_pct > 0 else "down",
+            })
+
+    # Sort by most recent first
+    events.sort(key=lambda e: e["scraped_at"], reverse=True)
+    return events
+
+
+async def get_booking_window(
+    pickup_date: str,
+    category: str = None,
+    location: str = None,
+) -> dict:
+    """
+    For a specific future pickup date, return how per-day prices have changed
+    across successive scrape snapshots — one entry per competitor per scrape date.
+    """
+    conds = ["pickup_date = ?"]
+    params: list = [pickup_date]
+    if category:
+        conds.append("car_category = ?")
+        params.append(category)
+    if location:
+        conds.append("location = ?")
+        params.append(location)
+
+    where = "WHERE " + " AND ".join(conds)
+
+    query = f"""
+        SELECT
+            competitor,
+            DATE(scraped_at)  AS scrape_date,
+            MAX(scraped_at)   AS scraped_at,
+            AVG(CAST(price_isk AS REAL) / (julianday(return_date) - julianday(pickup_date))) AS per_day
+        FROM rates
+        {where}
+          AND julianday(return_date) > julianday(pickup_date)
+        GROUP BY competitor, DATE(scraped_at)
+        ORDER BY competitor, scrape_date ASC
+    """
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(query, params) as cur:
+            rows = [dict(r) for r in await cur.fetchall()]
+
+    # Group by competitor → list of {scraped_at, per_day}
+    series: dict = {}
+    for r in rows:
+        comp = r["competitor"]
+        series.setdefault(comp, []).append({
+            "scraped_at": r["scraped_at"],
+            "per_day":    round(r["per_day"]) if r["per_day"] else None,
+        })
+
+    return {"pickup_date": pickup_date, "series": series}

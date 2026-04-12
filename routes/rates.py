@@ -30,6 +30,8 @@ from database import (
     get_per_competitor_price_changes,
     get_horizon_rates,
     get_model_horizon,
+    get_price_timeline,
+    get_booking_window,
     log_scrape,
     get_scrape_log,
 )
@@ -907,3 +909,41 @@ async def get_model_horizon_endpoint(
         "series": series,
         "source": "database" if series else "none",
     }
+
+
+@router.get("/price-timeline")
+async def get_price_timeline_endpoint(
+    days:           int            = Query(30,  ge=1,   le=365),
+    min_change_pct: float          = Query(5.0, ge=0.5, le=50.0),
+    category:       Optional[str]  = Query(None),
+    location:       Optional[str]  = Query(None),
+):
+    """
+    Return all meaningful per-day price changes across competitors within the lookback window.
+    Compares consecutive scrape snapshots per competitor × model.
+    """
+    events = await get_price_timeline(
+        days=days,
+        min_change_pct=min_change_pct,
+        category=category,
+        location=location,
+    )
+    return {"events": events, "count": len(events)}
+
+
+@router.get("/booking-window")
+async def get_booking_window_endpoint(
+    pickup_date: str           = Query(..., description="YYYY-MM-DD — the future pickup date to analyse"),
+    category:    Optional[str] = Query(None),
+    location:    Optional[str] = Query(None),
+):
+    """
+    For a specific future pickup date, return how competitor prices have changed
+    across successive weekly scrapes — reveals lead-time pricing behaviour.
+    """
+    data = await get_booking_window(
+        pickup_date=pickup_date,
+        category=category,
+        location=location,
+    )
+    return data
