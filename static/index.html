@@ -222,6 +222,10 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
             Booking Window
           </button>
+          <button class="btn btn-secondary btn-sm view-toggle" id="btn-winloss-view" onclick="setRatesView('win-loss')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+            Win/Loss
+          </button>
         </div>
 
         <!-- LIST VIEW: Chart on top, full-width table below -->
@@ -726,6 +730,59 @@
           </div>
 
         </div><!-- /view-booking-window -->
+
+
+        <!-- ═══════════════════════════════════════════════════
+             WIN/LOSS SCORECARD VIEW
+        ═══════════════════════════════════════════════════ -->
+        <div id="view-win-loss" style="display:none">
+
+          <!-- Loading indicator -->
+          <div id="wl-loading-bar" style="display:none;text-align:center;padding:32px;color:var(--text-muted);font-size:13px">
+            <span class="spinner" style="border-color:rgba(0,0,0,.15);border-top-color:#2563eb;width:16px;height:16px;display:inline-block;margin-right:8px"></span>
+            Loading scorecard…
+          </div>
+
+          <!-- Per-competitor summary strip -->
+          <div id="wl-summary-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;margin-bottom:16px"></div>
+
+          <!-- Category × Competitor grid -->
+          <div class="card" id="wl-grid-card" style="display:none">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Win Rate by Category</div>
+                <div class="card-subtitle" id="wl-grid-subtitle">% of comparable models where Blue is cheaper · click any cell to drill down</div>
+              </div>
+              <div style="font-size:11px;color:var(--text-muted);display:flex;gap:10px;align-items:center">
+                <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:rgba(22,163,74,.25);display:inline-block"></span>≥60% wins</span>
+                <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:rgba(202,138,4,.25);display:inline-block"></span>40–59%</span>
+                <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:rgba(220,38,38,.25);display:inline-block"></span>&lt;40%</span>
+              </div>
+            </div>
+            <div id="wl-cat-grid" style="overflow-x:auto"></div>
+          </div>
+
+          <!-- Model drill-down panel (shown on cell click) -->
+          <div class="card" id="wl-drill-card" style="display:none;margin-top:16px">
+            <div class="card-header">
+              <div>
+                <div class="card-title" id="wl-drill-title">Model Detail</div>
+                <div class="card-subtitle" id="wl-drill-subtitle"></div>
+              </div>
+              <button class="btn btn-secondary btn-sm" onclick="closeWLDrill()">✕ Close</button>
+            </div>
+            <div id="wl-drill-table" style="overflow-x:auto"></div>
+          </div>
+
+          <!-- Empty state -->
+          <div id="wl-empty" style="display:none;padding:60px 40px;text-align:center;color:var(--text-muted)">
+            <div style="font-size:48px;margin-bottom:12px">🏆</div>
+            <div style="font-size:16px;font-weight:600;margin-bottom:6px;color:var(--text)">No comparison data yet</div>
+            <div style="font-size:13px">Scrape some rates first — then come back here to see how Blue stacks up.</div>
+          </div>
+
+        </div><!-- /view-win-loss -->
+
 
       </div><!-- /tab-rates -->
 

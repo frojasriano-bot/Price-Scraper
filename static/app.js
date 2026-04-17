@@ -243,6 +243,7 @@ function setRatesView(view) {
   document.getElementById('view-horizon-fwd').style.display    = view === 'horizon-fwd'    ? '' : 'none';
   document.getElementById('view-timeline').style.display       = view === 'timeline'       ? '' : 'none';
   document.getElementById('view-booking-window').style.display = view === 'booking-window' ? '' : 'none';
+  document.getElementById('view-win-loss').style.display       = view === 'win-loss'       ? '' : 'none';
   document.getElementById('btn-list-view').classList.toggle('active',     view === 'list');
   document.getElementById('btn-matrix-view').classList.toggle('active',   view === 'matrix');
   document.getElementById('btn-history-view').classList.toggle('active',  view === 'history');
@@ -250,12 +251,14 @@ function setRatesView(view) {
   document.getElementById('btn-horizon-view').classList.toggle('active',  view === 'horizon-fwd');
   document.getElementById('btn-timeline-view').classList.toggle('active', view === 'timeline');
   document.getElementById('btn-booking-view').classList.toggle('active',  view === 'booking-window');
+  document.getElementById('btn-winloss-view').classList.toggle('active',  view === 'win-loss');
   if (view === 'matrix'         && !state.matrix)       loadMatrix();
   if (view === 'history')                               loadHistory();
   if (view === 'seasonal'       && !state.seasonalData) loadSeasonal();
   if (view === 'horizon-fwd'    && !state.horizonData)  loadHorizon();
   if (view === 'timeline')                              loadTimeline();
   if (view === 'booking-window')                        initBookingWindow();
+  if (view === 'win-loss')                              loadWinLoss();
 }
 
 // ── SCHEDULER STATUS ───────────────────────────────────────────────────────
@@ -4106,6 +4109,255 @@ function escHtml(str) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+// ── Win/Loss Scorecard ─────────────────────────────────────────────────────
+// Module-level state so drill-down survives re-renders
+let _wlData       = null;  // full API response
+let _wlDrillComp  = null;  // currently drilled competitor
+let _wlDrillCat   = null;  // currently drilled category (null = all)
+
+async function loadWinLoss() {
+  const loadingBar = document.getElementById('wl-loading-bar');
+  const gridCard   = document.getElementById('wl-grid-card');
+  const emptyEl    = document.getElementById('wl-empty');
+  const summaryEl  = document.getElementById('wl-summary-cards');
+
+  loadingBar.style.display = '';
+  gridCard.style.display   = 'none';
+  emptyEl.style.display    = 'none';
+  summaryEl.innerHTML      = '';
+  closeWLDrill();
+
+  try {
+    const loc = document.getElementById('filter-location')?.value || '';
+    const qs  = loc ? `?location=${encodeURIComponent(loc)}` : '';
+    _wlData = await apiFetch(`/api/rates/win-loss${qs}`);
+
+    if (!_wlData.models || _wlData.models.length === 0) {
+      emptyEl.style.display = '';
+    } else {
+      renderWLSummary();
+      renderWLCategoryGrid();
+      gridCard.style.display = '';
+    }
+  } catch (e) {
+    showToast('Failed to load Win/Loss data: ' + e.message, 'error');
+    emptyEl.style.display = '';
+  } finally {
+    loadingBar.style.display = 'none';
+  }
+}
+
+function renderWLSummary() {
+  const container = document.getElementById('wl-summary-cards');
+  if (!_wlData) return;
+
+  // Compute grand totals for context
+  const comps = _wlData.competitors;
+  container.innerHTML = comps.map(comp => {
+    const s = _wlData.summary[comp];
+    if (!s || s.total_compared === 0) return '';
+
+    const pct      = s.win_rate_pct;
+    const barColor = pct >= 60 ? '#16a34a' : pct >= 40 ? '#ca8a04' : '#dc2626';
+
+    const winMarginLine = s.avg_win_margin_pct !== null
+      ? `<div style="margin-top:6px;font-size:11px;color:var(--text-muted)">Avg win: <b style="color:#15803d">${s.avg_win_margin_pct}%</b> cheaper</div>`
+      : '';
+    const lossMarginLine = s.avg_loss_margin_pct !== null
+      ? `<div style="font-size:11px;color:var(--text-muted)">Avg loss: <b style="color:#b91c1c">${s.avg_loss_margin_pct}%</b> pricier</div>`
+      : '';
+
+    return `
+      <div class="card" style="padding:14px 16px">
+        <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(comp)}">${esc(comp)}</div>
+        <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:6px">
+          <span style="font-size:30px;font-weight:800;line-height:1;color:${barColor}">${pct}%</span>
+          <span style="font-size:11px;color:var(--text-muted)">win rate</span>
+        </div>
+        <div style="height:5px;border-radius:3px;background:var(--border);margin-bottom:12px;overflow:hidden">
+          <div style="height:100%;background:${barColor};width:${pct}%;border-radius:3px;transition:width .5s ease"></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;text-align:center;margin-bottom:8px">
+          <div style="background:rgba(22,163,74,.1);border:1px solid rgba(22,163,74,.2);border-radius:6px;padding:6px 2px">
+            <div style="font-size:18px;font-weight:700;color:#16a34a">${s.wins}</div>
+            <div style="font-size:10px;color:#15803d;font-weight:600">WINS</div>
+          </div>
+          <div style="background:rgba(202,138,4,.1);border:1px solid rgba(202,138,4,.2);border-radius:6px;padding:6px 2px">
+            <div style="font-size:18px;font-weight:700;color:#854d0e">${s.ties}</div>
+            <div style="font-size:10px;color:#854d0e;font-weight:600">TIES</div>
+          </div>
+          <div style="background:rgba(220,38,38,.1);border:1px solid rgba(220,38,38,.2);border-radius:6px;padding:6px 2px">
+            <div style="font-size:18px;font-weight:700;color:#dc2626">${s.losses}</div>
+            <div style="font-size:10px;color:#b91c1c;font-weight:600">LOSSES</div>
+          </div>
+        </div>
+        ${winMarginLine}${lossMarginLine}
+        <div style="margin-top:4px;font-size:11px;color:var(--text-muted)">${s.total_compared} models compared</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderWLCategoryGrid() {
+  const container = document.getElementById('wl-cat-grid');
+  const subtitleEl = document.getElementById('wl-grid-subtitle');
+  if (!_wlData) return;
+
+  // Only show categories with actual data
+  const CAT_ORDER = ['Economy', 'Compact', 'SUV', '4x4', 'Minivan'];
+  const categories = CAT_ORDER.filter(c => _wlData.by_category[c]);
+  const comps = _wlData.competitors.filter(
+    c => _wlData.summary[c] && _wlData.summary[c].total_compared > 0
+  );
+
+  if (!categories.length || !comps.length) {
+    container.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">No category data available</div>';
+    return;
+  }
+
+  const threshold = _wlData.threshold_pct || 5;
+  subtitleEl.textContent = `% of comparable models where Blue is cheaper (threshold ±${threshold}%) · click any cell to drill down`;
+
+  // Build header
+  let html = `<table class="rate-table" style="width:100%;border-collapse:collapse">
+    <thead>
+      <tr>
+        <th style="text-align:left;padding:10px 14px;font-size:12px">Competitor</th>
+        ${categories.map(c => `<th style="text-align:center;padding:10px 8px;font-size:12px">${c}</th>`).join('')}
+        <th style="text-align:center;padding:10px 8px;font-size:12px;border-left:2px solid var(--border)">Overall</th>
+      </tr>
+    </thead>
+    <tbody>`;
+
+  for (const comp of comps) {
+    const overall = _wlData.summary[comp];
+    html += `<tr>`;
+    html += `<td style="padding:10px 14px;font-weight:600;font-size:13px">${esc(comp)}</td>`;
+
+    for (const cat of categories) {
+      const cell = _wlData.by_category[cat] && _wlData.by_category[cat][comp];
+      if (!cell || cell.total === 0) {
+        html += `<td style="text-align:center;padding:10px 8px;color:var(--text-muted);font-size:12px">—</td>`;
+        continue;
+      }
+      const pct = cell.win_rate_pct;
+      const bg  = pct >= 60 ? 'rgba(22,163,74,.15)'  : pct >= 40 ? 'rgba(202,138,4,.15)'  : 'rgba(220,38,38,.15)';
+      const col = pct >= 60 ? '#15803d'               : pct >= 40 ? '#854d0e'               : '#b91c1c';
+      html += `
+        <td style="text-align:center;padding:8px 6px;cursor:pointer"
+            onclick="drillWL('${esc(comp)}', '${cat}')"
+            title="${cat}: ${cell.wins}W / ${cell.ties}T / ${cell.losses}L — click to see models">
+          <div style="display:inline-flex;flex-direction:column;align-items:center;min-width:66px;padding:5px 8px;border-radius:7px;background:${bg};color:${col}">
+            <span style="font-size:15px;font-weight:800">${pct}%</span>
+            <span style="font-size:10px;opacity:.8">${cell.wins}W · ${cell.ties}T · ${cell.losses}L</span>
+          </div>
+        </td>`;
+    }
+
+    // Overall column
+    const oPct = overall.win_rate_pct;
+    const oBg  = oPct >= 60 ? 'rgba(22,163,74,.2)'  : oPct >= 40 ? 'rgba(202,138,4,.2)'  : 'rgba(220,38,38,.2)';
+    const oCol = oPct >= 60 ? '#15803d'              : oPct >= 40 ? '#854d0e'              : '#b91c1c';
+    html += `
+      <td style="text-align:center;padding:8px 6px;border-left:2px solid var(--border);cursor:pointer"
+          onclick="drillWL('${esc(comp)}', null)"
+          title="All categories — click to see all models">
+        <div style="display:inline-flex;flex-direction:column;align-items:center;min-width:66px;padding:5px 8px;border-radius:7px;background:${oBg};color:${oCol}">
+          <span style="font-size:16px;font-weight:800">${oPct}%</span>
+          <span style="font-size:10px;opacity:.8">${overall.wins}W · ${overall.ties}T · ${overall.losses}L</span>
+        </div>
+      </td>
+    `;
+    html += `</tr>`;
+  }
+
+  html += `</tbody></table>`;
+  container.innerHTML = html;
+}
+
+function drillWL(comp, cat) {
+  _wlDrillComp = comp;
+  _wlDrillCat  = cat || null;
+  renderWLDrill();
+}
+
+function closeWLDrill() {
+  _wlDrillComp = null;
+  _wlDrillCat  = null;
+  const card = document.getElementById('wl-drill-card');
+  if (card) card.style.display = 'none';
+}
+
+function renderWLDrill() {
+  const card      = document.getElementById('wl-drill-card');
+  const titleEl   = document.getElementById('wl-drill-title');
+  const subtitleEl = document.getElementById('wl-drill-subtitle');
+  const tableEl   = document.getElementById('wl-drill-table');
+
+  if (!_wlData || !_wlDrillComp) { card.style.display = 'none'; return; }
+
+  // Filter to models that have a price for the drilled competitor
+  const models = _wlData.models.filter(m => {
+    if (!m.vs[_wlDrillComp]) return false;
+    if (_wlDrillCat && m.category !== _wlDrillCat) return false;
+    return true;
+  });
+
+  // Sort: wins first, then ties, then losses; within wins biggest margin first
+  const OUTCOME_ORDER = { win: 0, tie: 1, loss: 2 };
+  models.sort((a, b) => {
+    const av = a.vs[_wlDrillComp], bv = b.vs[_wlDrillComp];
+    const orderDiff = OUTCOME_ORDER[av.outcome] - OUTCOME_ORDER[bv.outcome];
+    if (orderDiff !== 0) return orderDiff;
+    // Within wins: more negative margin (Blue cheaper) = bigger win → first
+    return av.margin_pct - bv.margin_pct;
+  });
+
+  const catLabel = _wlDrillCat ? ` — ${_wlDrillCat}` : ' — All Categories';
+  titleEl.textContent   = `Blue vs ${_wlDrillComp}${catLabel}`;
+  subtitleEl.textContent = `${models.length} comparable model${models.length !== 1 ? 's' : ''} · negative margin = Blue is cheaper (a win)`;
+
+  let html = `<table class="rate-table" style="width:100%;border-collapse:collapse">
+    <thead>
+      <tr>
+        <th style="text-align:left;padding:10px 14px;font-size:12px">Model</th>
+        <th style="text-align:left;padding:10px 8px;font-size:12px">Category</th>
+        <th style="text-align:right;padding:10px 12px;font-size:12px">Blue Price</th>
+        <th style="text-align:right;padding:10px 12px;font-size:12px">${esc(_wlDrillComp)}</th>
+        <th style="text-align:center;padding:10px 8px;font-size:12px">Outcome</th>
+        <th style="text-align:right;padding:10px 12px;font-size:12px">Margin</th>
+      </tr>
+    </thead>
+    <tbody>`;
+
+  for (const m of models) {
+    const v = m.vs[_wlDrillComp];
+    const outBg    = v.outcome === 'win'  ? 'rgba(22,163,74,.15)'  : v.outcome === 'loss' ? 'rgba(220,38,38,.15)' : 'rgba(202,138,4,.15)';
+    const outCol   = v.outcome === 'win'  ? '#15803d'               : v.outcome === 'loss' ? '#b91c1c'             : '#854d0e';
+    const outLabel = v.outcome === 'win'  ? '✓ Win'                 : v.outcome === 'loss' ? '✗ Loss'              : '≈ Tie';
+    const mColor   = v.margin_pct < 0 ? '#15803d' : v.margin_pct > 0 ? '#b91c1c' : '#6b7280';
+    const mStr     = v.margin_pct === 0 ? '0%' : (v.margin_pct > 0 ? '+' : '') + v.margin_pct + '%';
+
+    html += `
+      <tr>
+        <td style="padding:10px 14px;font-weight:600;font-size:13px">${esc(m.canonical_name)}</td>
+        <td style="padding:10px 8px;font-size:12px;color:var(--text-muted)">${esc(m.category)}</td>
+        <td style="padding:10px 12px;text-align:right;font-size:13px;font-family:monospace">${m.blue_price_isk.toLocaleString()} ISK</td>
+        <td style="padding:10px 12px;text-align:right;font-size:13px;font-family:monospace">${v.price_isk.toLocaleString()} ISK</td>
+        <td style="padding:10px 8px;text-align:center">
+          <span style="display:inline-block;padding:3px 11px;border-radius:20px;background:${outBg};color:${outCol};font-weight:700;font-size:12px">${outLabel}</span>
+        </td>
+        <td style="padding:10px 12px;text-align:right;font-weight:700;font-size:13px;color:${mColor}">${mStr}</td>
+      </tr>`;
+  }
+
+  html += `</tbody></table>`;
+  tableEl.innerHTML = html;
+  card.style.display = '';
+  // Smooth scroll into view
+  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────

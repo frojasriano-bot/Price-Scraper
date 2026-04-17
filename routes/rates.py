@@ -832,6 +832,163 @@ async def get_seasonal_gap_by_model(
     }
 
 
+@router.get("/win-loss")
+async def get_win_loss(
+    location: Optional[str] = Query(None),
+    category: Optional[str] = Query(None),
+    threshold: float = Query(5.0, ge=0.5, le=30.0, description="Min % difference to count as win/loss (default 5%)"),
+):
+    """
+    Win/Loss scorecard: Blue Car Rental vs each competitor.
+
+    Uses the most recent scraped rates (same snapshot as the matrix view).
+    Compares every canonical car model where BOTH Blue AND a competitor have
+    a current price.
+
+    Outcome per model × competitor pair:
+      - 'win'  → Blue is cheaper by more than `threshold` %
+      - 'loss' → Blue is more expensive by more than `threshold` %
+      - 'tie'  → within ± threshold %
+
+    margin_pct convention: positive = Blue more expensive, negative = Blue cheaper.
+
+    Response:
+    {
+      "competitors": [...],
+      "threshold_pct": 5.0,
+      "summary": {
+        "Go Car Rental": {
+          "wins": 5, "ties": 2, "losses": 3, "total_compared": 10,
+          "win_rate_pct": 50.0,
+          "avg_win_margin_pct": 12.4,
+          "avg_loss_margin_pct": 8.1
+        }
+      },
+      "by_category": {
+        "Economy": {
+          "Go Car Rental": {"wins": 2, "ties": 1, "losses": 0, "total": 3, "win_rate_pct": 66.7}
+        }
+      },
+      "models": [
+        {
+          "canonical_name": "Toyota Yaris",
+          "category": "Economy",
+          "blue_price_isk": 7200,
+          "vs": {
+            "Go Car Rental": {"price_isk": 8100, "outcome": "win", "margin_pct": -11.1}
+          }
+        }
+      ],
+      "source": "database|mock"
+    }
+    """
+    BLUE = "Blue Car Rental"
+    competitors_list = [c for c in _COMPETITOR_NAMES if c != BLUE]
+
+    matrix_data = await get_rates_matrix(location=location, category=category)
+    cars = matrix_data["cars"]
+    source = "database" if cars else "mock"
+
+    # Per-competitor running totals
+    summary: dict[str, dict] = {
+        comp: {"wins": 0, "ties": 0, "losses": 0, "win_margins": [], "loss_margins": []}
+        for comp in competitors_list
+    }
+    # by_category[category][competitor] = {wins, ties, losses, total}
+    by_category: dict[str, dict[str, dict]] = {}
+
+    model_rows: list[dict] = []
+
+    for car in cars:
+        blue_entry = car["prices"].get(BLUE)
+        if not blue_entry:
+            continue  # Blue has no price for this model — nothing to compare
+        blue_price = blue_entry["price_isk"]
+        cat = car["category"]
+
+        vs: dict = {}
+        for comp in competitors_list:
+            comp_entry = car["prices"].get(comp)
+            if not comp_entry:
+                continue
+            comp_price = comp_entry["price_isk"]
+            if not comp_price or comp_price == 0:
+                continue
+
+            # positive = Blue more expensive, negative = Blue cheaper
+            margin_pct = round((blue_price / comp_price - 1) * 100, 1)
+
+            if margin_pct < -threshold:
+                outcome = "win"
+            elif margin_pct > threshold:
+                outcome = "loss"
+            else:
+                outcome = "tie"
+
+            vs[comp] = {
+                "price_isk": comp_price,
+                "outcome":   outcome,
+                "margin_pct": margin_pct,
+            }
+
+            # Map outcome to its plural key name
+            outcome_key = "wins" if outcome == "win" else "ties" if outcome == "tie" else "losses"
+
+            # Aggregate into summary
+            summary[comp][outcome_key] += 1
+            if outcome == "win":
+                summary[comp]["win_margins"].append(abs(margin_pct))
+            elif outcome == "loss":
+                summary[comp]["loss_margins"].append(abs(margin_pct))
+
+            # Aggregate into by_category
+            if cat not in by_category:
+                by_category[cat] = {}
+            if comp not in by_category[cat]:
+                by_category[cat][comp] = {"wins": 0, "ties": 0, "losses": 0, "total": 0}
+            by_category[cat][comp][outcome_key] += 1
+            by_category[cat][comp]["total"] += 1
+
+        if vs:
+            model_rows.append({
+                "canonical_name": car["canonical_name"],
+                "category":       cat,
+                "blue_price_isk": blue_price,
+                "vs":             vs,
+            })
+
+    # Finalise per-competitor summary
+    final_summary: dict[str, dict] = {}
+    for comp, acc in summary.items():
+        total = acc["wins"] + acc["ties"] + acc["losses"]
+        wm = acc["win_margins"]
+        lm = acc["loss_margins"]
+        final_summary[comp] = {
+            "wins":               acc["wins"],
+            "ties":               acc["ties"],
+            "losses":             acc["losses"],
+            "total_compared":     total,
+            "win_rate_pct":       round(acc["wins"] / total * 100, 1) if total else 0,
+            "avg_win_margin_pct":  round(sum(wm) / len(wm), 1) if wm else None,
+            "avg_loss_margin_pct": round(sum(lm) / len(lm), 1) if lm else None,
+        }
+
+    # Add win_rate_pct to each by_category cell
+    for cat_data in by_category.values():
+        for comp_data in cat_data.values():
+            t = comp_data["total"]
+            comp_data["win_rate_pct"] = round(comp_data["wins"] / t * 100, 1) if t else 0
+
+    return {
+        "competitors":   competitors_list,
+        "threshold_pct": threshold,
+        "summary":       final_summary,
+        "by_category":   by_category,
+        "models":        model_rows,
+        "source":        source,
+    }
+
+
 @router.get("/price-changes")
 async def get_price_changes(
     location: Optional[str] = Query(None),
