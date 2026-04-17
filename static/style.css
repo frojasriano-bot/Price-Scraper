@@ -500,6 +500,46 @@ td.price-own-best { background: #dcfce7; color: #15803d; font-weight: 700; }
   font-size: 12px;
 }
 
+/* Sub-tab buttons — lighter style below the group nav */
+.btn-subtab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+  white-space: nowrap;
+}
+.btn-subtab:hover {
+  background: var(--bg-alt);
+  color: var(--text);
+}
+.btn-subtab.active {
+  background: var(--blue-50);
+  color: var(--blue-700);
+  border-color: var(--blue-200);
+  font-weight: 600;
+}
+body.dark-mode .btn-subtab {
+  border-color: rgba(255,255,255,0.1);
+  color: #9ca3af;
+}
+body.dark-mode .btn-subtab:hover {
+  background: #1e293b;
+  color: #d1d5db;
+}
+body.dark-mode .btn-subtab.active {
+  background: rgba(59,130,246,0.15);
+  color: #93c5fd;
+  border-color: rgba(59,130,246,0.3);
+}
+
 .btn svg {
   width: 15px;
   height: 15px;

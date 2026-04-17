@@ -34,7 +34,8 @@ function toggleTheme() {
 // ── State ──────────────────────────────────────────────────────────────────
 const state = {
   currentTab: 'rates',
-  ratesView: 'list',  // 'list' | 'matrix' | 'history'
+  ratesGroup: 'now',   // 'now' | 'trends' | 'seasonal' | 'forward' | 'competitive'
+  ratesView: 'list',   // the active view within the current group
   rates: [],
   ratesSource: 'mock',
   ratesHistory: [],
@@ -234,24 +235,94 @@ function syncDateConstraints() {
 }
 
 // ── VIEW TOGGLE ────────────────────────────────────────────────────────────
+// ── Two-tier Rate Intelligence navigation ─────────────────────────────────
+
+// Which group each view belongs to
+const _VIEW_GROUP = {
+  'list':           'now',
+  'matrix':         'now',
+  'history':        'trends',
+  'timeline':       'trends',
+  'seasonal':       'seasonal',
+  'horizon-fwd':    'forward',
+  'booking-window': 'forward',
+  'win-loss':       'competitive',
+};
+
+// Default view shown when switching to a group
+const _GROUP_DEFAULT = {
+  'now':         'list',
+  'trends':      'history',
+  'seasonal':    'seasonal',
+  'forward':     'horizon-fwd',
+  'competitive': 'win-loss',
+};
+
+// All groups; those with sub-tabs
+const _ALL_GROUPS    = ['now', 'trends', 'seasonal', 'forward', 'competitive'];
+const _SUBTAB_GROUPS = ['now', 'trends', 'forward'];
+
+function setRatesGroup(group) {
+  state.ratesGroup = group;
+  // Activate correct group button
+  _ALL_GROUPS.forEach(g => {
+    document.getElementById(`grp-${g}`).classList.toggle('active', g === group);
+  });
+  // Show the right sub-tab bar (hide the others)
+  _SUBTAB_GROUPS.forEach(g => {
+    const el = document.getElementById(`subtabs-${g}`);
+    if (el) el.style.display = g === group ? 'flex' : 'none';
+  });
+  // Navigate to the default (or last remembered) view for this group
+  setRatesView(_GROUP_DEFAULT[group]);
+}
+
 function setRatesView(view) {
   state.ratesView = view;
-  document.getElementById('view-list').style.display           = view === 'list'           ? '' : 'none';
-  document.getElementById('view-matrix').style.display         = view === 'matrix'         ? '' : 'none';
-  document.getElementById('view-history').style.display        = view === 'history'        ? '' : 'none';
-  document.getElementById('view-seasonal').style.display       = view === 'seasonal'       ? '' : 'none';
-  document.getElementById('view-horizon-fwd').style.display    = view === 'horizon-fwd'    ? '' : 'none';
-  document.getElementById('view-timeline').style.display       = view === 'timeline'       ? '' : 'none';
-  document.getElementById('view-booking-window').style.display = view === 'booking-window' ? '' : 'none';
-  document.getElementById('view-win-loss').style.display       = view === 'win-loss'       ? '' : 'none';
-  document.getElementById('btn-list-view').classList.toggle('active',     view === 'list');
-  document.getElementById('btn-matrix-view').classList.toggle('active',   view === 'matrix');
-  document.getElementById('btn-history-view').classList.toggle('active',  view === 'history');
-  document.getElementById('btn-seasonal-view').classList.toggle('active', view === 'seasonal');
-  document.getElementById('btn-horizon-view').classList.toggle('active',  view === 'horizon-fwd');
-  document.getElementById('btn-timeline-view').classList.toggle('active', view === 'timeline');
-  document.getElementById('btn-booking-view').classList.toggle('active',  view === 'booking-window');
-  document.getElementById('btn-winloss-view').classList.toggle('active',  view === 'win-loss');
+  const group = _VIEW_GROUP[view] || 'now';
+
+  // If arriving from a different group, sync group nav + sub-tabs
+  if (group !== state.ratesGroup) {
+    state.ratesGroup = group;
+    _ALL_GROUPS.forEach(g => {
+      document.getElementById(`grp-${g}`).classList.toggle('active', g === group);
+    });
+    _SUBTAB_GROUPS.forEach(g => {
+      const el = document.getElementById(`subtabs-${g}`);
+      if (el) el.style.display = g === group ? 'flex' : 'none';
+    });
+  }
+
+  // Show the active view panel, hide the rest
+  const VIEW_PANEL_IDS = {
+    'list':           'view-list',
+    'matrix':         'view-matrix',
+    'history':        'view-history',
+    'seasonal':       'view-seasonal',
+    'horizon-fwd':    'view-horizon-fwd',
+    'timeline':       'view-timeline',
+    'booking-window': 'view-booking-window',
+    'win-loss':       'view-win-loss',
+  };
+  Object.entries(VIEW_PANEL_IDS).forEach(([v, id]) => {
+    document.getElementById(id).style.display = v === view ? '' : 'none';
+  });
+
+  // Update sub-tab active state
+  const SUB_TAB_IDS = {
+    'list':           'sub-list',
+    'matrix':         'sub-matrix',
+    'history':        'sub-history',
+    'timeline':       'sub-timeline',
+    'horizon-fwd':    'sub-horizon',
+    'booking-window': 'sub-booking',
+  };
+  Object.entries(SUB_TAB_IDS).forEach(([v, id]) => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('active', v === view);
+  });
+
+  // Data loading — unchanged from before
   if (view === 'matrix'         && !state.matrix)       loadMatrix();
   if (view === 'history')                               loadHistory();
   if (view === 'seasonal'       && !state.seasonalData) loadSeasonal();
