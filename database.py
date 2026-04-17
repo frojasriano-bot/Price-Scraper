@@ -1546,6 +1546,65 @@ async def get_price_timeline(
 
     # Sort by most recent first
     events.sort(key=lambda e: e["scraped_at"], reverse=True)
+
+    # ── Enrich events with Blue Car Rental's current market rank ──────────────
+    # For each (canonical_name, location) pair, fetch the most-recent per-day
+    # price for every competitor so we can show "Blue is #N/M cheapest".
+    if events:
+        from collections import defaultdict as _dd
+        model_names = list({e["canonical_name"] for e in events})
+        placeholders = ",".join("?" * len(model_names))
+
+        rank_query = f"""
+            WITH latest AS (
+                SELECT competitor, canonical_name, location,
+                       MAX(DATE(scraped_at)) AS max_date
+                FROM rates
+                WHERE julianday(return_date) > julianday(pickup_date)
+                  AND canonical_name IN ({placeholders})
+                GROUP BY competitor, canonical_name, location
+            )
+            SELECT r.competitor, r.canonical_name, r.location,
+                   AVG(CAST(r.price_isk AS REAL)
+                       / (julianday(r.return_date) - julianday(r.pickup_date))) AS per_day
+            FROM rates r
+            JOIN latest l
+              ON  r.competitor    = l.competitor
+              AND r.canonical_name = l.canonical_name
+              AND r.location      = l.location
+              AND DATE(r.scraped_at) = l.max_date
+            WHERE julianday(r.return_date) > julianday(r.pickup_date)
+            GROUP BY r.competitor, r.canonical_name, r.location
+        """
+        async with aiosqlite.connect(DB_PATH) as db2:
+            db2.row_factory = aiosqlite.Row
+            async with db2.execute(rank_query, model_names) as cur2:
+                rank_rows = [dict(r) for r in await cur2.fetchall()]
+
+        # Build lookup: (canonical_name, location) → {competitor: per_day}
+        market_prices: dict = _dd(dict)
+        for r in rank_rows:
+            market_prices[(r["canonical_name"], r["location"])][r["competitor"]] = r["per_day"]
+
+        for e in events:
+            prices = market_prices.get((e["canonical_name"], e["location"]), {})
+            if not prices:
+                continue
+            sorted_comps = sorted(prices.items(), key=lambda x: x[1])
+            blue_price = prices.get("Blue Car Rental")
+            if blue_price is not None:
+                rank = next(
+                    (i + 1 for i, (comp, _) in enumerate(sorted_comps) if comp == "Blue Car Rental"),
+                    None,
+                )
+                e["blue_per_day"]       = round(blue_price)
+                e["blue_rank"]          = rank
+                e["total_competitors"]  = len(sorted_comps)
+            else:
+                e["blue_per_day"]       = None
+                e["blue_rank"]          = None
+                e["total_competitors"]  = len(sorted_comps)
+
     return events
 
 

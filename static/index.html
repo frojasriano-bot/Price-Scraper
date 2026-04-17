@@ -683,6 +683,9 @@
               </div>
             </div>
           </div>
+          <!-- Drift summary — populated by renderTimelineDrift() -->
+          <div id="timeline-drift-bar" style="display:none;margin-bottom:12px"></div>
+
           <div id="timeline-loading" style="display:none;text-align:center;padding:40px;color:#6b7280;font-size:13px">
             <span class="spinner" style="border-color:rgba(0,0,0,.15);border-top-color:#2563eb;width:14px;height:14px;display:inline-block"></span>
             &nbsp;Loading price changes…
@@ -770,6 +773,28 @@
           <!-- Per-competitor summary strip -->
           <div id="wl-summary-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;margin-bottom:16px"></div>
 
+          <!-- Quick-insight panels: Best Value + Needs Attention -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+            <div class="card" id="wl-easy-wins" style="display:none;padding:0;overflow:hidden">
+              <div class="card-header" style="padding:12px 14px 10px">
+                <div>
+                  <div class="card-title" style="font-size:13px">🏆 Best Value Models</div>
+                  <div class="card-subtitle" style="font-size:11px">Models where Blue has the strongest market advantage</div>
+                </div>
+              </div>
+              <div id="wl-easy-wins-list"></div>
+            </div>
+            <div class="card" id="wl-attention" style="display:none;padding:0;overflow:hidden">
+              <div class="card-header" style="padding:12px 14px 10px">
+                <div>
+                  <div class="card-title" style="font-size:13px">⚠️ Needs Attention</div>
+                  <div class="card-subtitle" style="font-size:11px">Models undercut by 2 or more competitors</div>
+                </div>
+              </div>
+              <div id="wl-attention-list"></div>
+            </div>
+          </div>
+
           <!-- Category × Competitor grid -->
           <div class="card" id="wl-grid-card" style="display:none">
             <div class="card-header">
@@ -784,6 +809,27 @@
               </div>
             </div>
             <div id="wl-cat-grid" style="overflow-x:auto"></div>
+          </div>
+
+          <!-- Price Scatter: Blue vs Market Average -->
+          <div class="card" id="wl-scatter-card" style="display:none;margin-top:16px">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Price Scatter — Blue vs Market</div>
+                <div class="card-subtitle">Each dot is one model · <b style="color:#16a34a">below the diagonal</b> = Blue is cheaper · hover for detail</div>
+              </div>
+              <select id="wl-scatter-cat" class="form-select" onchange="renderWLScatter()" style="width:auto">
+                <option value="">All Categories</option>
+                <option value="Economy">Economy</option>
+                <option value="Compact">Compact</option>
+                <option value="SUV">SUV</option>
+                <option value="4x4">4x4</option>
+                <option value="Minivan">Minivan</option>
+              </select>
+            </div>
+            <div style="position:relative;height:320px;padding:0 8px 8px">
+              <canvas id="wl-scatter-canvas"></canvas>
+            </div>
           </div>
 
           <!-- Model drill-down panel (shown on cell click) -->

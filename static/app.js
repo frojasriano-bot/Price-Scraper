@@ -3320,17 +3320,71 @@ async function loadTimeline() {
   }
 }
 
+// ── Timeline: Cumulative Drift bar ──────────────────────────────────────────
+function renderTimelineDrift(events) {
+  const bar = document.getElementById('timeline-drift-bar');
+  if (!bar) return;
+  if (!events || !events.length) { bar.style.display = 'none'; return; }
+
+  // Aggregate net price movement per competitor
+  const drift = {};
+  const moves = {};
+  events.forEach(ev => {
+    if (!drift[ev.competitor]) { drift[ev.competitor] = 0; moves[ev.competitor] = { up: 0, down: 0 }; }
+    if (ev.direction === 'up') { drift[ev.competitor] += ev.change_pct; moves[ev.competitor].up++; }
+    else                       { drift[ev.competitor] -= ev.change_pct; moves[ev.competitor].down++; }
+  });
+
+  // Sort: largest net increase first (most expensive = most relevant to Blue)
+  const comps = Object.keys(drift).sort((a, b) => drift[b] - drift[a]);
+
+  bar.innerHTML = `
+    <div class="card" style="padding:12px 16px">
+      <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">
+        Cumulative Price Drift This Period
+        <span style="font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px">· competitor ↑ = getting pricier (good for Blue) · ↓ = getting cheaper (risk)</span>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        ${comps.map(comp => {
+          const net = drift[comp];
+          const mc  = moves[comp];
+          const isRising = net > 0;
+          // Good for Blue when competitor raises prices; bad when they lower
+          const sentColor  = net >  5 ? '#16a34a' : net < -5 ? '#dc2626' : '#6b7280';
+          const sentLabel  = net >  5 ? '↑ Pricier' : net < -5 ? '↓ Cheaper' : '≈ Stable';
+          const bgColor    = net >  5 ? 'rgba(22,163,74,.08)' : net < -5 ? 'rgba(220,38,38,.08)' : 'var(--bg)';
+          const dotColor   = compColor(comp);
+          const netStr     = (net > 0 ? '+' : '') + net.toFixed(1) + '%';
+          return `
+            <div style="display:flex;align-items:center;gap:7px;padding:7px 11px;border-radius:8px;border:1px solid var(--border);background:${bgColor}">
+              <div style="width:9px;height:9px;border-radius:50%;background:${dotColor};flex-shrink:0"></div>
+              <div>
+                <div style="font-size:12px;font-weight:600;color:var(--text);white-space:nowrap">${escHtml(comp)}</div>
+                <div style="font-size:11px;color:${sentColor};font-weight:600">${sentLabel} &nbsp;${mc.up}↑ ${mc.down}↓</div>
+              </div>
+              <div style="font-size:15px;font-weight:800;color:${sentColor};margin-left:4px">${netStr}</div>
+            </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  bar.style.display = '';
+}
+
 function renderTimeline(events, modelFilter = '') {
   const feed = document.getElementById('timeline-feed');
   if (!feed) return;
 
   if (!events.length) {
+    document.getElementById('timeline-drift-bar').style.display = 'none';
     feed.innerHTML = `<div style="padding:60px;text-align:center;color:#6b7280;font-size:13px">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:36px;height:36px;margin-bottom:10px;opacity:.4;display:block;margin-left:auto;margin-right:auto"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
       No price changes found matching these filters. Try a wider date range or lower threshold.
     </div>`;
     return;
   }
+
+  // Always render drift bar (works for both all-models and filtered views)
+  renderTimelineDrift(events);
 
   // When a specific model is selected, render a chart showing its price history per competitor
   if (modelFilter) {
@@ -3347,6 +3401,7 @@ function renderTimeline(events, modelFilter = '') {
   });
 
   const dateKeys = Object.keys(byDate).sort().reverse();
+  const CAT_EMOJI = { Economy:'🚗', Compact:'🚙', SUV:'🛻', '4x4':'🏔️', Minivan:'🚐' };
 
   let html = '';
   dateKeys.forEach(date => {
@@ -3356,29 +3411,35 @@ function renderTimeline(events, modelFilter = '') {
     html += `<div style="margin-bottom:6px;padding:6px 0 2px;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--border)">${dateLabel}</div>`;
 
     byDate[date].forEach(ev => {
-      const isUp   = ev.direction === 'up';
-      const color  = compColor(ev.competitor);
-      const arrow  = isUp ? '↑' : '↓';
-      const pctStr = (isUp ? '+' : '') + ev.change_pct.toFixed(1) + '%';
-      const pctColor = isUp ? '#dc2626' : '#16a34a'; // up = more expensive = red; down = cheaper = green for Blue
-      const cat    = ev.car_category;
-      const CAT_EMOJI = { Economy:'🚗', Compact:'🚙', SUV:'🛻', '4x4':'🏔️', Minivan:'🚐' };
+      const isUp     = ev.direction === 'up';
+      const color    = compColor(ev.competitor);
+      const arrow    = isUp ? '↑' : '↓';
+      const pctStr   = (isUp ? '+' : '') + ev.change_pct.toFixed(1) + '%';
+      const pctColor = isUp ? '#dc2626' : '#16a34a';
+      const cat      = ev.car_category;
 
-      html += `<div style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;margin-bottom:6px">
-        <!-- Competitor pill -->
-        <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0"></div>
-        <div style="font-size:12px;font-weight:600;color:var(--text);min-width:110px;flex-shrink:0">${escHtml(ev.competitor)}</div>
-        <!-- Model + category -->
-        <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(ev.canonical_name)}</div>
-          <div style="font-size:11px;color:var(--text-muted)">${CAT_EMOJI[cat] || ''} ${cat}</div>
-        </div>
-        <!-- Price change -->
-        <div style="text-align:right;flex-shrink:0">
-          <div style="font-size:13px;font-weight:700;color:${pctColor}">${arrow} ${pctStr}</div>
-          <div style="font-size:11px;color:var(--text-muted)">${formatISK(ev.prev_per_day)} → ${formatISK(ev.curr_per_day)}<span style="color:#9ca3af">/day</span></div>
-        </div>
-      </div>`;
+      // Blue market rank badge
+      let rankBadge = '';
+      if (ev.blue_rank != null) {
+        const rankColor = ev.blue_rank === 1 ? '#16a34a' : ev.blue_rank <= 2 ? '#ca8a04' : '#dc2626';
+        const rankLabel = ev.blue_rank === 1 ? '🥇 Blue cheapest' : `Blue #${ev.blue_rank}/${ev.total_competitors}`;
+        rankBadge = `<div style="display:inline-flex;align-items:center;gap:4px;margin-top:4px;padding:2px 7px;border-radius:20px;border:1px solid ${rankColor}33;background:${rankColor}11;font-size:10px;font-weight:700;color:${rankColor}">${rankLabel}</div>`;
+      }
+
+      html += `
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;margin-bottom:6px">
+          <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0"></div>
+          <div style="font-size:12px;font-weight:600;color:var(--text);min-width:110px;flex-shrink:0">${escHtml(ev.competitor)}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(ev.canonical_name)}</div>
+            <div style="font-size:11px;color:var(--text-muted)">${CAT_EMOJI[cat] || ''} ${cat}</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0">
+            <div style="font-size:13px;font-weight:700;color:${pctColor}">${arrow} ${pctStr}</div>
+            <div style="font-size:11px;color:var(--text-muted)">${formatISK(ev.prev_per_day)} → ${formatISK(ev.curr_per_day)}<span style="color:#9ca3af">/day</span></div>
+            ${rankBadge}
+          </div>
+        </div>`;
     });
   });
 
@@ -4198,6 +4259,9 @@ async function loadWinLoss() {
   gridCard.style.display   = 'none';
   emptyEl.style.display    = 'none';
   summaryEl.innerHTML      = '';
+  document.getElementById('wl-easy-wins').style.display  = 'none';
+  document.getElementById('wl-attention').style.display  = 'none';
+  document.getElementById('wl-scatter-card').style.display = 'none';
   closeWLDrill();
 
   try {
@@ -4209,7 +4273,10 @@ async function loadWinLoss() {
       emptyEl.style.display = '';
     } else {
       renderWLSummary();
+      renderWLEasyWins();
+      renderWLAttention();
       renderWLCategoryGrid();
+      renderWLScatter();
       gridCard.style.display = '';
     }
   } catch (e) {
@@ -4218,6 +4285,210 @@ async function loadWinLoss() {
   } finally {
     loadingBar.style.display = 'none';
   }
+}
+
+// ── Easy Wins panel ─────────────────────────────────────────────────────────
+function renderWLEasyWins() {
+  const card = document.getElementById('wl-easy-wins');
+  const list = document.getElementById('wl-easy-wins-list');
+  if (!_wlData || !_wlData.models.length) { card.style.display = 'none'; return; }
+
+  const CAT_EMOJI = { Economy:'🚗', Compact:'🚙', SUV:'🛻', '4x4':'🏔️', Minivan:'🚐' };
+
+  // Score each model: more competitor wins + bigger avg win margin = higher score
+  const scored = _wlData.models.map(m => {
+    const comps  = Object.values(m.vs);
+    const wins   = comps.filter(v => v.outcome === 'win');
+    const losses = comps.filter(v => v.outcome === 'loss');
+    if (!wins.length) return null;
+    const avgWinMargin = wins.reduce((s, v) => s + Math.abs(v.margin_pct), 0) / wins.length;
+    // Score rewards breadth (wins vs many competitors) and depth (large margin), penalises losses
+    const score = wins.length * avgWinMargin - losses.length * 5;
+    return { model: m, wins: wins.length, losses: losses.length, avgMargin: avgWinMargin.toFixed(1), total: comps.length, score };
+  }).filter(Boolean);
+
+  scored.sort((a, b) => b.score - a.score);
+  const top = scored.slice(0, 5);
+
+  if (!top.length) { card.style.display = 'none'; return; }
+
+  list.innerHTML = top.map((s, i) => `
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;${i < top.length - 1 ? 'border-bottom:1px solid var(--border)' : ''}">
+      <div style="font-size:16px;font-weight:800;color:var(--text-muted);min-width:20px;text-align:center">${i + 1}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(s.model.canonical_name)}</div>
+        <div style="font-size:11px;color:var(--text-muted)">${CAT_EMOJI[s.model.category] || ''} ${s.model.category}</div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-size:13px;font-weight:700;color:#15803d">${s.wins}/${s.total} wins</div>
+        <div style="font-size:11px;color:var(--text-muted)">avg ${s.avgMargin}% cheaper</div>
+      </div>
+    </div>
+  `).join('');
+
+  card.style.display = '';
+}
+
+// ── Needs Attention panel ────────────────────────────────────────────────────
+function renderWLAttention() {
+  const card = document.getElementById('wl-attention');
+  const list = document.getElementById('wl-attention-list');
+  if (!_wlData || !_wlData.models.length) { card.style.display = 'none'; return; }
+
+  const CAT_EMOJI = { Economy:'🚗', Compact:'🚙', SUV:'🛻', '4x4':'🏔️', Minivan:'🚐' };
+
+  // Flag models where Blue loses to 2+ competitors
+  const flagged = _wlData.models.map(m => {
+    const lossEntries = Object.entries(m.vs).filter(([, v]) => v.outcome === 'loss');
+    if (lossEntries.length < 2) return null;
+    const avgMargin = lossEntries.reduce((s, [, v]) => s + v.margin_pct, 0) / lossEntries.length;
+    return { model: m, lossCount: lossEntries.length, avgMargin: avgMargin.toFixed(1) };
+  }).filter(Boolean);
+
+  flagged.sort((a, b) => b.lossCount - a.lossCount || parseFloat(b.avgMargin) - parseFloat(a.avgMargin));
+
+  if (!flagged.length) {
+    list.innerHTML = `<div style="padding:16px 14px;font-size:13px;color:#15803d;display:flex;align-items:center;gap:8px">
+      <span style="font-size:16px">✓</span> No models currently undercut by 2+ competitors
+    </div>`;
+    card.style.display = '';
+    return;
+  }
+
+  list.innerHTML = flagged.map((f, i) => {
+    const m = f.model;
+    return `
+      <div style="padding:10px 14px;${i < flagged.length - 1 ? 'border-bottom:1px solid var(--border)' : ''}">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="width:8px;height:8px;border-radius:50%;background:#dc2626;flex-shrink:0"></div>
+          <div style="font-size:13px;font-weight:600;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(m.canonical_name)}</div>
+          <div style="font-size:12px;color:#b91c1c;font-weight:700;flex-shrink:0">${f.lossCount} cheaper</div>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);padding-left:16px;margin-top:2px">
+          ${CAT_EMOJI[m.category] || ''} ${m.category} · avg +${f.avgMargin}% pricier · ${m.blue_price_isk.toLocaleString()} ISK
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  card.style.display = '';
+}
+
+// ── Price Scatter chart ──────────────────────────────────────────────────────
+let _wlScatterChart = null;
+
+function renderWLScatter() {
+  const card = document.getElementById('wl-scatter-card');
+  if (!_wlData || !_wlData.models.length) { card.style.display = 'none'; return; }
+
+  const catFilter = document.getElementById('wl-scatter-cat')?.value || '';
+  const models = _wlData.models.filter(m => {
+    if (catFilter && m.category !== catFilter) return false;
+    return Object.keys(m.vs).length > 0;
+  });
+
+  if (!models.length) { card.style.display = 'none'; return; }
+
+  // Build scatter points
+  const points = models.map(m => {
+    const compPrices = Object.values(m.vs).map(v => v.price_isk).filter(Boolean);
+    if (!compPrices.length) return null;
+    const marketAvg = compPrices.reduce((s, p) => s + p, 0) / compPrices.length;
+    const wins   = Object.values(m.vs).filter(v => v.outcome === 'win').length;
+    const losses = Object.values(m.vs).filter(v => v.outcome === 'loss').length;
+    const total  = Object.keys(m.vs).length;
+    const winRate = total > 0 ? wins / total : 0.5;
+    return { x: Math.round(marketAvg), y: m.blue_price_isk, label: m.canonical_name, category: m.category, winRate, wins, losses, total };
+  }).filter(Boolean);
+
+  if (!points.length) { card.style.display = 'none'; return; }
+
+  const pointColors = points.map(p =>
+    p.winRate >= 0.6 ? 'rgba(22,163,74,0.82)' : p.winRate <= 0.4 ? 'rgba(220,38,38,0.82)' : 'rgba(202,138,4,0.82)'
+  );
+  const allPrices = points.flatMap(p => [p.x, p.y]);
+  const minP = Math.min(...allPrices) * 0.88;
+  const maxP = Math.max(...allPrices) * 1.08;
+  const isDark    = document.body.classList.contains('dark-mode');
+  const gridColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.07)';
+  const textColor = isDark ? '#9ca3af' : '#6b7280';
+
+  if (_wlScatterChart) { _wlScatterChart.destroy(); _wlScatterChart = null; }
+
+  const ctx = document.getElementById('wl-scatter-canvas').getContext('2d');
+  _wlScatterChart = new Chart(ctx, {
+    type: 'scatter',
+    data: {
+      datasets: [
+        {
+          label: 'Models',
+          data: points,
+          backgroundColor: pointColors,
+          pointRadius: 7,
+          pointHoverRadius: 10,
+          order: 1,
+        },
+        {
+          label: 'Parity (Blue = Market)',
+          data: [{ x: minP, y: minP }, { x: maxP, y: maxP }],
+          type: 'line',
+          borderColor: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.13)',
+          borderWidth: 1.5,
+          borderDash: [6, 4],
+          pointRadius: 0,
+          fill: false,
+          order: 2,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: true,
+          labels: {
+            filter: item => item.datasetIndex === 1,
+            color: textColor,
+            font: { size: 11 },
+            boxWidth: 24,
+          },
+        },
+        tooltip: {
+          callbacks: {
+            title: items => {
+              if (items[0].datasetIndex !== 0) return '';
+              const p = points[items[0].dataIndex];
+              return p ? `${p.label} (${p.category})` : '';
+            },
+            label: item => {
+              if (item.datasetIndex !== 0) return null;
+              const p = points[item.dataIndex];
+              return [
+                `Blue: ${p.y.toLocaleString()} ISK`,
+                `Market avg: ${p.x.toLocaleString()} ISK`,
+                `Result: ${p.wins}W / ${p.losses}L of ${p.total} competitors`,
+              ];
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          title: { display: true, text: 'Competitor Market Avg (ISK)', color: textColor, font: { size: 11 } },
+          grid: { color: gridColor },
+          ticks: { color: textColor, callback: v => Math.round(v / 1000) + 'k' },
+        },
+        y: {
+          title: { display: true, text: 'Blue Car Rental Price (ISK)', color: textColor, font: { size: 11 } },
+          grid: { color: gridColor },
+          ticks: { color: textColor, callback: v => Math.round(v / 1000) + 'k' },
+        },
+      },
+    },
+  });
+
+  card.style.display = '';
 }
 
 function renderWLSummary() {
