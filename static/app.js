@@ -4171,7 +4171,7 @@ function renderWLSummary() {
 
     return `
       <div class="card" style="padding:14px 16px">
-        <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(comp)}">${esc(comp)}</div>
+        <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escHtml(comp)}">${escHtml(comp)}</div>
         <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:6px">
           <span style="font-size:30px;font-weight:800;line-height:1;color:${barColor}">${pct}%</span>
           <span style="font-size:11px;color:var(--text-muted)">win rate</span>
@@ -4234,7 +4234,7 @@ function renderWLCategoryGrid() {
   for (const comp of comps) {
     const overall = _wlData.summary[comp];
     html += `<tr>`;
-    html += `<td style="padding:10px 14px;font-weight:600;font-size:13px">${esc(comp)}</td>`;
+    html += `<td style="padding:10px 14px;font-weight:600;font-size:13px">${escHtml(comp)}</td>`;
 
     for (const cat of categories) {
       const cell = _wlData.by_category[cat] && _wlData.by_category[cat][comp];
@@ -4247,7 +4247,7 @@ function renderWLCategoryGrid() {
       const col = pct >= 60 ? '#15803d'               : pct >= 40 ? '#854d0e'               : '#b91c1c';
       html += `
         <td style="text-align:center;padding:8px 6px;cursor:pointer"
-            onclick="drillWL('${esc(comp)}', '${cat}')"
+            onclick="drillWL('${escHtml(comp)}', '${cat}')"
             title="${cat}: ${cell.wins}W / ${cell.ties}T / ${cell.losses}L — click to see models">
           <div style="display:inline-flex;flex-direction:column;align-items:center;min-width:66px;padding:5px 8px;border-radius:7px;background:${bg};color:${col}">
             <span style="font-size:15px;font-weight:800">${pct}%</span>
@@ -4262,7 +4262,7 @@ function renderWLCategoryGrid() {
     const oCol = oPct >= 60 ? '#15803d'              : oPct >= 40 ? '#854d0e'              : '#b91c1c';
     html += `
       <td style="text-align:center;padding:8px 6px;border-left:2px solid var(--border);cursor:pointer"
-          onclick="drillWL('${esc(comp)}', null)"
+          onclick="drillWL('${escHtml(comp)}', null)"
           title="All categories — click to see all models">
         <div style="display:inline-flex;flex-direction:column;align-items:center;min-width:66px;padding:5px 8px;border-radius:7px;background:${oBg};color:${oCol}">
           <span style="font-size:16px;font-weight:800">${oPct}%</span>
@@ -4325,7 +4325,7 @@ function renderWLDrill() {
         <th style="text-align:left;padding:10px 14px;font-size:12px">Model</th>
         <th style="text-align:left;padding:10px 8px;font-size:12px">Category</th>
         <th style="text-align:right;padding:10px 12px;font-size:12px">Blue Price</th>
-        <th style="text-align:right;padding:10px 12px;font-size:12px">${esc(_wlDrillComp)}</th>
+        <th style="text-align:right;padding:10px 12px;font-size:12px">${escHtml(_wlDrillComp)}</th>
         <th style="text-align:center;padding:10px 8px;font-size:12px">Outcome</th>
         <th style="text-align:right;padding:10px 12px;font-size:12px">Margin</th>
       </tr>
@@ -4342,8 +4342,8 @@ function renderWLDrill() {
 
     html += `
       <tr>
-        <td style="padding:10px 14px;font-weight:600;font-size:13px">${esc(m.canonical_name)}</td>
-        <td style="padding:10px 8px;font-size:12px;color:var(--text-muted)">${esc(m.category)}</td>
+        <td style="padding:10px 14px;font-weight:600;font-size:13px">${escHtml(m.canonical_name)}</td>
+        <td style="padding:10px 8px;font-size:12px;color:var(--text-muted)">${escHtml(m.category)}</td>
         <td style="padding:10px 12px;text-align:right;font-size:13px;font-family:monospace">${m.blue_price_isk.toLocaleString()} ISK</td>
         <td style="padding:10px 12px;text-align:right;font-size:13px;font-family:monospace">${v.price_isk.toLocaleString()} ISK</td>
         <td style="padding:10px 8px;text-align:center">
