@@ -10,7 +10,7 @@ FastAPI backend · SQLite · APScheduler · Vanilla JS SPA · Chart.js
 
 | Tab | Description |
 |-----|-------------|
-| **Rate Intelligence** | Executive summary banner, live competitor rates, sortable table with per-competitor price-change arrows, bar chart, cross-competitor matrix, price history charts, seasonal analysis with history + gap map modes, forward rate horizon (3M / 6M / 12M), price change timeline, booking window analysis, CSV export |
+| **Rate Intelligence** | Executive summary banner, live competitor rates, sortable table with per-competitor price-change arrows, bar chart, cross-competitor matrix, price history charts, seasonal analysis with history + gap map modes (category and model granularity), forward rate horizon (3M / 6M / 12M), price change timeline, booking window analysis, win/loss scorecard, CSV export |
 | **Insurance Comparison** | Coverage matrix, per-category zero-excess pricing (editable inline), company package cards, deductible comparison, Trigger Research + Mark Reviewed workflow with audit log |
 | **SEO Rank Tracker** | Keyword ranking history with previous rank + change delta via SerpAPI; 10 Iceland-specific keywords pre-seeded |
 | **Settings** | Scraper status, schedule config, SerpAPI key, location management, car model mappings, Slack alerts, scrape history log, category audit |
@@ -23,10 +23,11 @@ FastAPI backend · SQLite · APScheduler · Vanilla JS SPA · Chart.js
 | **List View** | Sortable table of all live rates per competitor + model, with per-day price and Δ vs previous scrape |
 | **Car Model Matrix** | Cross-competitor price grid per canonical model; green = cheapest, red = most expensive |
 | **Price History** | Time-series line charts per model grouped by category — shows how scraped prices have evolved over the past 7/14/30/90 days |
-| **Seasonal Analysis** | Per-day pricing across the next 12 months (15th anchor date, 7-night stay). Three modes: default chart; **History** to see how a future month evolved across weekly scrapes; **Gap Map** — a 5×12 category×month heatmap showing Blue's price vs market average (green = Blue pricier, red = Blue cheaper) |
+| **Seasonal Analysis** | Per-day pricing across the next 12 months (15th anchor date, 7-night stay). Three modes: default chart; **History** to see how a future month evolved across weekly scrapes; **Gap Map** — a heatmap of Blue's price vs market average. Gap Map has two granularities: **By Category** (5 rows × 12 months) and **By Model** (every canonical model in the selected category × 12 months) |
 | **Forward Rates** | Up to 12 months of competitor pricing — horizon line chart + color-coded heatmap table with 3M / 6M / 12M range toggle; scrape-driven, no estimates. Select a model from the dropdown for per-model competitor lines |
 | **Price Changes** | Chronological activity feed of every meaningful competitor price move (≥5% by default). Filter by lookback window, category, and minimum change %. Select a specific model to view a line chart of its full scraped price history per competitor |
 | **Booking Window** | Pick any future pickup date to see how each competitor's price has changed across successive weekly scrapes as that date approaches — reveals early-bird vs last-minute pricing strategy. Model drill-down available |
+| **Win/Loss Scorecard** | Answers "where do we beat each competitor, and by how much?" Summary strip shows per-competitor win rate, W/T/L counts, and average margin. Category grid (competitor × category) colour-coded green/amber/red; click any cell to drill down to individual model matchups with exact ISK prices and margin % |
 
 ---
 
@@ -291,13 +292,61 @@ Requires at least 2 weekly snapshots for the selected anchor month. Shows "not e
 
 ### Price Gap Heatmap (Gap Map mode)
 
-The **Gap Map** toggle shows a 5×12 grid: 5 car categories (rows) × 12 future months (columns). Each cell shows `((Blue - market_avg) / market_avg) × 100`:
+The **Gap Map** toggle switches the seasonal chart to a heatmap showing Blue's price relative to the market average. A **Granularity** toggle (top-right of the card) offers two views:
 
-- **Green** = Blue is more expensive than market (potential to reduce price or accept premium)
-- **Red** = Blue is cheaper than market (competitive advantage, potential pricing room)
+#### By Category (default)
+A 5×12 grid: 5 car categories (rows) × 12 future months (columns). Uses the same `state.seasonalData` already loaded — no extra API call.
+
+#### By Model
+A per-model breakdown for the selected category, showing each canonical model as a row across all 12 anchor months. Fetches from `GET /api/rates/seasonal/gap-by-model?category=`. Useful for spotting individual model outliers within a category.
+
+**Cell colour scale (both views):**
+- **Green** = Blue is more expensive than market (premium positioning or pricing room to reduce)
+- **Red** = Blue is cheaper than market (competitive advantage or underpricing risk)
 - **Neutral** = within ±3% of market average
 
-Uses the same `state.seasonalData` already loaded — no extra API call required.
+**Special states:**
+- *n/a* (grey) — no Blue price for this model/month
+- *solo* (blue outline) — Blue is the only competitor with data; no market comparison possible
+
+---
+
+## Win/Loss Scorecard
+
+`GET /api/rates/win-loss` compares every canonical car model where both Blue Car Rental and a competitor have a current scraped price. Uses the same snapshot as the matrix view.
+
+**Outcome logic** (configurable via `?threshold=` param, default 5%):
+
+| Outcome | Condition |
+|---------|-----------|
+| **Win** | Blue price more than `threshold`% cheaper than competitor |
+| **Tie** | Within ±`threshold`% |
+| **Loss** | Blue price more than `threshold`% more expensive |
+
+`margin_pct` convention: negative = Blue cheaper (a win), positive = Blue more expensive (a loss).
+
+### Summary strip
+
+One card per competitor showing:
+- Win rate % with colour-coded progress bar (green ≥60%, amber 40–59%, red <40%)
+- W / T / L split counts
+- Average win margin ("Blue X% cheaper when winning")
+- Average loss margin ("Blue X% pricier when losing")
+
+### Category grid
+
+Competitor × category table; click any cell — or the **Overall** column — to open the model drill-down panel.
+
+### Model drill-down
+
+Sorted wins-first, then ties, then losses. Each row shows: model, category, Blue ISK price, competitor ISK price, outcome badge, margin %.
+
+### Interpreting the data
+
+The scorecard gives the sales team immediate answers to:
+- Which competitors are genuinely beating Blue on price across most models?
+- In which car categories is Blue strongest / weakest?
+- For a specific competitor, exactly which models is Blue losing on and by how much?
 
 ---
 
@@ -517,11 +566,26 @@ POST /api/rates/scrape-seasonal  Scrape all 12 anchor months and persist
 GET  /api/rates/seasonal/history Time series showing how prices for one anchor month evolved
      ?pickup_date=YYYY-MM-DD  &category=  &location=
 
+GET  /api/rates/seasonal/gap-by-model  Per-model gap vs market avg across 12 anchor months
+     ?category=  &location=            (category is required)
+
 GET  /api/rates/horizon          Next N weeks of per-day pricing per competitor (real data only)
      ?location=  &category=  &weeks=26  (default 26, max 52)
 
 POST /api/rates/scrape-horizon   Scrape all competitors × N weekly windows and persist
      ?location=  &weeks=26  (default 26, max 52)
+
+GET  /api/rates/model-horizon    All future scraped prices for one canonical model
+     ?model=  &location=
+
+GET  /api/rates/price-timeline   Chronological feed of meaningful price changes (≥min_change_pct%)
+     ?days=30  &min_change_pct=5.0  &category=  &location=  &model=
+
+GET  /api/rates/booking-window   Price trajectory for one pickup date across successive scrapes
+     ?pickup_date=YYYY-MM-DD  &category=  &location=  &model=
+
+GET  /api/rates/win-loss         Blue vs each competitor: wins / ties / losses per model & category
+     ?location=  &category=  &threshold=5.0
 
 GET  /api/rates/scraper-status
 GET  /api/rates/car-catalog

@@ -194,6 +194,76 @@ Base URL (when running locally): `http://localhost:8000`
     }
     ```
 
+- `GET /api/rates/seasonal/gap-by-model`
+  - Per-model Blue-vs-market price gap for one category, across all 12 seasonal anchor months
+  - **Required** query params:
+    - `category` (`Economy|Compact|SUV|4x4|Minivan`)
+  - Optional query params:
+    - `location`
+  - Response:
+    ```json
+    {
+      "category": "Economy",
+      "months": [{"month_str": "2026-04", "month_label": "Apr 2026", "season": "shoulder"}],
+      "models": [
+        {
+          "canonical_name": "Toyota Yaris",
+          "gaps": [
+            {"blue_price": 7200, "market_avg": 8100, "gap_pct": -11, "blue_n": 1, "comp_n": 4},
+            null
+          ]
+        }
+      ],
+      "source": "database | none"
+    }
+    ```
+  - `gaps` array is parallel to `months` — `null` means no data for that month
+  - `gap_pct` = `(blue_price / market_avg - 1) × 100` — negative = Blue is cheaper
+  - Special gap states: `{blue_price: null}` when Blue has no price, `{market_avg: null}` when Blue is the only competitor
+
+- `GET /api/rates/win-loss`
+  - Blue Car Rental vs each competitor: win/tie/loss per canonical model and per category
+  - Uses the most recent scraped rates (same snapshot as `/api/rates/matrix`)
+  - Optional query params:
+    - `location`
+    - `category` — filter to one car category
+    - `threshold` (float, 0.5–30, default `5.0`) — min % difference to count as win or loss
+  - Response:
+    ```json
+    {
+      "competitors": ["Go Car Rental", "Lava Car Rental", "..."],
+      "threshold_pct": 5.0,
+      "summary": {
+        "Go Car Rental": {
+          "wins": 6, "ties": 7, "losses": 6,
+          "total_compared": 19,
+          "win_rate_pct": 31.6,
+          "avg_win_margin_pct": 13.2,
+          "avg_loss_margin_pct": 9.4
+        }
+      },
+      "by_category": {
+        "Economy": {
+          "Go Car Rental": {"wins": 2, "ties": 0, "losses": 0, "total": 2, "win_rate_pct": 100.0}
+        }
+      },
+      "models": [
+        {
+          "canonical_name": "Toyota Yaris",
+          "category": "Economy",
+          "blue_price_isk": 21752,
+          "vs": {
+            "Go Car Rental": {"price_isk": 23500, "outcome": "win", "margin_pct": -7.4}
+          }
+        }
+      ],
+      "source": "database | mock"
+    }
+    ```
+  - `margin_pct` convention: **negative = Blue is cheaper** (a win), **positive = Blue is more expensive** (a loss)
+  - Models where Blue has no price are excluded entirely
+  - Competitors with no overlapping models are included in `summary` but will show `total_compared: 0`
+
 - `GET /api/rates/scraper-status`
   - Live and mock status for each configured scraper
   - Response: `{ "scrapers": [ { "name", "status", "last_scraped_at", "rates_count" } ] }`
