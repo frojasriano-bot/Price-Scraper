@@ -719,6 +719,119 @@ async def get_seasonal_history(
     }
 
 
+@router.get("/seasonal/gap-by-model")
+async def get_seasonal_gap_by_model(
+    category: str = Query(..., description="Car category (required, e.g. 'Economy')"),
+    location: Optional[str] = Query(None, description="Pickup location"),
+):
+    """
+    Per-model Blue-vs-market price gap for one category, across the 12 anchor
+    months used by the Seasonal view. Reads from the stored rates only — scrape
+    via /seasonal first to populate.
+
+    Response:
+      {
+        "category": "Economy",
+        "months":   [{month_str, month_label, season}, ...],
+        "models":   [
+          {
+            "canonical_name": "Toyota Yaris",
+            "gaps": [
+              {"blue_price": 7200, "market_avg": 8100, "gap_pct": -11, "blue_n": 1, "comp_n": 4},
+              null,  // no data for this month
+              ...
+            ]
+          },
+          ...
+        ],
+        "source":   "database" | "none"
+      }
+    """
+    today      = date.today()
+    scrape_loc = location or "Keflavik Airport"
+
+    # Build the same 12 anchor months as /seasonal
+    sweep_months = []
+    for offset in range(12):
+        total_month = today.month + offset
+        year  = today.year + (total_month - 1) // 12
+        month = (total_month - 1) % 12 + 1
+        pickup = date(year, month, 15)
+        ret    = pickup + timedelta(days=_RENTAL_DAYS)
+        season, _ = _SEASON_MAP[month]
+        sweep_months.append({
+            "month_str":   pickup.strftime("%Y-%m"),
+            "month_label": pickup.strftime("%b %Y"),
+            "pickup":      pickup.isoformat(),
+            "return":      ret.isoformat(),
+            "season":      season,
+        })
+
+    # Collect per-model, per-month prices from stored rates
+    # Structure: { canonical_name: { month_str: {"blue": [...], "comp": [...]} } }
+    per_model: dict[str, dict[str, dict[str, list[int]]]] = {}
+    any_data = False
+
+    for m in sweep_months:
+        rates = await get_latest_rates(
+            location=scrape_loc,
+            pickup_date=m["pickup"],
+            return_date=m["return"],
+            car_category=category,
+        )
+        if rates:
+            any_data = True
+        for r in rates:
+            name    = r.get("canonical_name") or r["car_model"]
+            per_day = round(r["price_isk"] / _RENTAL_DAYS)
+            bucket  = per_model.setdefault(name, {}).setdefault(
+                m["month_str"], {"blue": [], "comp": []}
+            )
+            if r["competitor"] == "Blue Car Rental":
+                bucket["blue"].append(per_day)
+            else:
+                bucket["comp"].append(per_day)
+
+    # Build response — one row per model, 12 monthly gap entries
+    models = []
+    for name in sorted(per_model.keys()):
+        gaps = []
+        has_any = False
+        for m in sweep_months:
+            bucket = per_model[name].get(m["month_str"])
+            if not bucket or (not bucket["blue"] and not bucket["comp"]):
+                gaps.append(None)
+                continue
+            blue_avg = round(sum(bucket["blue"]) / len(bucket["blue"])) if bucket["blue"] else None
+            mkt_avg  = round(sum(bucket["comp"]) / len(bucket["comp"])) if bucket["comp"] else None
+            gap_pct  = (
+                round((blue_avg / mkt_avg - 1) * 100)
+                if blue_avg is not None and mkt_avg not in (None, 0)
+                else None
+            )
+            gaps.append({
+                "blue_price": blue_avg,
+                "market_avg": mkt_avg,
+                "gap_pct":    gap_pct,
+                "blue_n":     len(bucket["blue"]),
+                "comp_n":     len(bucket["comp"]),
+            })
+            if gap_pct is not None:
+                has_any = True
+        if has_any:
+            models.append({"canonical_name": name, "gaps": gaps})
+
+    return {
+        "category": category,
+        "months":   [
+            {"month_str": m["month_str"], "month_label": m["month_label"], "season": m["season"]}
+            for m in sweep_months
+        ],
+        "models":   models,
+        "source":   "database" if any_data else "none",
+    }
+
+
 @router.get("/price-changes")
 async def get_price_changes(
     location: Optional[str] = Query(None),

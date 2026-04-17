@@ -54,6 +54,9 @@ const state = {
   historyEvolutionChart: null,
   historyEvolutionMonth: null,
   heatmapMode: false,
+  heatmapGranularity: 'category',   // 'category' | 'model'
+  gapByModelData: null,             // cached response from /seasonal/gap-by-model
+  gapByModelCategory: null,         // what category the cache was fetched for
   timelineModelChart: null,
   horizonData: null,
   horizonChart: null,
@@ -626,11 +629,18 @@ async function loadSeasonal(force = false) {
 function onSeasonalCategoryChange() {
   if (state.historyMode) {
     loadHistoryData(state.historyEvolutionMonth);
-  } else {
-    renderSeasonalChart();
-    renderSeasonalTable();
-    renderSeasonalCategoryTable();
+    return;
   }
+  if (state.heatmapMode && state.heatmapGranularity === 'model') {
+    // Model-level Gap Map is driven by this filter — refetch for the new category
+    state.gapByModelData     = null;
+    state.gapByModelCategory = null;
+    loadGapByModel();
+    return;
+  }
+  renderSeasonalChart();
+  renderSeasonalTable();
+  renderSeasonalCategoryTable();
 }
 
 async function scrapeSeasonalAnchors() {
@@ -2908,13 +2918,173 @@ function toggleHeatmapMode() {
     btn.classList.add('active');
     chartCard.style.display = 'none';
     heatCard.style.display  = '';
-    renderPriceGapHeatmap();
+    // Respect current granularity — default is category on first open
+    if (state.heatmapGranularity === 'model') {
+      loadGapByModel();
+    } else {
+      renderPriceGapHeatmap();
+    }
   } else {
     btn.classList.remove('active');
     heatCard.style.display  = 'none';
     chartCard.style.display = '';
     renderSeasonalChart();
   }
+}
+
+// Shared color scale for both category and model gap views.
+// Returns { bg, text, label } for a given gap% (Blue - market).
+function gapCellStyle(pct) {
+  const isDark = document.body.classList.contains('dark-mode');
+  if (pct === null || pct === undefined) {
+    return { bg: 'var(--bg-alt)', text: 'var(--text-muted)', label: '—' };
+  }
+  const abs = Math.abs(pct);
+  const label = (pct >= 0 ? '+' : '') + pct + '%';
+  if (abs <= 3) return { bg: 'var(--bg-alt)', text: 'var(--text)', label };
+  if (pct > 0) {
+    // Blue more expensive than market — green gradient
+    const intensity = Math.min(abs / 40, 1);
+    const g = Math.round(180 + intensity * 40);
+    const r = Math.round(220 - intensity * 100);
+    const text = isDark ? (intensity > 0.4 ? '#bbf7d0' : '#86efac') : '#14532d';
+    return { bg: `rgba(${r},${g},100,${0.15 + intensity * 0.5})`, text, label };
+  }
+  // Blue cheaper than market — red gradient
+  const intensity = Math.min(abs / 40, 1);
+  const text = isDark ? (intensity > 0.4 ? '#fecaca' : '#fca5a5') : '#7f1d1d';
+  return { bg: `rgba(220,50,50,${0.12 + intensity * 0.45})`, text, label };
+}
+
+/**
+ * Switch the Gap Map between 'category' (default) and 'model' granularity.
+ * Model granularity requires a category filter — otherwise we'd render
+ * 40+ rows which is unreadable.
+ */
+function setHeatmapGranularity(mode) {
+  state.heatmapGranularity = mode;
+  document.getElementById('btn-heatmap-cat')?.classList.toggle('active', mode === 'category');
+  document.getElementById('btn-heatmap-model')?.classList.toggle('active', mode === 'model');
+
+  const sub = document.getElementById('heatmap-subtitle');
+  if (sub) {
+    sub.innerHTML = mode === 'model'
+      ? `How Blue's per-day price compares to the market average for each car model. <span style="color:#16a34a;font-weight:600">Green = Blue is more expensive</span> &nbsp;·&nbsp; <span style="color:#dc2626;font-weight:600">Red = Blue is cheaper</span>`
+      : `How Blue's per-day price compares to the market average, by category × month. <span style="color:#16a34a;font-weight:600">Green = Blue is more expensive</span> &nbsp;·&nbsp; <span style="color:#dc2626;font-weight:600">Red = Blue is cheaper</span>`;
+  }
+
+  if (mode === 'category') {
+    renderPriceGapHeatmap();
+  } else {
+    loadGapByModel();
+  }
+}
+
+/**
+ * Fetch per-model gap data for the currently selected category and render it.
+ * Keeps a small cache keyed on category to avoid refetching when toggling back.
+ */
+async function loadGapByModel() {
+  const grid = document.getElementById('heatmap-grid');
+  if (!grid) return;
+
+  // The Gap Map is inside the Seasonal view, which has its own category filter
+  const category = document.getElementById('seasonal-category')?.value || '';
+  const location = document.getElementById('filter-location')?.value || '';
+
+  if (!category) {
+    grid.innerHTML = `<div style="padding:28px 20px;text-align:center;background:var(--bg-alt);border-radius:8px;color:var(--text-muted);font-size:13px">
+      <div style="font-size:24px;margin-bottom:8px">🎯</div>
+      <div style="font-weight:600;margin-bottom:4px;color:var(--text)">Pick a category to see model-level gaps</div>
+      <div>Choose Economy, Compact, SUV, 4x4, or Minivan in the <em>Category</em> filter on the Seasonal controls — the Gap Map will then show every model in that category.</div>
+    </div>`;
+    return;
+  }
+
+  // Use cache if still matches this category
+  if (state.gapByModelData && state.gapByModelCategory === category) {
+    renderGapByModel();
+    return;
+  }
+
+  grid.innerHTML = `<p style="color:var(--text-muted);font-size:13px;padding:20px"><span class="spinner" style="border-color:rgba(0,0,0,.15);border-top-color:#2563eb;width:12px;height:12px"></span> Loading model-level gaps…</p>`;
+  try {
+    const params = new URLSearchParams({ category });
+    if (location) params.set('location', location);
+    const data = await apiFetch(`/api/rates/seasonal/gap-by-model?${params}`);
+    state.gapByModelData     = data;
+    state.gapByModelCategory = category;
+    renderGapByModel();
+  } catch (e) {
+    grid.innerHTML = `<p style="color:#ef4444;font-size:13px;padding:20px">Failed to load model gaps: ${escHtml(e.message)}</p>`;
+  }
+}
+
+function renderGapByModel() {
+  const grid = document.getElementById('heatmap-grid');
+  if (!grid) return;
+  const data = state.gapByModelData;
+  if (!data) return;
+
+  if (data.source === 'none' || !data.models?.length) {
+    grid.innerHTML = `<div style="padding:28px 20px;text-align:center;background:var(--bg-alt);border-radius:8px;color:var(--text-muted);font-size:13px">
+      <div style="font-weight:600;margin-bottom:6px;color:var(--text)">No model-level data for ${escHtml(data.category)}</div>
+      <div>Run a seasonal scrape first so rates are stored, then try again.</div>
+    </div>`;
+    return;
+  }
+
+  const monthLabels = data.months.map(m => m.month_label);
+  const colWidth    = '72px';
+
+  let html = `<table style="border-collapse:collapse;width:100%;font-size:12px">
+    <thead>
+      <tr>
+        <th style="text-align:left;padding:8px 12px 8px 0;color:var(--text-muted);font-weight:600;white-space:nowrap;min-width:180px">Model (${escHtml(data.category)})</th>
+        ${monthLabels.map(l => `<th style="text-align:center;padding:6px 4px;color:var(--text-muted);font-weight:600;min-width:${colWidth};font-size:11px;white-space:nowrap">${l}</th>`).join('')}
+      </tr>
+    </thead>
+    <tbody>`;
+
+  data.models.forEach(({ canonical_name, gaps }) => {
+    html += `<tr>
+      <td style="padding:6px 12px 6px 0;font-weight:600;white-space:nowrap;color:var(--text);font-size:13px">${escHtml(canonical_name)}</td>
+      ${gaps.map(g => {
+        if (!g) {
+          return `<td style="text-align:center;padding:5px 3px"><div style="background:var(--bg-alt);color:var(--text-muted);border-radius:6px;padding:6px 4px;font-size:11px">—</div></td>`;
+        }
+        // If Blue has no price for this model/month, show a muted "no Blue" indicator
+        if (g.blue_price == null) {
+          const tip = `No Blue price for this model · market avg ${formatISK(g.market_avg)}/day (from ${g.comp_n} comp${g.comp_n === 1 ? '' : 's'})`;
+          return `<td style="text-align:center;padding:5px 3px" title="${escHtml(tip)}"><div style="background:var(--bg-alt);color:var(--text-muted);border-radius:6px;padding:6px 4px;font-size:11px;font-style:italic">n/a</div></td>`;
+        }
+        if (g.market_avg == null) {
+          const tip = `Blue ${formatISK(g.blue_price)}/day · no competitor match for this model`;
+          return `<td style="text-align:center;padding:5px 3px" title="${escHtml(tip)}"><div style="background:var(--bg-alt);color:var(--text-muted);border-radius:6px;padding:6px 4px;font-size:11px;font-style:italic">solo</div></td>`;
+        }
+        const { bg, text, label } = gapCellStyle(g.gap_pct);
+        const tip = `Blue ${formatISK(g.blue_price)}/day · market ${formatISK(g.market_avg)}/day (${g.comp_n} comp${g.comp_n === 1 ? '' : 's'}) · ${label}`;
+        return `<td style="text-align:center;padding:5px 3px" title="${escHtml(tip)}">
+          <div style="background:${bg};color:${text};border-radius:6px;padding:6px 4px;font-weight:700;font-size:12px;min-width:52px">${label}</div>
+        </td>`;
+      }).join('')}
+    </tr>`;
+  });
+
+  html += `</tbody></table>`;
+
+  const isDark = document.body.classList.contains('dark-mode');
+  const legendGreen = isDark ? '#86efac' : '#14532d';
+  const legendRed   = isDark ? '#fca5a5' : '#7f1d1d';
+  html += `<div style="margin-top:14px;display:flex;gap:20px;font-size:11px;color:var(--text-muted);flex-wrap:wrap">
+    <span><strong style="color:${legendGreen}">+%</strong> = Blue is more expensive than market average for this model</span>
+    <span><strong style="color:${legendRed}">−%</strong> = Blue is cheaper</span>
+    <span><strong style="color:var(--text-muted)">n/a</strong> = no Blue price for this model</span>
+    <span><strong style="color:var(--text-muted)">solo</strong> = Blue has this model, no competitor match</span>
+    <span style="opacity:.7">Hover a cell for exact prices</span>
+  </div>`;
+
+  grid.innerHTML = html;
 }
 
 function renderPriceGapHeatmap() {
@@ -2935,40 +3105,25 @@ function renderPriceGapHeatmap() {
   // month.market_avg  = { category: avg_per_day }  (all competitors avg)
   const monthLabels = months.map(m => m.month_label);
 
-  // For each category, compute gap% per month: (blue - market) / market * 100
+  // For each category × month, compute gap% and keep the raw Blue/market prices
+  // so the cell tooltip can show them.
   // Positive = Blue is MORE expensive than market
   // Negative = Blue is CHEAPER than market
   const rows = CATEGORIES.map(cat => {
     const gaps = months.map(m => {
-      const bluePrice  = m.competitors?.['Blue Car Rental']?.[cat];
-      const marketAvg  = m.market_avg?.[cat];
-      if (bluePrice == null || marketAvg == null || marketAvg === 0) return null;
-      return Math.round((bluePrice / marketAvg - 1) * 100);
+      const bluePrice = m.competitors?.['Blue Car Rental']?.[cat];
+      const marketAvg = m.market_avg?.[cat];
+      if (bluePrice == null || marketAvg == null || marketAvg === 0) {
+        return { pct: null, bluePrice, marketAvg };
+      }
+      return {
+        pct:       Math.round((bluePrice / marketAvg - 1) * 100),
+        bluePrice,
+        marketAvg,
+      };
     });
     return { cat, gaps };
   });
-
-  // Color scale: gap% → background color
-  const isDark = document.body.classList.contains('dark-mode');
-  function gapColor(pct) {
-    if (pct === null) return { bg: 'var(--bg-alt)', text: 'var(--text-muted)', label: '—' };
-    const abs = Math.abs(pct);
-    const label = (pct >= 0 ? '+' : '') + pct + '%';
-    if (abs <= 3) return { bg: 'var(--bg-alt)', text: 'var(--text)', label };
-    if (pct > 0) {
-      // Blue more expensive — green gradient
-      const intensity = Math.min(abs / 40, 1);
-      const g = Math.round(180 + intensity * 40);
-      const r = Math.round(220 - intensity * 100);
-      const text = isDark ? (intensity > 0.4 ? '#bbf7d0' : '#86efac') : '#14532d';
-      return { bg: `rgba(${r},${g},100,${0.15 + intensity * 0.5})`, text, label };
-    } else {
-      // Blue cheaper — red gradient
-      const intensity = Math.min(abs / 40, 1);
-      const text = isDark ? (intensity > 0.4 ? '#fecaca' : '#fca5a5') : '#7f1d1d';
-      return { bg: `rgba(220,50,50,${0.12 + intensity * 0.45})`, text, label };
-    }
-  }
 
   const colWidth = '72px';
 
@@ -2984,9 +3139,12 @@ function renderPriceGapHeatmap() {
   rows.forEach(({ cat, gaps }) => {
     html += `<tr>
       <td style="padding:6px 12px 6px 0;font-weight:600;white-space:nowrap;color:var(--text)">${CAT_EMOJI[cat] || ''} ${cat}</td>
-      ${gaps.map(pct => {
-        const { bg, text, label } = gapColor(pct);
-        return `<td style="text-align:center;padding:5px 3px">
+      ${gaps.map(g => {
+        const { bg, text, label } = gapCellStyle(g.pct);
+        const tip = (g.bluePrice != null && g.marketAvg != null)
+          ? `Blue ${formatISK(g.bluePrice)}/day · market ${formatISK(g.marketAvg)}/day · ${label}`
+          : 'No data';
+        return `<td style="text-align:center;padding:5px 3px" title="${escHtml(tip)}">
           <div style="background:${bg};color:${text};border-radius:6px;padding:6px 4px;font-weight:700;font-size:12px;min-width:52px">${label}</div>
         </td>`;
       }).join('')}
@@ -2996,12 +3154,14 @@ function renderPriceGapHeatmap() {
   html += `</tbody></table>`;
 
   // Legend
+  const isDark = document.body.classList.contains('dark-mode');
   const legendGreen = isDark ? '#86efac' : '#14532d';
   const legendRed   = isDark ? '#fca5a5' : '#7f1d1d';
   html += `<div style="margin-top:14px;display:flex;gap:20px;font-size:11px;color:var(--text-muted);flex-wrap:wrap">
     <span><strong style="color:${legendGreen}">+%</strong> = Blue is more expensive than market average</span>
     <span><strong style="color:${legendRed}">−%</strong> = Blue is cheaper than market average</span>
     <span><strong style="color:var(--text-muted)">±3%</strong> = at market (neutral)</span>
+    <span style="opacity:.7">Hover a cell for exact prices</span>
   </div>`;
 
   grid.innerHTML = html;

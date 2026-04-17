@@ -412,7 +412,12 @@
             <div class="card-header">
               <div>
                 <div class="card-title">Price Gap Map — Blue vs Market</div>
-                <div class="card-subtitle">How Blue's per-day price compares to the market average, by category × month. <span style="color:#16a34a;font-weight:600">Green = Blue is more expensive</span> &nbsp;·&nbsp; <span style="color:#dc2626;font-weight:600">Red = Blue is cheaper</span></div>
+                <div class="card-subtitle" id="heatmap-subtitle">How Blue's per-day price compares to the market average, by category × month. <span style="color:#16a34a;font-weight:600">Green = Blue is more expensive</span> &nbsp;·&nbsp; <span style="color:#dc2626;font-weight:600">Red = Blue is cheaper</span></div>
+              </div>
+              <div style="display:flex;gap:6px;align-items:center">
+                <span style="font-size:11px;color:var(--text-muted);font-weight:600;letter-spacing:.04em;text-transform:uppercase;margin-right:4px">Granularity</span>
+                <button class="btn btn-secondary btn-sm view-toggle active" id="btn-heatmap-cat" onclick="setHeatmapGranularity('category')">By Category</button>
+                <button class="btn btn-secondary btn-sm view-toggle" id="btn-heatmap-model" onclick="setHeatmapGranularity('model')" title="Shows each car model. Pick a category in the filter above to narrow the list.">By Model</button>
               </div>
             </div>
             <div style="padding:0 20px 20px;overflow-x:auto">
