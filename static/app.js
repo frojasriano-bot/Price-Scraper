@@ -1491,6 +1491,76 @@ function renderMatrix() {
 
   setSourceBadge('matrix-source-badge', state.matrixSource);
 
+  // ── Info paragraph ─────────────────────────────────────────────────────────
+  const infoEl = document.getElementById('matrix-info');
+  if (infoEl) {
+    const pickup = document.getElementById('filter-pickup')?.value;
+    const ret    = document.getElementById('filter-return')?.value;
+
+    // Collect all scraped_at timestamps from every cell
+    const allScrapedAt = [];
+    for (const car of data.cars) {
+      for (const cell of Object.values(car.prices || {})) {
+        if (cell?.scraped_at) allScrapedAt.push(new Date(cell.scraped_at));
+      }
+    }
+    allScrapedAt.sort((a, b) => b - a); // newest first
+    const newestScrape  = allScrapedAt[0] || null;
+    const oldestScrape  = allScrapedAt[allScrapedAt.length - 1] || null;
+
+    // Format dates nicely
+    const fmtDate = d => d
+      ? d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+      : '—';
+    const fmtTime = d => d
+      ? d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+      : '';
+
+    // Rental window description
+    let windowDesc = '';
+    if (pickup && ret) {
+      const pDate = new Date(pickup);
+      const rDate = new Date(ret);
+      const nights = Math.round((rDate - pDate) / 86400000);
+      windowDesc = `Rental window: <strong>${fmtDate(pDate)} → ${fmtDate(rDate)}</strong> (${nights} night${nights !== 1 ? 's' : ''}).`;
+    } else {
+      windowDesc = `Showing <strong>latest available data</strong> — no specific rental window selected. Use the date filters above to price a particular trip.`;
+    }
+
+    // Scrape freshness description
+    let scrapeDesc = '';
+    if (newestScrape) {
+      const ageMs  = Date.now() - newestScrape.getTime();
+      const ageHrs = ageMs / 3600000;
+      const ageLabel = ageHrs < 1
+        ? `${Math.round(ageMs / 60000)} min ago`
+        : ageHrs < 24
+          ? `${Math.round(ageHrs)}h ago`
+          : `${Math.round(ageHrs / 24)}d ago`;
+      scrapeDesc = `Most recent price scraped <strong>${ageLabel}</strong> (${fmtDate(newestScrape)} at ${fmtTime(newestScrape)}).`;
+      if (oldestScrape && (newestScrape - oldestScrape) > 3600000) {
+        // There's meaningful age spread across the data
+        scrapeDesc += ` Some prices date back to ${fmtDate(oldestScrape)} — cells highlighted in amber are older than 7 days.`;
+      }
+    } else {
+      scrapeDesc = state.matrixSource === 'mock'
+        ? `Prices are <strong>simulated demo data</strong> — run a scrape to get live competitor prices.`
+        : `Scrape timestamp unavailable.`;
+    }
+
+    // How it works blurb
+    const howDesc = `Each cell shows the lowest total price found for that car model per competitor, converted to ISK. <strong>Δ%</strong> is the deviation from the market average across all competitors for that model. The <strong>rank chip</strong> shows Blue's position from cheapest (#1) to most expensive.`;
+
+    infoEl.innerHTML = `
+      <div style="display:flex;flex-wrap:wrap;gap:12px 24px">
+        <span>📅 ${windowDesc}</span>
+        <span>🕐 ${scrapeDesc}</span>
+        <span style="color:var(--text-muted)">ℹ️ ${howDesc}</span>
+      </div>`;
+    infoEl.style.display = '';
+  }
+  // ── End info paragraph ────────────────────────────────────────────────────
+
   const { competitors } = data;
   const blueOnly  = document.getElementById('matrix-blue-only')?.checked ?? false;
   const showStale = document.getElementById('matrix-show-stale')?.checked ?? true;
