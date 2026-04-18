@@ -379,6 +379,89 @@ function dismissStaleBanner() {
   if (el) el.style.display = 'none';
 }
 
+async function refreshAllData() {
+  const btn   = document.getElementById('btn-refresh-all');
+  const msgEl = document.getElementById('stale-banner-msg');
+  if (!btn || !msgEl) return;
+
+  btn.disabled = true;
+  btn.style.opacity = '0.6';
+  btn.style.cursor  = 'not-allowed';
+
+  const origMsg = msgEl.textContent;
+
+  const steps = [
+    { label: 'Scraping current rates…',        url: '/api/rates/scrape',          method: 'POST', body: {} },
+    { label: 'Scraping 12-month seasonal…',    url: '/api/rates/scrape-seasonal', method: 'POST', body: {} },
+    { label: 'Scraping 26-week horizon…',      url: '/api/rates/scrape-horizon',  method: 'POST', body: {} },
+  ];
+
+  let totalRates = 0;
+
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    msgEl.innerHTML = `<span style="margin-right:6px">⏳</span>${step.label} (${i + 1}/${steps.length})`;
+
+    try {
+      const res = await fetch(step.url, {
+        method: step.method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(step.body),
+      });
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        // Different endpoints use different field names
+        totalRates += data.scraped || data.total_rates || data.rates_stored || data.count || 0;
+      }
+    } catch (err) {
+      console.warn(`refreshAllData step ${i + 1} failed:`, err);
+      // Continue with remaining steps
+    }
+  }
+
+  // Re-enable button
+  btn.disabled = false;
+  btn.style.opacity = '';
+  btn.style.cursor  = '';
+
+  // Show success in banner briefly, then dismiss
+  msgEl.innerHTML = `<span style="margin-right:6px">✅</span>All scrapers complete! ${totalRates ? totalRates + ' rate records updated.' : 'Data refreshed.'}`;
+
+  showToast(`All scrapers finished. ${totalRates ? totalRates + ' rates updated.' : 'Data refreshed.'}`, 'success');
+
+  // Dismiss banner after 3 s and reload active view
+  setTimeout(() => {
+    _staleDismissed = true;
+    const banner = document.getElementById('stale-banner');
+    if (banner) banner.style.display = 'none';
+    // Reload whatever view is active
+    const active = document.querySelector('.panel[style*="display: block"], .panel:not([style*="display: none"])')?.id;
+    loadCurrentView();
+  }, 3000);
+}
+
+/** Reload data for the currently visible view */
+function loadCurrentView() {
+  // Map view-panel IDs → their load functions
+  const viewMap = {
+    'view-list':          () => { typeof loadRates         === 'function' && loadRates(); },
+    'view-matrix':        () => { typeof loadMatrix       === 'function' && loadMatrix(); },
+    'view-history':       () => { typeof loadHistory      === 'function' && loadHistory(); },
+    'view-timeline':      () => { typeof loadTimeline     === 'function' && loadTimeline(); },
+    'view-win-loss':      () => { typeof loadWinLoss      === 'function' && loadWinLoss(); },
+    'view-fleet-pressure':() => { typeof loadFleetPressure=== 'function' && loadFleetPressure(); },
+    'view-seasonal':      () => { typeof loadSeasonal     === 'function' && loadSeasonal(); },
+    'view-horizon-fwd':   () => { typeof loadHorizon      === 'function' && loadHorizon(); },
+  };
+  for (const [panelId, fn] of Object.entries(viewMap)) {
+    const el = document.getElementById(panelId);
+    if (el && el.style.display !== 'none') {
+      try { fn(); } catch (_) {}
+      break;
+    }
+  }
+}
+
 async function checkDataFreshness() {
   if (_staleDismissed) return;
   try {
@@ -1386,6 +1469,18 @@ function renderRatesTable() {
   }).join('');
 }
 
+// ── Matrix category filter state ─────────────────────────────────────────────
+let _matrixCat = '';
+
+function setMatrixCat(cat) {
+  _matrixCat = cat;
+  ['all', 'Economy', 'Compact', 'SUV', '4x4', 'Minivan'].forEach(c => {
+    const el = document.getElementById(`mcat-${c === '' ? 'all' : c}`);
+    if (el) el.classList.toggle('active', (cat === '' ? '' : cat) === (c === 'all' ? '' : c));
+  });
+  renderMatrix();
+}
+
 function renderMatrix() {
   const wrap = document.getElementById('matrix-table-wrap');
   const data = state.matrix;
@@ -1394,77 +1489,155 @@ function renderMatrix() {
     return;
   }
 
-  const { cars, competitors } = data;
-
   setSourceBadge('matrix-source-badge', state.matrixSource);
 
-  // Build header row
-  const shortName = c => c.replace(' Car Rental', '').replace(' Iceland', '');
-  const headerCells = competitors.map(c =>
-    `<th style="text-align:center;min-width:100px">${escHtml(shortName(c))}</th>`
-  ).join('');
+  const { competitors } = data;
+  const blueOnly  = document.getElementById('matrix-blue-only')?.checked ?? false;
+  const showStale = document.getElementById('matrix-show-stale')?.checked ?? true;
+  const nowMs     = Date.now();
+  const STALE_MS  = 7 * 24 * 3600 * 1000; // 7 days
 
-  // Group rows by category
-  let lastCategory = '';
+  // Filter cars
+  let cars = data.cars;
+  if (_matrixCat)  cars = cars.filter(c => c.category === _matrixCat);
+  if (blueOnly)    cars = cars.filter(c => c.prices['Blue Car Rental']);
+
+  if (!cars.length) {
+    wrap.innerHTML = `<p style="padding:40px;text-align:center;color:#6b7280">No models match the current filters.</p>`;
+    return;
+  }
+
+  const shortName = c => c.replace(' Car Rental', '').replace(' Iceland', '');
+  const BLUE = 'Blue Car Rental';
+
+  // Reorder: Blue first, then others alphabetically
+  const orderedComps = [BLUE, ...competitors.filter(c => c !== BLUE)];
+
+  // Header
+  const headerCells = orderedComps.map(comp => {
+    const isBlue = comp === BLUE;
+    return `<th style="text-align:center;min-width:110px;padding:10px 8px;${isBlue ? 'background:rgba(37,99,235,.07);border-bottom:2px solid #2563eb' : ''}">
+      <div style="font-size:12px;font-weight:700;${isBlue ? 'color:#2563eb' : ''}">${escHtml(shortName(comp))}</div>
+      ${isBlue ? '<div style="font-size:9px;font-weight:600;color:#2563eb;letter-spacing:.06em;text-transform:uppercase">YOU</div>' : ''}
+    </th>`;
+  }).join('');
+
+  // Rows
+  const CAT_EMOJI = { Economy:'🚗', Compact:'🚙', SUV:'🛻', '4x4':'🏔️', Minivan:'🚐' };
+  let lastCat = '';
   const rows = cars.map(car => {
-    let categoryDivider = '';
-    if (car.category !== lastCategory) {
-      lastCategory = car.category;
-      categoryDivider = `<tr style="background:#f8fafc">
-        <td colspan="${2 + competitors.length}" style="padding:6px 12px;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.05em">
-          ${escHtml(car.category)}
+    // Category divider
+    let divider = '';
+    if (!_matrixCat && car.category !== lastCat) {
+      lastCat = car.category;
+      const catCars = data.cars.filter(c => c.category === car.category);
+      const catWithBlue = catCars.filter(c => c.prices[BLUE]).length;
+      divider = `<tr>
+        <td colspan="${2 + orderedComps.length}" style="padding:8px 14px 5px;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;background:var(--bg-alt);border-top:2px solid var(--border)">
+          ${CAT_EMOJI[car.category] || ''} ${car.category}
+          <span style="font-weight:400;margin-left:8px">${catCars.length} models · ${catWithBlue} with Blue price</span>
         </td>
       </tr>`;
     }
 
-    const cells = competitors.map(comp => {
-      const entry = car.prices[comp];
-      if (!entry) return `<td style="text-align:center;color:#d1d5db">—</td>`;
+    // Compute market avg from all valid prices
+    const allPrices = orderedComps.map(c => car.prices[c]?.price_isk).filter(Boolean);
+    const marketAvg = allPrices.length ? Math.round(allPrices.reduce((a,b)=>a+b,0)/allPrices.length) : null;
 
-      let cls = '';
-      if (car.min_price !== null && entry.price_isk === car.min_price) cls = 'price-low';
-      else if (car.max_price !== null && entry.price_isk === car.max_price) cls = 'price-high';
+    // Blue rank among all with prices (cheapest = 1)
+    const sorted = orderedComps
+      .filter(c => car.prices[c])
+      .sort((a,b) => car.prices[a].price_isk - car.prices[b].price_isk);
+    const blueRank = car.prices[BLUE] ? sorted.indexOf(BLUE) + 1 : null;
+    const totalWithPrice = sorted.length;
 
-      const modelNote = entry.car_model && entry.car_model !== car.canonical_name
-        ? `<div style="font-size:10px;color:#9ca3af">${escHtml(entry.car_model)}</div>` : '';
+    // Blue rank chip
+    let rankChip = '';
+    if (blueRank !== null) {
+      const rc = blueRank === 1 ? '#16a34a' : blueRank <= 2 ? '#ca8a04' : '#dc2626';
+      const rl = blueRank === 1 ? '🥇 #1' : `#${blueRank}/${totalWithPrice}`;
+      rankChip = `<span style="display:inline-block;margin-left:6px;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;color:${rc};background:${rc}1a;border:1px solid ${rc}33">${rl}</span>`;
+    }
 
-      // Delta badge for this canonical model
-      const d = state.deltas[car.canonical_name];
-      let deltaBadge = '';
-      if (d) {
-        const sign = d.delta_pct > 0 ? '+' : '';
-        if (d.direction === 'up')
-          deltaBadge = `<div class="delta-up" style="font-size:10px">↑ ${sign}${d.delta_pct}%</div>`;
-        else if (d.direction === 'down')
-          deltaBadge = `<div class="delta-down" style="font-size:10px">↓ ${Math.abs(d.delta_pct)}%</div>`;
+    const cells = orderedComps.map(comp => {
+      const entry   = car.prices[comp];
+      const isBlue  = comp === BLUE;
+      const blueBg  = isBlue ? 'background:rgba(37,99,235,.04);' : '';
+
+      if (!entry) {
+        return `<td style="text-align:center;color:var(--text-muted);font-size:13px;${blueBg}">—</td>`;
       }
 
-      return `<td class="${cls}" style="text-align:center">
-        <div style="font-weight:600">${formatISK(entry.price_isk)}</div>
-        ${modelNote}${deltaBadge}
+      const price    = entry.price_isk;
+      const isMin    = car.min_price !== null && price === car.min_price;
+      const isMax    = car.max_price !== null && price === car.max_price && allPrices.length > 1;
+      const ageMs    = nowMs - new Date(entry.scraped_at).getTime();
+      const isStale  = showStale && ageMs > STALE_MS;
+
+      let bg = blueBg;
+      if (isStale)     bg += 'background:rgba(234,179,8,.10);';
+      if (isMin)       bg = `${blueBg}background:rgba(22,163,74,.16);`;
+      if (isMax)       bg = `${blueBg}background:rgba(220,38,38,.12);`;
+
+      // % vs market avg
+      let diffBadge = '';
+      if (marketAvg && allPrices.length > 1) {
+        const diff = Math.round((price / marketAvg - 1) * 100);
+        if (Math.abs(diff) >= 3) {
+          const dc = diff < 0 ? '#16a34a' : '#dc2626';
+          const ds = diff > 0 ? `+${diff}` : `${diff}`;
+          diffBadge = `<div style="font-size:10px;font-weight:600;color:${dc}">${ds}%</div>`;
+        }
+      }
+
+      // Stale indicator
+      const staleNote = isStale
+        ? `<div style="font-size:9px;color:#b45309;font-weight:600">${Math.floor(ageMs/86400000)}d old</div>`
+        : '';
+
+      // Model name note (if different from canonical)
+      const modelNote = entry.car_model && entry.car_model !== car.canonical_name
+        ? `<div style="font-size:9px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100px">${escHtml(entry.car_model)}</div>`
+        : '';
+
+      const border = isMin ? 'border:1px solid rgba(22,163,74,.35);' : isMax ? 'border:1px solid rgba(220,38,38,.3);' : '';
+
+      return `<td style="text-align:center;padding:9px 6px;${bg}">
+        <div style="display:inline-flex;flex-direction:column;align-items:center;gap:1px;padding:4px 6px;border-radius:6px;${border}min-width:80px">
+          <div style="font-size:13px;font-weight:700;font-family:monospace">${formatISK(price)}</div>
+          ${diffBadge}${modelNote}${staleNote}
+        </div>
       </td>`;
     }).join('');
 
-    const availBadge = car.available_at > 0
-      ? `<span style="font-size:10px;color:#6b7280">${car.available_at}/${competitors.length}</span>`
-      : '';
+    // Market avg cell
+    const avgCell = marketAvg
+      ? `<td style="text-align:center;padding:9px 6px;border-left:2px solid var(--border);color:var(--text-muted)">
+          <div style="font-size:12px;font-weight:600;font-family:monospace">${formatISK(marketAvg)}</div>
+          <div style="font-size:9px;opacity:.7">${totalWithPrice} sources</div>
+        </td>`
+      : `<td style="text-align:center;color:var(--text-muted);border-left:2px solid var(--border)">—</td>`;
 
-    return `${categoryDivider}<tr>
-      <td><strong>${escHtml(car.canonical_name)}</strong>${availBadge ? ' ' + availBadge : ''}</td>
+    return `${divider}<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:9px 14px;min-width:190px">
+        <div style="font-size:13px;font-weight:600">${escHtml(car.canonical_name)}${rankChip}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:1px">${car.available_at}/${orderedComps.length} competitors</div>
+      </td>
       ${cells}
+      ${avgCell}
     </tr>`;
   }).join('');
 
-  wrap.innerHTML = `
-    <table>
-      <thead>
-        <tr>
-          <th style="min-width:180px">Car Model</th>
-          ${headerCells}
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>`;
+  wrap.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px">
+    <thead>
+      <tr style="border-bottom:2px solid var(--border)">
+        <th style="text-align:left;padding:10px 14px;font-size:12px;min-width:190px">Model</th>
+        ${headerCells}
+        <th style="text-align:center;padding:10px 8px;font-size:12px;border-left:2px solid var(--border);min-width:90px">Mkt Avg</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>`;
 }
 
 function updateRateStats() {

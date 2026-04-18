@@ -99,6 +99,10 @@
       <span style="font-size:15px">⚠️</span>
       <span id="stale-banner-msg"></span>
       <div style="flex:1"></div>
+      <button id="btn-refresh-all" onclick="refreshAllData()" style="display:inline-flex;align-items:center;gap:6px;padding:5px 14px;font-size:12px;font-weight:600;border-radius:6px;border:1px solid rgba(255,255,255,0.35);background:rgba(255,255,255,0.18);color:inherit;cursor:pointer;white-space:nowrap;margin-right:8px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        Refresh All Data
+      </button>
       <button class="stale-dismiss" onclick="dismissStaleBanner()" title="Dismiss">×</button>
     </div>
 
@@ -320,20 +324,44 @@
 
         <!-- MATRIX VIEW -->
         <div id="view-matrix" style="display:none">
-          <div class="card">
-            <div class="card-header">
-              <div>
-                <div class="card-title">Car Model Price Matrix</div>
-                <div class="card-subtitle">Per-model comparison across all competitors &nbsp;|&nbsp; Green = cheapest &nbsp;|&nbsp; Red = most expensive</div>
+          <!-- Toolbar -->
+          <div class="card" style="margin-bottom:12px;padding:12px 16px">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <!-- Category pills -->
+              <div style="display:flex;gap:5px;flex-wrap:wrap">
+                <button class="btn-subtab active" id="mcat-all"      onclick="setMatrixCat('')">All</button>
+                <button class="btn-subtab"         id="mcat-Economy" onclick="setMatrixCat('Economy')">🚗 Economy</button>
+                <button class="btn-subtab"         id="mcat-Compact" onclick="setMatrixCat('Compact')">🚙 Compact</button>
+                <button class="btn-subtab"         id="mcat-SUV"     onclick="setMatrixCat('SUV')">🛻 SUV</button>
+                <button class="btn-subtab"         id="mcat-4x4"     onclick="setMatrixCat('4x4')">🏔️ 4x4</button>
+                <button class="btn-subtab"         id="mcat-Minivan" onclick="setMatrixCat('Minivan')">🚐 Minivan</button>
               </div>
-              <button class="btn btn-secondary btn-sm" onclick="exportMatrixCSV()" title="Export to CSV">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                Export CSV
+              <div style="flex:1"></div>
+              <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:500;color:var(--text-muted);cursor:pointer;white-space:nowrap">
+                <input type="checkbox" id="matrix-blue-only" onchange="renderMatrix()" style="cursor:pointer">
+                Blue only
+              </label>
+              <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:500;color:var(--text-muted);cursor:pointer;white-space:nowrap">
+                <input type="checkbox" id="matrix-show-stale" onchange="renderMatrix()" checked style="cursor:pointer">
+                Highlight stale
+              </label>
+              <button class="btn btn-secondary btn-sm" onclick="exportMatrixCSV()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                CSV
               </button>
               <span id="matrix-source-badge" class="badge badge-gray">Mock Data</span>
             </div>
-            <div class="table-wrap" id="matrix-table-wrap">
-              <p style="padding:40px;text-align:center;color:#6b7280">Loading matrix...</p>
+          </div>
+          <!-- Matrix table -->
+          <div class="card" style="padding:0;overflow:hidden">
+            <div class="table-wrap" id="matrix-table-wrap" style="overflow-x:auto">
+              <p style="padding:40px;text-align:center;color:#6b7280">Loading matrix…</p>
+            </div>
+            <div id="matrix-legend" style="padding:10px 16px;border-top:1px solid var(--border);font-size:11px;color:var(--text-muted);display:flex;gap:16px;flex-wrap:wrap">
+              <span style="display:inline-flex;align-items:center;gap:5px"><span style="width:12px;height:12px;border-radius:2px;background:rgba(22,163,74,.18);display:inline-block;border:1px solid rgba(22,163,74,.3)"></span>Cheapest</span>
+              <span style="display:inline-flex;align-items:center;gap:5px"><span style="width:12px;height:12px;border-radius:2px;background:rgba(220,38,38,.13);display:inline-block;border:1px solid rgba(220,38,38,.25)"></span>Most expensive</span>
+              <span style="display:inline-flex;align-items:center;gap:5px"><span style="width:12px;height:12px;border-radius:2px;background:rgba(234,179,8,.12);display:inline-block;border:1px solid rgba(234,179,8,.3)"></span>Price &gt;7 days old</span>
+              <span style="margin-left:auto;opacity:.7"><b style="font-family:monospace">Δ%</b> = vs market avg &nbsp;·&nbsp; <b>Rank</b> = cheapest→priciest</span>
             </div>
           </div>
         </div><!-- /view-matrix -->
