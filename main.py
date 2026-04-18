@@ -30,6 +30,7 @@ from routes.seo import router as seo_router
 from routes.settings import router as settings_router
 from routes.alerts import router as alerts_router
 from routes.insurance import router as insurance_router
+from routes.fleet import router as fleet_router
 
 # Load environment variables from .env if present
 load_dotenv()
@@ -201,6 +202,23 @@ async def scheduled_horizon_scrape():
     )
 
 
+async def scheduled_fleet_poll():
+    """Poll Caren competitors for fleet availability — called by APScheduler (twice daily)."""
+    from scrapers.fleet_pressure import poll_fleet_pressure
+    from database import insert_fleet_pressure
+
+    logger.info("Scheduled fleet pressure poll starting...")
+    try:
+        records = await poll_fleet_pressure()
+        if records:
+            await insert_fleet_pressure(records)
+            logger.info(f"Fleet pressure poll complete: {len(records)} records stored.")
+        else:
+            logger.warning("Fleet pressure poll returned no records.")
+    except Exception as e:
+        logger.error(f"Fleet pressure poll failed: {e}")
+
+
 async def scheduled_alert_check():
     """Run price alert check after scrape — called by APScheduler."""
     from routes.alerts import check_alerts
@@ -313,6 +331,21 @@ def setup_scheduler(schedule: str = "daily"):
         replace_existing=True,
         name="Horizon Rate Scrape (26 weeks / 6 months)",
     )
+    # Fleet pressure poll: twice daily (09:00 and 21:00) — lightweight, Caren only
+    scheduler.add_job(
+        scheduled_fleet_poll,
+        trigger=CronTrigger(hour=9, minute=0),
+        id="fleet_poll_morning",
+        replace_existing=True,
+        name="Fleet Pressure Poll (morning)",
+    )
+    scheduler.add_job(
+        scheduled_fleet_poll,
+        trigger=CronTrigger(hour=21, minute=0),
+        id="fleet_poll_evening",
+        replace_existing=True,
+        name="Fleet Pressure Poll (evening)",
+    )
 
     logger.info(f"Scheduler configured: {schedule} schedule active.")
 
@@ -370,6 +403,7 @@ app.include_router(seo_router)
 app.include_router(settings_router)
 app.include_router(alerts_router)
 app.include_router(insurance_router)
+app.include_router(fleet_router)
 
 # Serve static files (the SPA dashboard)
 static_dir = Path(__file__).parent / "static"

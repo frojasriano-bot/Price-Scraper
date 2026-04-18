@@ -201,6 +201,23 @@ async def init_db():
             )
         """)
 
+        # Fleet pressure — availability snapshots from Caren-based competitors
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS fleet_pressure (
+                id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                scraped_at         TEXT    NOT NULL,
+                competitor         TEXT    NOT NULL,
+                location           TEXT    NOT NULL,
+                pickup_date        TEXT    NOT NULL,
+                return_date        TEXT    NOT NULL,
+                window_label       TEXT    NOT NULL DEFAULT '1w',
+                total_classes      INTEGER NOT NULL,
+                available_classes  INTEGER NOT NULL,
+                unavailable_classes INTEGER NOT NULL,
+                availability_pct   REAL    NOT NULL
+            )
+        """)
+
         # Indexes for query performance (safe to re-run — IF NOT EXISTS)
         await db.execute(
             "CREATE INDEX IF NOT EXISTS idx_rates_scraped_at ON rates(scraped_at)"
@@ -213,6 +230,10 @@ async def init_db():
         )
         await db.execute(
             "CREATE INDEX IF NOT EXISTS idx_rankings_keyword ON rankings(keyword, serp_date)"
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_fleet_pressure_time "
+            "ON fleet_pressure(scraped_at, competitor, location)"
         )
 
         await db.commit()
@@ -1661,3 +1682,108 @@ async def get_booking_window(
         })
 
     return {"pickup_date": pickup_date, "series": series}
+
+
+# ── Fleet pressure helpers ────────────────────────────────────────────────────
+
+async def insert_fleet_pressure(records: list[dict]) -> None:
+    """Persist a batch of fleet pressure records."""
+    if not records:
+        return
+    now = datetime.utcnow().isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        for r in records:
+            await db.execute(
+                """
+                INSERT INTO fleet_pressure
+                    (scraped_at, competitor, location, pickup_date, return_date,
+                     window_label, total_classes, available_classes,
+                     unavailable_classes, availability_pct)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    now,
+                    r["competitor"],
+                    r["location"],
+                    r["pickup_date"],
+                    r["return_date"],
+                    r.get("window_label", "1w"),
+                    r["total_classes"],
+                    r["available_classes"],
+                    r["unavailable_classes"],
+                    r["availability_pct"],
+                ),
+            )
+        await db.commit()
+
+
+async def get_fleet_pressure(
+    location: str = None,
+    days: int = 30,
+    window_label: str = None,
+) -> list[dict]:
+    """
+    Return fleet availability snapshots as a time series.
+    Optionally filter by location and/or booking window (1w / 2w / 4w).
+    """
+    from datetime import date as _date, timedelta as _td
+    cutoff = (_date.today() - _td(days=days)).isoformat()
+
+    conds:  list[str] = ["scraped_at >= ?"]
+    params: list      = [cutoff]
+    if location:
+        conds.append("location = ?")
+        params.append(location)
+    if window_label:
+        conds.append("window_label = ?")
+        params.append(window_label)
+
+    where = "WHERE " + " AND ".join(conds)
+    query = f"""
+        SELECT scraped_at, competitor, location, pickup_date, return_date,
+               window_label, total_classes, available_classes,
+               unavailable_classes, availability_pct
+        FROM fleet_pressure
+        {where}
+        ORDER BY scraped_at ASC, competitor ASC
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(query, params) as cur:
+            return [dict(r) for r in await cur.fetchall()]
+
+
+async def get_fleet_pressure_latest(location: str = None) -> list[dict]:
+    """
+    Return the single most-recent snapshot per competitor × location × window.
+    Useful for the 'current state' summary cards.
+    """
+    conds:  list[str] = []
+    params: list      = []
+    if location:
+        conds.append("location = ?")
+        params.append(location)
+
+    where = ("WHERE " + " AND ".join(conds)) if conds else ""
+
+    query = f"""
+        WITH ranked AS (
+            SELECT *,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY competitor, location, window_label
+                       ORDER BY scraped_at DESC
+                   ) AS rn
+            FROM fleet_pressure
+            {where}
+        )
+        SELECT scraped_at, competitor, location, pickup_date, return_date,
+               window_label, total_classes, available_classes,
+               unavailable_classes, availability_pct
+        FROM ranked
+        WHERE rn = 1
+        ORDER BY competitor ASC, window_label ASC
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(query, params) as cur:
+            return [dict(r) for r in await cur.fetchall()]

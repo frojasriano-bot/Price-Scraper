@@ -239,14 +239,15 @@ function syncDateConstraints() {
 
 // Which group each view belongs to
 const _VIEW_GROUP = {
-  'list':           'now',
-  'matrix':         'now',
-  'history':        'trends',
-  'timeline':       'trends',
-  'seasonal':       'seasonal',
-  'horizon-fwd':    'forward',
-  'booking-window': 'forward',
-  'win-loss':       'competitive',
+  'list':            'now',
+  'matrix':          'now',
+  'history':         'trends',
+  'timeline':        'trends',
+  'seasonal':        'seasonal',
+  'horizon-fwd':     'forward',
+  'booking-window':  'forward',
+  'win-loss':        'competitive',
+  'fleet-pressure':  'competitive',
 };
 
 // Default view shown when switching to a group
@@ -260,20 +261,17 @@ const _GROUP_DEFAULT = {
 
 // All groups; those with sub-tabs
 const _ALL_GROUPS    = ['now', 'trends', 'seasonal', 'forward', 'competitive'];
-const _SUBTAB_GROUPS = ['now', 'trends', 'forward'];
+const _SUBTAB_GROUPS = ['now', 'trends', 'forward', 'competitive'];
 
 function setRatesGroup(group) {
   state.ratesGroup = group;
-  // Activate correct group button
   _ALL_GROUPS.forEach(g => {
     document.getElementById(`grp-${g}`).classList.toggle('active', g === group);
   });
-  // Show the right sub-tab bar (hide the others)
   _SUBTAB_GROUPS.forEach(g => {
     const el = document.getElementById(`subtabs-${g}`);
     if (el) el.style.display = g === group ? 'flex' : 'none';
   });
-  // Navigate to the default (or last remembered) view for this group
   setRatesView(_GROUP_DEFAULT[group]);
 }
 
@@ -281,7 +279,7 @@ function setRatesView(view) {
   state.ratesView = view;
   const group = _VIEW_GROUP[view] || 'now';
 
-  // If arriving from a different group, sync group nav + sub-tabs
+  // Sync group nav + sub-tab bars whenever the group changes
   if (group !== state.ratesGroup) {
     state.ratesGroup = group;
     _ALL_GROUPS.forEach(g => {
@@ -303,6 +301,7 @@ function setRatesView(view) {
     'timeline':       'view-timeline',
     'booking-window': 'view-booking-window',
     'win-loss':       'view-win-loss',
+    'fleet-pressure': 'view-fleet-pressure',
   };
   Object.entries(VIEW_PANEL_IDS).forEach(([v, id]) => {
     document.getElementById(id).style.display = v === view ? '' : 'none';
@@ -316,13 +315,15 @@ function setRatesView(view) {
     'timeline':       'sub-timeline',
     'horizon-fwd':    'sub-horizon',
     'booking-window': 'sub-booking',
+    'win-loss':       'sub-win-loss',
+    'fleet-pressure': 'sub-fleet',
   };
   Object.entries(SUB_TAB_IDS).forEach(([v, id]) => {
     const el = document.getElementById(id);
     if (el) el.classList.toggle('active', v === view);
   });
 
-  // Data loading — unchanged from before
+  // Data loading
   if (view === 'matrix'         && !state.matrix)       loadMatrix();
   if (view === 'history')                               loadHistory();
   if (view === 'seasonal'       && !state.seasonalData) loadSeasonal();
@@ -330,6 +331,7 @@ function setRatesView(view) {
   if (view === 'timeline')                              loadTimeline();
   if (view === 'booking-window')                        initBookingWindow();
   if (view === 'win-loss')                              loadWinLoss();
+  if (view === 'fleet-pressure')                        loadFleetPressure();
 }
 
 // ── SCHEDULER STATUS ───────────────────────────────────────────────────────
@@ -2946,17 +2948,38 @@ function renderScrapeLog(entries) {
     tbody.innerHTML = `<tr><td colspan="7" style="padding:20px;text-align:center;color:#6b7280">No scrape history yet. Run a scrape first.</td></tr>`;
     return;
   }
-  tbody.innerHTML = entries.map(e => {
+  tbody.innerHTML = entries.map((e, idx) => {
     const hasErrors = e.errors && e.errors.length > 0;
     const statusHtml = hasErrors
-      ? `<span class="badge" style="background:#fef2f2;color:#b91c1c;border:1px solid #fca5a5">${e.errors.length} error${e.errors.length > 1 ? 's' : ''}</span>`
+      ? `<button onclick="toggleScrapeErrors('scrape-errors-${idx}')"
+           style="background:#fef2f2;color:#b91c1c;border:1px solid #fca5a5;border-radius:12px;padding:2px 9px;font-size:11px;font-weight:600;cursor:pointer;line-height:1.5">
+           ⚠ ${e.errors.length} error${e.errors.length > 1 ? 's' : ''} ▾
+         </button>`
       : `<span class="badge" style="background:#f0fdf4;color:#15803d;border:1px solid #86efac">✓ OK</span>`;
-    const triggerBadge = e.trigger === 'scheduled'
-      ? `<span class="badge badge-blue">Scheduled</span>`
-      : `<span class="badge badge-gray">Manual</span>`;
-    const duration = e.duration_seconds != null
-      ? `${e.duration_seconds.toFixed(1)}s`
-      : '—';
+
+    const triggerLabels = {
+      scheduled: `<span class="badge badge-blue">Scheduled</span>`,
+      manual:    `<span class="badge badge-gray">Manual</span>`,
+      seasonal:  `<span class="badge" style="background:#faf5ff;color:#7c3aed;border:1px solid #c4b5fd">Seasonal</span>`,
+      horizon:   `<span class="badge" style="background:#eff6ff;color:#1d4ed8;border:1px solid #93c5fd">Horizon</span>`,
+    };
+    const triggerBadge = triggerLabels[e.trigger] || `<span class="badge badge-gray">${escHtml(e.trigger)}</span>`;
+    const duration = e.duration_seconds != null ? `${e.duration_seconds.toFixed(1)}s` : '—';
+
+    // Error detail rows (hidden by default)
+    const errorRows = hasErrors
+      ? `<tr id="scrape-errors-${idx}" style="display:none">
+           <td colspan="7" style="padding:0 12px 12px 12px">
+             <div style="background:var(--bg-alt);border:1px solid #fca5a5;border-radius:6px;padding:10px 14px">
+               <div style="font-size:11px;font-weight:700;color:#b91c1c;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em">Error Details</div>
+               <ul style="margin:0;padding-left:18px;font-size:12px;color:var(--text);font-family:monospace;line-height:1.7">
+                 ${e.errors.map(err => `<li>${escHtml(String(err))}</li>`).join('')}
+               </ul>
+             </div>
+           </td>
+         </tr>`
+      : '';
+
     return `<tr>
       <td style="white-space:nowrap;color:#6b7280;font-size:12px">${timeAgo(e.scraped_at)}<br><span style="font-size:11px">${formatDate(e.scraped_at)}</span></td>
       <td>${triggerBadge}</td>
@@ -2965,8 +2988,19 @@ function renderScrapeLog(entries) {
       <td>${e.competitors}</td>
       <td style="font-size:12px">${duration}</td>
       <td>${statusHtml}</td>
-    </tr>`;
+    </tr>${errorRows}`;
   }).join('');
+}
+
+function toggleScrapeErrors(id) {
+  const row = document.getElementById(id);
+  if (!row) return;
+  row.style.display = row.style.display === 'none' ? '' : 'none';
+  // Flip the arrow on the button
+  const btn = row.previousElementSibling?.querySelector('button[onclick*="' + id + '"]');
+  if (btn) btn.textContent = btn.textContent.includes('▾')
+    ? btn.textContent.replace('▾', '▴')
+    : btn.textContent.replace('▴', '▾');
 }
 
 // ── PRICE GAP HEATMAP ─────────────────────────────────────────────────────
@@ -4700,6 +4734,251 @@ function renderWLDrill() {
   card.style.display = '';
   // Smooth scroll into view
   card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// ── Fleet Pressure ─────────────────────────────────────────────────────────
+let _fleetChart = null;
+
+async function loadFleetPressure() {
+  const snapshotEl = document.getElementById('fleet-snapshot-cards');
+  const chartCard  = document.getElementById('fleet-chart-card');
+  const tableCard  = document.getElementById('fleet-table-card');
+  const emptyEl    = document.getElementById('fleet-empty');
+
+  snapshotEl.innerHTML = '<div style="grid-column:1/-1;padding:20px;color:var(--text-muted);font-size:13px">Loading…</div>';
+  chartCard.style.display = 'none';
+  tableCard.style.display = 'none';
+  emptyEl.style.display   = 'none';
+
+  try {
+    const days   = document.getElementById('fleet-days')?.value   || 30;
+    const window = document.getElementById('fleet-window')?.value || '';
+    const loc    = document.getElementById('filter-location')?.value || '';
+
+    const params = new URLSearchParams({ days });
+    if (window) params.set('window_label', window);
+    if (loc)    params.set('location', loc);
+
+    const [histData, snapData] = await Promise.all([
+      apiFetch(`/api/fleet/pressure?${params}`),
+      apiFetch(`/api/fleet/pressure/latest${loc ? '?location=' + encodeURIComponent(loc) : ''}`),
+    ]);
+
+    const records = histData.records || [];
+    const latest  = snapData.records || [];
+
+    if (!latest.length && !records.length) {
+      emptyEl.style.display = '';
+      snapshotEl.innerHTML  = '';
+      return;
+    }
+
+    renderFleetSnapshot(latest);
+    if (records.length) {
+      renderFleetChart(records);
+      renderFleetTable(latest);
+    }
+  } catch (e) {
+    showToast('Failed to load fleet pressure: ' + e.message, 'error');
+    emptyEl.style.display   = '';
+    snapshotEl.innerHTML    = '';
+  }
+}
+
+function renderFleetSnapshot(latest) {
+  const el = document.getElementById('fleet-snapshot-cards');
+  if (!latest.length) { el.innerHTML = ''; return; }
+
+  // Group by competitor
+  const byComp = {};
+  latest.forEach(r => {
+    byComp[r.competitor] = byComp[r.competitor] || [];
+    byComp[r.competitor].push(r);
+  });
+
+  const WINDOW_LABELS = { '1w': '1 wk', '2w': '2 wks', '4w': '4 wks' };
+
+  el.innerHTML = Object.entries(byComp).map(([comp, rows]) => {
+    const color = compColor(comp);
+    // Sort windows
+    rows.sort((a, b) => a.window_label.localeCompare(b.window_label));
+    const overall = rows.reduce((s, r) => s + r.availability_pct, 0) / rows.length;
+    const avColor = overall >= 80 ? '#16a34a' : overall >= 60 ? '#ca8a04' : '#dc2626';
+    const barBg   = overall >= 80 ? '#16a34a' : overall >= 60 ? '#ca8a04' : '#dc2626';
+
+    const windowRows = rows.map(r => {
+      const wc = r.availability_pct >= 80 ? '#16a34a' : r.availability_pct >= 60 ? '#ca8a04' : '#dc2626';
+      return `
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:3px 0">
+          <span style="color:var(--text-muted)">${WINDOW_LABELS[r.window_label] || r.window_label} out</span>
+          <span style="font-weight:700;color:${wc}">${r.availability_pct}%</span>
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="card" style="padding:14px 16px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+          <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0"></div>
+          <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(comp)}</div>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:5px;margin-bottom:6px">
+          <span style="font-size:28px;font-weight:800;line-height:1;color:${avColor}">${overall.toFixed(0)}%</span>
+          <span style="font-size:11px;color:var(--text-muted)">available</span>
+        </div>
+        <div style="height:4px;border-radius:2px;background:var(--border);margin-bottom:12px;overflow:hidden">
+          <div style="height:100%;background:${barBg};width:${overall}%;border-radius:2px"></div>
+        </div>
+        <div style="border-top:1px solid var(--border);padding-top:8px">${windowRows}</div>
+      </div>`;
+  }).join('');
+}
+
+function renderFleetChart(records) {
+  const card = document.getElementById('fleet-chart-card');
+  if (!records.length) { card.style.display = 'none'; return; }
+
+  // Build time series per competitor × window
+  // Key: "CompName (1w)"
+  const series = {};
+  records.forEach(r => {
+    const key = `${r.competitor} (${r.window_label})`;
+    series[key] = series[key] || [];
+    series[key].push({ x: r.scraped_at.slice(0, 10), y: r.availability_pct });
+  });
+
+  // Deduplicate by date (take last value per date)
+  Object.keys(series).forEach(k => {
+    const byDate = {};
+    series[k].forEach(p => { byDate[p.x] = p.y; });
+    series[k] = Object.entries(byDate).map(([x, y]) => ({ x, y })).sort((a, b) => a.x.localeCompare(b.x));
+  });
+
+  const COMP_COLORS = {
+    'Blue Car Rental':  '#2563eb',
+    'Lotus Car Rental': '#16a34a',
+    'Lava Car Rental':  '#dc2626',
+  };
+  const WINDOW_STYLE = { '1w': [], '2w': [5, 3], '4w': [2, 2] };
+
+  const isDark    = document.body.classList.contains('dark-mode');
+  const gridColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.07)';
+  const textColor = isDark ? '#9ca3af' : '#6b7280';
+
+  if (_fleetChart) { _fleetChart.destroy(); _fleetChart = null; }
+
+  const ctx = document.getElementById('fleet-chart-canvas').getContext('2d');
+  _fleetChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      datasets: Object.entries(series).map(([key, pts]) => {
+        const compName = key.replace(/ \(\w+\)$/, '');
+        const win      = key.match(/\((\w+)\)$/)?.[1] || '1w';
+        const col      = COMP_COLORS[compName] || '#6b7280';
+        return {
+          label:           key,
+          data:            pts,
+          borderColor:     col,
+          backgroundColor: col + '22',
+          borderWidth:     win === '1w' ? 2 : 1.5,
+          borderDash:      WINDOW_STYLE[win] || [],
+          pointRadius:     pts.length < 10 ? 4 : 2,
+          tension:         0.3,
+          fill:            false,
+        };
+      }),
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: textColor, font: { size: 11 }, boxWidth: 24 } },
+        tooltip: {
+          callbacks: {
+            label: item => `${item.dataset.label}: ${item.raw.y}% available`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          type: 'category',
+          grid: { color: gridColor },
+          ticks: { color: textColor, maxTicksLimit: 10, font: { size: 10 } },
+        },
+        y: {
+          min: 0, max: 100,
+          title: { display: true, text: '% Available', color: textColor, font: { size: 11 } },
+          grid: { color: gridColor },
+          ticks: { color: textColor, callback: v => v + '%' },
+        },
+      },
+    },
+  });
+
+  card.style.display = '';
+}
+
+function renderFleetTable(latest) {
+  const card      = document.getElementById('fleet-table-card');
+  const tableEl   = document.getElementById('fleet-table');
+  const subtitleEl = document.getElementById('fleet-table-subtitle');
+  if (!latest.length) { card.style.display = 'none'; return; }
+
+  const comps   = [...new Set(latest.map(r => r.competitor))].sort();
+  const windows = ['1w', '2w', '4w'];
+  const WLABELS = { '1w': '1 week out', '2w': '2 weeks out', '4w': '4 weeks out' };
+
+  // Build lookup: comp → window → record
+  const lookup = {};
+  latest.forEach(r => {
+    lookup[r.competitor] = lookup[r.competitor] || {};
+    lookup[r.competitor][r.window_label] = r;
+  });
+
+  const ts = latest[0]?.scraped_at ? new Date(latest[0].scraped_at).toLocaleString('en-GB', { dateStyle:'short', timeStyle:'short' }) : '';
+  subtitleEl.textContent = ts ? `As of ${ts}` : '';
+
+  let html = `<table class="rate-table" style="width:100%;border-collapse:collapse">
+    <thead><tr>
+      <th style="text-align:left;padding:10px 14px;font-size:12px">Competitor</th>
+      ${windows.map(w => `<th style="text-align:center;padding:10px 10px;font-size:12px">${WLABELS[w]}</th>`).join('')}
+    </tr></thead><tbody>`;
+
+  comps.forEach(comp => {
+    html += `<tr><td style="padding:10px 14px;font-weight:600;font-size:13px">${escHtml(comp)}</td>`;
+    windows.forEach(w => {
+      const r = lookup[comp]?.[w];
+      if (!r) { html += `<td style="text-align:center;color:var(--text-muted);font-size:12px">—</td>`; return; }
+      const pct = r.availability_pct;
+      const bg  = pct >= 80 ? 'rgba(22,163,74,.15)' : pct >= 60 ? 'rgba(202,138,4,.15)' : 'rgba(220,38,38,.15)';
+      const col = pct >= 80 ? '#15803d'              : pct >= 60 ? '#854d0e'              : '#b91c1c';
+      html += `
+        <td style="text-align:center;padding:8px 6px">
+          <div style="display:inline-flex;flex-direction:column;align-items:center;min-width:80px;padding:6px 10px;border-radius:7px;background:${bg};color:${col}">
+            <span style="font-size:16px;font-weight:800">${pct}%</span>
+            <span style="font-size:10px;opacity:.8">${r.available_classes}/${r.total_classes} classes</span>
+          </div>
+        </td>`;
+    });
+    html += '</tr>';
+  });
+
+  html += '</tbody></table>';
+  tableEl.innerHTML = html;
+  card.style.display = '';
+}
+
+async function triggerFleetPoll() {
+  const btn = document.getElementById('fleet-poll-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Polling…'; }
+  try {
+    const data = await apiFetch('/api/fleet/poll', { method: 'POST' });
+    showToast(`✓ ${data.message}`, 'success');
+    await loadFleetPressure();
+  } catch (e) {
+    showToast('Fleet poll failed: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Poll Now`; }
+  }
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────
