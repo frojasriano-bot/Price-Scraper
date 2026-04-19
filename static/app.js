@@ -5132,12 +5132,6 @@ function renderFleetChart(records) {
     series[k] = Object.entries(byDate).map(([x, y]) => ({ x, y })).sort((a, b) => a.x.localeCompare(b.x));
   });
 
-  const COMP_COLORS = {
-    'Blue Car Rental':  '#2563eb',
-    'Lotus Car Rental': '#16a34a',
-    'Lava Car Rental':  '#dc2626',
-    'Go Car Rental':    '#7c3aed',
-  };
   const WINDOW_STYLE = { '1w': [], '2w': [5, 3], '4w': [2, 2] };
 
   const isDark    = document.body.classList.contains('dark-mode');
@@ -5153,7 +5147,7 @@ function renderFleetChart(records) {
       datasets: Object.entries(series).map(([key, pts]) => {
         const compName = key.replace(/ \(\w+\)$/, '');
         const win      = key.match(/\((\w+)\)$/)?.[1] || '1w';
-        const col      = COMP_COLORS[compName] || '#6b7280';
+        const col      = compColor(compName);
         return {
           label:           key,
           data:            pts,
