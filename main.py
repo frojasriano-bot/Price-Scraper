@@ -24,7 +24,12 @@ from dotenv import load_dotenv
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from database import init_db, recanonicalize_all_rates, recategorize_all_rates, get_config, set_config
+from database import (
+    init_db, recanonicalize_all_rates, recategorize_all_rates,
+    backfill_competitor_catalog,
+    get_config, set_config, get_competitor_catalog,
+    insert_fleet_absence, insert_fleet_calendar, insert_fleet_sold_out_models,
+)
 from routes.rates import router as rates_router
 from routes.seo import router as seo_router
 from routes.settings import router as settings_router
@@ -74,6 +79,8 @@ async def scheduled_scrape():
 
     if all_rates:
         await insert_rates(all_rates)
+        from database import update_competitor_catalog
+        await update_competitor_catalog(all_rates)
         await set_config("last_scrape_at", datetime.utcnow().isoformat())
         logger.info(f"Scheduled scrape complete: {len(all_rates)} rate records stored.")
     else:
@@ -203,20 +210,69 @@ async def scheduled_horizon_scrape():
 
 
 async def scheduled_fleet_poll():
-    """Poll Caren competitors for fleet availability — called by APScheduler (twice daily)."""
+    """Poll Caren + Go Car for fleet availability — called by APScheduler (twice daily)."""
     from scrapers.fleet_pressure import poll_fleet_pressure
-    from database import insert_fleet_pressure
+    from database import insert_fleet_pressure, insert_fleet_sold_out_models
 
     logger.info("Scheduled fleet pressure poll starting...")
     try:
-        records = await poll_fleet_pressure()
-        if records:
-            await insert_fleet_pressure(records)
-            logger.info(f"Fleet pressure poll complete: {len(records)} records stored.")
-        else:
-            logger.warning("Fleet pressure poll returned no records.")
+        result = await poll_fleet_pressure()
+        if result["aggregate"]:
+            await insert_fleet_pressure(result["aggregate"])
+        if result["models"]:
+            await insert_fleet_sold_out_models(result["models"])
+        logger.info(
+            "Fleet pressure poll complete: %d aggregate, %d model records stored.",
+            len(result["aggregate"]), len(result["models"]),
+        )
     except Exception as e:
         logger.error(f"Fleet pressure poll failed: {e}")
+
+
+async def scheduled_fleet_calendar_poll():
+    """
+    12-month fleet availability calendar sweep for Caren + Go Car.
+    Also runs absence-based inference for Hertz, Avis, Holdur.
+    Runs every Monday at 08:30 alongside the seasonal scrape.
+    """
+    import time
+    from scrapers.fleet_pressure import poll_fleet_calendar
+    from database import (
+        insert_fleet_calendar, insert_fleet_sold_out_models,
+        get_competitor_catalog, insert_fleet_absence,
+    )
+    from scrapers import ALL_SCRAPERS
+
+    logger.info("Scheduled fleet calendar poll starting...")
+    started_at = time.monotonic()
+
+    # 1. Caren + Go Car 12-month sweep
+    result = await poll_fleet_calendar()
+    if result["calendar"]:
+        await insert_fleet_calendar(result["calendar"])
+    if result["models"]:
+        await insert_fleet_sold_out_models(result["models"])
+
+    # 2. Absence detection for Hertz / Avis / Holdur
+    absence_competitors = {"Hertz Iceland", "Avis Iceland", "Holdur"}
+    catalog_entries = await get_competitor_catalog()
+    catalog: dict[str, list[str]] = {}
+    for entry in catalog_entries:
+        if entry["competitor"] in absence_competitors:
+            catalog.setdefault(entry["competitor"], []).append(entry["car_name"])
+
+    if catalog:
+        from scrapers.fleet_pressure import detect_fleet_absence
+        absences = await detect_fleet_absence(catalog)
+        if absences:
+            await insert_fleet_absence(absences)
+            logger.info("Absence detection: %d inferred absences stored.", len(absences))
+
+    duration = time.monotonic() - started_at
+    logger.info(
+        "Fleet calendar poll complete: %d calendar records in %.1fs.",
+        len(result["calendar"]), duration,
+    )
 
 
 async def scheduled_alert_check():
@@ -331,7 +387,7 @@ def setup_scheduler(schedule: str = "daily"):
         replace_existing=True,
         name="Horizon Rate Scrape (26 weeks / 6 months)",
     )
-    # Fleet pressure poll: twice daily (09:00 and 21:00) — lightweight, Caren only
+    # Fleet pressure poll: twice daily (09:00 and 21:00) — Caren + Go Car
     scheduler.add_job(
         scheduled_fleet_poll,
         trigger=CronTrigger(hour=9, minute=0),
@@ -345,6 +401,14 @@ def setup_scheduler(schedule: str = "daily"):
         id="fleet_poll_evening",
         replace_existing=True,
         name="Fleet Pressure Poll (evening)",
+    )
+    # Fleet calendar sweep: every Monday 08:30 — 12-month availability + absence detection
+    scheduler.add_job(
+        scheduled_fleet_calendar_poll,
+        trigger=CronTrigger(day_of_week="mon", hour=8, minute=30),
+        id="fleet_calendar_poll",
+        replace_existing=True,
+        name="Fleet Calendar Sweep (12 months + absence detection)",
     )
 
     logger.info(f"Scheduler configured: {schedule} schedule active.")
@@ -361,6 +425,8 @@ async def lifespan(app: FastAPI):
     await recanonicalize_all_rates()
     # Re-categorize all rates using the canonical category map
     await recategorize_all_rates()
+    # Seed competitor_catalog from historical rates (one-time backfill)
+    await backfill_competitor_catalog()
 
     # Load schedule preference from DB
     schedule = await get_config("scrape_schedule", "daily")

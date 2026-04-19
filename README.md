@@ -28,6 +28,7 @@ FastAPI backend · SQLite · APScheduler · Vanilla JS SPA · Chart.js
 | **Price Changes** | Chronological activity feed of every meaningful competitor price move (≥5% by default). Filter by lookback window, category, and minimum change %. Select a specific model to view a line chart of its full scraped price history per competitor |
 | **Booking Window** | Pick any future pickup date to see how each competitor's price has changed across successive weekly scrapes as that date approaches — reveals early-bird vs last-minute pricing strategy. Model drill-down available |
 | **Win/Loss Scorecard** | Answers "where do we beat each competitor, and by how much?" Summary strip shows per-competitor win rate, W/T/L counts, and average margin. Category grid (competitor × category) colour-coded green/amber/red; click any cell to drill down to individual model matchups with exact ISK prices and margin % |
+| **Fleet Pressure** | Three layers of fleet intelligence. (1) **Availability snapshot** — Blue, Lotus, Lava, and Go Car Rental polled across 1w / 2w / 4w windows; red badge shows sold-out count per competitor. (2) **Sold-Out Models panel** — named model list as red pills, filterable by window. (3) **12-month calendar heatmap** — competitor × month grid coloured by availability %, clickable cells show sold-out models. Plus **Absence Alerts** for Hertz, Avis, Holdur: catalog models missing from scrape results are flagged as inferred sold-out signals (weaker signal, clearly labelled). |
 
 ---
 
@@ -71,7 +72,7 @@ Open **http://localhost:8000**
 ## Architecture
 
 ```
-main.py                  FastAPI app, APScheduler (5 jobs), lifespan setup
+main.py                  FastAPI app, APScheduler (8 jobs), lifespan setup
 canonical.py             Car name normalisation (canonicalize()) +
                          category normalisation (canonicalize_category()) +
                          CANONICAL_CATEGORIES — single source of truth for
@@ -89,6 +90,8 @@ routes/
   settings.py            /api/settings — config, locations, scraper status,
                          category audit
   alerts.py              /api/alerts/* — Slack webhook config & test
+  fleet.py               /api/fleet/* — fleet pressure snapshot, sold-out
+                         models, 12-month calendar, absence alerts
 
 scrapers/
   base.py                BaseScraper abstract class + mock data fallback
@@ -99,6 +102,9 @@ scrapers/
   gocarrental.py         ✅ Live — GoRentals JSON API + Sanity CMS
   hertz_is.py            ✅ Live — WordPress/CarCloud ajax + HTML (hertz.is)
   lavacarrental.py       ✅ Live — Caren API (lavacarrental.is)
+  fleet_pressure.py      Fleet intelligence: Caren + Go Car availability polling,
+                         12-month calendar sweep, absence detection for
+                         Hertz/Avis/Holdur via catalog comparison
 
 static/
   index.html             Single-page dashboard shell
@@ -211,15 +217,20 @@ SQLite via `aiosqlite`. Schema initialised automatically on startup by `init_db(
 | `scrape_log` | History of every manual, scheduled, seasonal, and horizon scrape run (rates, duration, errors) |
 | `insurance_reviews` | Timestamped log of manual insurance data verifications |
 | `insurance_price_overrides` | Per-company/category zero-excess price overrides (editable via Insurance tab) |
+| `fleet_sold_out_models` | Per-poll record of every car class returned by Caren + Go Car API, with `is_available` flag and `car_name`. Used for sold-out pills and model-level drill-down |
+| `fleet_availability_calendar` | Monthly availability snapshot: competitor × anchor_month with `total_classes`, `available_classes`, `availability_pct`. Feeds the 12-month heatmap |
+| `competitor_catalog` | Known car models per competitor — built from historical `rates` scrapes via UPSERT on every scheduled scrape. Drives absence detection for Hertz/Avis/Holdur |
+| `fleet_absence` | Inferred sold-out events: catalog models missing from Hertz/Avis/Holdur scrape results for a given anchor month |
 
 ### Migrations
 
-Two one-time migrations run at startup (idempotent):
+Three one-time migrations run at startup (idempotent):
 
 | Migration | Function | What it fixes |
 |-----------|----------|---------------|
 | `recanonicalize_all_rates()` | v2 | Re-applies `canonicalize()` to all stored `canonical_name` values |
 | `recategorize_all_rates()` | v1 | Re-applies `canonicalize_category()` to all stored `car_category` values |
+| `backfill_competitor_catalog()` | v1 | Seeds `competitor_catalog` from historical `rates` table on first run — required for absence detection to work on existing databases |
 
 ---
 
@@ -433,17 +444,20 @@ Select a model to filter to that canonical model only — useful for watching a 
 
 ## Scheduler
 
-APScheduler (`AsyncIOScheduler`) runs five jobs:
+APScheduler (`AsyncIOScheduler`) runs eight jobs:
 
 | Job | Schedule | Description |
 |-----|----------|-------------|
-| `scrape_rates` | Daily 07:00 (configurable) | Scrapes all competitors for today+7 → today+10 |
+| `scrape_rates` | Daily 07:00 (configurable) | Scrapes all competitors for today+7 → today+10; updates `competitor_catalog` via UPSERT |
 | `seo_check` | Daily 07:30 (configurable) | Checks stored keywords via SerpAPI |
 | `alert_check` | Daily 07:45 (configurable) | Fires Slack alerts if competitors undercut Blue |
 | `scrape_seasonal` | **Every Monday 08:00** | Re-scrapes all 12 anchor months; always weekly |
 | `scrape_horizon` | Daily 07:15 | Scrapes all 7 competitors × 26 future weekly windows (6 months) |
+| `fleet_poll_morning` | Daily 09:00 | Polls Caren + Go Car for fleet availability across 1w / 2w / 4w; saves aggregate + named model records |
+| `fleet_poll_evening` | Daily 21:00 | Same as morning poll — twice-daily cadence captures intra-day inventory changes |
+| `fleet_calendar_poll` | **Every Monday 08:30** | 12-month calendar sweep for Caren + Go Car; then absence detection for Hertz/Avis/Holdur via catalog comparison |
 
-The daily/hourly/weekly setting (configurable via Settings) applies to `scrape_rates`, `seo_check`, and `alert_check`. The horizon scrape always runs daily at 07:15 regardless. The seasonal scrape always runs weekly regardless.
+The daily/hourly/weekly setting (configurable via Settings) applies to `scrape_rates`, `seo_check`, and `alert_check`. All other jobs run on fixed schedules regardless of the Settings configuration.
 
 Change the main schedule via Settings or:
 
@@ -627,6 +641,29 @@ GET  /api/seo/history
 GET    /api/seo/keywords
 POST   /api/seo/keywords?keyword=
 DELETE /api/seo/keywords/{keyword}
+```
+
+### Fleet Intelligence
+
+```
+GET  /api/fleet/pressure         Time-series of fleet availability (Caren + Go Car)
+     ?location=  &days=30  &window_label=1w|2w|4w
+
+GET  /api/fleet/pressure/latest  Most-recent snapshot per competitor × location × window
+
+POST /api/fleet/poll             Manually trigger a fleet pressure poll and persist results
+
+GET  /api/fleet/sold-out         Latest per-model availability — shows named sold-out models
+     ?competitor=  &location=  &window_label=1w|2w|4w
+
+GET  /api/fleet/calendar         12-month availability calendar with sold_out_models list per row
+     ?location=
+
+POST /api/fleet/calendar/poll    Full sweep: 12-month calendar (Caren + Go Car) + absence
+                                 detection for Hertz, Avis, Holdur
+
+GET  /api/fleet/absence          Absence-inferred sold-out events for Hertz, Avis, Holdur
+     ?competitor=  &location=  &days=90
 ```
 
 ### Alerts

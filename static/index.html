@@ -905,7 +905,7 @@
             <div class="card-header" style="flex-wrap:wrap;gap:10px">
               <div>
                 <div class="card-title">Fleet Availability Pressure</div>
-                <div class="card-subtitle">Caren competitors only (Blue, Lotus, Lava) · % of car classes available for each forward window</div>
+                <div class="card-subtitle">Caren competitors (Blue, Lotus, Lava) + Go Car Rental · % of car classes available for each forward window</div>
               </div>
               <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
                 <select id="fleet-days" class="form-select" onchange="loadFleetPressure()" style="width:auto">
@@ -924,12 +924,33 @@
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
                   Poll Now
                 </button>
+                <button class="btn btn-secondary btn-sm" onclick="triggerFleetCalendarPoll()" id="fleet-calendar-btn">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                  Sweep 12 Months
+                </button>
               </div>
             </div>
           </div>
 
           <!-- Current snapshot cards -->
-          <div id="fleet-snapshot-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:16px"></div>
+          <div id="fleet-snapshot-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:16px"></div>
+
+          <!-- Sold-out model names (Option 1) -->
+          <div class="card" id="fleet-sold-out-card" style="display:none;margin-bottom:16px">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Sold-Out Models Right Now</div>
+                <div class="card-subtitle" id="fleet-sold-out-subtitle">Models that are fully booked across the tracked window</div>
+              </div>
+              <select id="fleet-sold-out-window" class="form-select" onchange="renderFleetSoldOutFromCache()" style="width:auto;font-size:12px">
+                <option value="">All windows</option>
+                <option value="1w">1 week out</option>
+                <option value="2w">2 weeks out</option>
+                <option value="4w">4 weeks out</option>
+              </select>
+            </div>
+            <div id="fleet-sold-out-body" style="padding:0 16px 16px"></div>
+          </div>
 
           <!-- Time-series chart -->
           <div class="card" id="fleet-chart-card" style="display:none">
@@ -951,6 +972,35 @@
               <div class="card-subtitle" id="fleet-table-subtitle"></div>
             </div>
             <div id="fleet-table" style="overflow-x:auto"></div>
+          </div>
+
+          <!-- 12-month availability calendar heatmap (Option 2) -->
+          <div class="card" id="fleet-calendar-card" style="display:none;margin-top:16px">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Seasonal Availability Calendar</div>
+                <div class="card-subtitle">Next 12 months — colour = % available · click a cell to see which models are sold out</div>
+              </div>
+            </div>
+            <div id="fleet-calendar-body" style="overflow-x:auto;padding-bottom:12px"></div>
+            <!-- Sold-out detail popup -->
+            <div id="fleet-calendar-detail" style="display:none;padding:0 16px 16px">
+              <div style="background:var(--bg-secondary);border-radius:8px;padding:12px 16px">
+                <div style="font-weight:600;font-size:13px;margin-bottom:8px" id="fleet-calendar-detail-title"></div>
+                <div id="fleet-calendar-detail-body" style="font-size:12px;color:var(--text-muted)"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Absence-inferred alerts for Hertz/Avis/Holdur (Option 3) -->
+          <div class="card" id="fleet-absence-card" style="display:none;margin-top:16px">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Inferred Sold-Out Signals</div>
+                <div class="card-subtitle">Hertz, Avis, Holdur — models absent from scrape results for a given month (weaker signal)</div>
+              </div>
+            </div>
+            <div id="fleet-absence-body" style="overflow-x:auto"></div>
           </div>
 
           <!-- Empty/no-data state -->
@@ -1594,8 +1644,8 @@
                   Go to <strong>Rate Intelligence → Seasonal</strong> and click <strong>Scrape All</strong>. Scrapes the 15th of each of the next 12 months (7-night stays). Runs automatically every Monday 08:00 after that.
                 </li>
                 <li style="margin-bottom:12px">
-                  <strong>Check fleet availability (Caren competitors)</strong><br>
-                  Go to <strong>Rate Intelligence → Competitive → Fleet Pressure</strong> and click <strong>Poll Now</strong>. This queries Blue, Lotus, and Lava for real-time fleet availability across 1-week, 2-week, and 4-week forward windows. Runs automatically twice daily (09:00 and 21:00) after that.
+                  <strong>Check fleet availability across all competitors</strong><br>
+                  Go to <strong>Rate Intelligence → Competitive → Fleet Pressure</strong> and click <strong>Poll Now</strong>. This queries Blue, Lotus, Lava and Go Car Rental for real-time fleet availability across 1-week, 2-week, and 4-week forward windows — showing which specific models are sold out as red pills. Then click <strong>Sweep 12 Months</strong> to run the full seasonal intelligence sweep: a 12-month availability calendar for Caren + Go Car, plus absence-based inference for Hertz, Avis, and Holdur. Runs automatically twice daily (09:00 and 21:00) with a Monday calendar sweep at 08:30.
                 </li>
                 <li style="margin-bottom:12px">
                   <strong>Set up SEO tracking (optional)</strong><br>
@@ -1655,17 +1705,22 @@
                   <tr style="border-bottom:1px solid var(--border)">
                     <td style="padding:8px 12px 8px 0;font-weight:500">Fleet Poll (morning)</td>
                     <td style="padding:8px 12px;color:var(--text-muted)">Daily 09:00</td>
-                    <td style="padding:8px 0;color:var(--text-muted)">Checks fleet availability for Blue, Lotus &amp; Lava across 1w / 2w / 4w windows</td>
+                    <td style="padding:8px 0;color:var(--text-muted)">Fleet availability snapshot — Blue, Lotus, Lava &amp; Go Car across 1w / 2w / 4w windows; records named sold-out models</td>
                   </tr>
-                  <tr>
+                  <tr style="border-bottom:1px solid var(--border)">
                     <td style="padding:8px 12px 8px 0;font-weight:500">Fleet Poll (evening)</td>
                     <td style="padding:8px 12px;color:var(--text-muted)">Daily 21:00</td>
                     <td style="padding:8px 0;color:var(--text-muted)">Same as above — twice-daily cadence captures intra-day inventory changes</td>
                   </tr>
+                  <tr>
+                    <td style="padding:8px 12px 8px 0;font-weight:500">Fleet Calendar Sweep</td>
+                    <td style="padding:8px 12px;color:var(--text-muted)">Every Monday 08:30</td>
+                    <td style="padding:8px 0;color:var(--text-muted)">12-month availability calendar (Caren + Go Car) + absence inference for Hertz, Avis &amp; Holdur from catalog comparison</td>
+                  </tr>
                 </tbody>
               </table>
               <p style="font-size:13px;color:var(--text-muted);margin-top:12px;margin-bottom:0">
-                The rate scrape, SEO check, and alert check schedule (daily / hourly / weekly) can be changed in <strong>Settings</strong>. Horizon, seasonal, and fleet jobs always run on their fixed schedules.
+                The rate scrape, SEO check, and alert check schedule (daily / hourly / weekly) can be changed in <strong>Settings</strong>. Horizon, seasonal, fleet poll, and fleet calendar jobs always run on their fixed schedules regardless.
               </p>
             </div>
           </div>
@@ -1727,7 +1782,11 @@
                 </dd>
                 <dt style="font-weight:600;margin-top:10px">Fleet Pressure</dt>
                 <dd style="margin:0 0 4px 0;color:var(--text-muted)">
-                  Fleet availability for Caren-based competitors (Blue, Lotus, Lava) across three forward windows (1 week / 2 weeks / 4 weeks out). A lower availability % means more car classes are fully booked — a leading indicator of demand and potential price rises. Polled automatically at 09:00 and 21:00 daily; click <strong>Poll Now</strong> for an immediate snapshot.
+                  Three layers of fleet intelligence covering all 7 competitors:<br>
+                  • <strong>Availability Snapshot</strong> — Blue, Lotus, Lava &amp; Go Car Rental polled for real-time class availability across 1w / 2w / 4w forward windows. A red badge shows how many models are sold out; click <strong>Poll Now</strong> for an immediate refresh (auto-runs 09:00 + 21:00).<br>
+                  • <strong>Sold-Out Models panel</strong> — named list of every sold-out model per competitor and window, shown as red pills. Filter by window (1w / 2w / 4w).<br>
+                  • <strong>12-Month Calendar heatmap</strong> — competitor × month grid colour-coded by availability % (green = open, red = squeezed). Click any cell to see the sold-out model list for that month. Click <strong>Sweep 12 Months</strong> to refresh (auto-runs every Monday 08:30).<br>
+                  • <strong>Absence Alerts panel</strong> — inferred sold-out signals for Hertz, Avis &amp; Holdur. These scrapers only return available cars; if a model from the known catalog is missing for a given month, it's flagged as absent. Labelled as "weaker / inferred signal" — use alongside rate data for confirmation.
                 </dd>
               </dl>
             </div>
@@ -1777,7 +1836,7 @@
             <div style="padding:0 20px 20px;font-size:14px;line-height:1.7;color:var(--text)">
               <ul style="padding-left:20px;margin:0">
                 <li style="margin-bottom:8px"><strong>Mock data badge</strong> — if you see "Mock Data" in the top bar, no real scraped data exists for the current filters. Run a scrape first.</li>
-                <li style="margin-bottom:8px"><strong>Fleet Pressure — Caren only</strong> — Blue, Lotus, and Lava use the Caren booking platform which exposes availability data. Go Car Rental, Holdur, Avis, and Hertz don't expose unit counts via their APIs or HTML, so they're excluded from fleet monitoring.</li>
+                <li style="margin-bottom:8px"><strong>Fleet Pressure — 4 direct + 3 inferred</strong> — Blue, Lotus, Lava, and Go Car Rental return real availability data (Caren API / GoRentals POST API). Holdur, Avis, and Hertz only expose <em>available</em> cars in their HTML responses — their fleet intelligence is inferred by comparing scrape results against a known model catalog built from historical rate data. Absence signals are weaker but still actionable, especially when a model disappears across multiple anchor months.</li>
                 <li style="margin-bottom:8px"><strong>Win/Loss needs a recent scrape</strong> — the scorecard uses the latest rate snapshot. If your last scrape was more than a day ago, the data may be stale. The availability % badge on each competitor card shows the scrape timestamp.</li>
                 <li style="margin-bottom:8px"><strong>Price Changes &amp; Booking Window need history</strong> — these require multiple weekly scrape runs. The more horizon snapshots exist for a pickup date, the richer the lead-time curve.</li>
                 <li style="margin-bottom:8px"><strong>Unknown car models</strong> — if a model appears as "Unknown" in the matrix, go to Settings → Category Audit to find it, then add a mapping in Settings → Car Model Mappings.</li>

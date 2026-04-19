@@ -218,6 +218,66 @@ async def init_db():
             )
         """)
 
+        # Per-model availability from fleet pressure polls (Option 1)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS fleet_sold_out_models (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                scraped_at   TEXT    NOT NULL,
+                competitor   TEXT    NOT NULL,
+                location     TEXT    NOT NULL,
+                pickup_date  TEXT    NOT NULL,
+                return_date  TEXT    NOT NULL,
+                window_label TEXT    NOT NULL DEFAULT '1w',
+                car_name     TEXT    NOT NULL,
+                class_id     TEXT,
+                is_available INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+
+        # 12-month availability calendar for Caren + Go Car (Option 2)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS fleet_availability_calendar (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                scraped_at          TEXT    NOT NULL,
+                competitor          TEXT    NOT NULL,
+                location            TEXT    NOT NULL,
+                anchor_month        TEXT    NOT NULL,
+                pickup_date         TEXT    NOT NULL,
+                total_classes       INTEGER NOT NULL,
+                available_classes   INTEGER NOT NULL,
+                unavailable_classes INTEGER NOT NULL,
+                availability_pct    REAL    NOT NULL
+            )
+        """)
+
+        # Catalog of models seen per competitor — built from regular rate scrapes (Option 3)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS competitor_catalog (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                competitor     TEXT    NOT NULL,
+                car_name       TEXT    NOT NULL,
+                canonical_name TEXT,
+                car_category   TEXT,
+                first_seen     TEXT    NOT NULL,
+                last_seen      TEXT    NOT NULL,
+                UNIQUE(competitor, car_name)
+            )
+        """)
+
+        # Absence-inferred sold-out for Hertz/Avis/Holdur (Option 3)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS fleet_absence (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                detected_at    TEXT    NOT NULL,
+                competitor     TEXT    NOT NULL,
+                location       TEXT    NOT NULL,
+                pickup_date    TEXT    NOT NULL,
+                return_date    TEXT    NOT NULL,
+                car_name       TEXT    NOT NULL,
+                canonical_name TEXT
+            )
+        """)
+
         # Indexes for query performance (safe to re-run — IF NOT EXISTS)
         await db.execute(
             "CREATE INDEX IF NOT EXISTS idx_rates_scraped_at ON rates(scraped_at)"
@@ -234,6 +294,22 @@ async def init_db():
         await db.execute(
             "CREATE INDEX IF NOT EXISTS idx_fleet_pressure_time "
             "ON fleet_pressure(scraped_at, competitor, location)"
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_fleet_sold_out "
+            "ON fleet_sold_out_models(scraped_at, competitor, location)"
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_fleet_calendar "
+            "ON fleet_availability_calendar(competitor, anchor_month)"
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_competitor_catalog "
+            "ON competitor_catalog(competitor, last_seen)"
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_fleet_absence "
+            "ON fleet_absence(detected_at, competitor)"
         )
 
         await db.commit()
@@ -286,6 +362,62 @@ async def init_db():
                 (key, value, datetime.now(timezone.utc).isoformat()),
             )
         await db.commit()
+
+
+async def backfill_competitor_catalog() -> None:
+    """
+    One-time migration: seed competitor_catalog from historical rates rows.
+    Only runs once (guarded by a config flag). Subsequent updates happen via
+    update_competitor_catalog() called after each live scrape.
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        row = await db.execute_fetchall(
+            "SELECT value FROM config WHERE key = 'catalog_backfill_v1'"
+        )
+        if row:
+            return
+
+        # Pull distinct (competitor, car_model, canonical_name, car_category) from rates
+        cursor = await db.execute("""
+            SELECT competitor,
+                   COALESCE(car_model, canonical_name) AS car_name,
+                   canonical_name,
+                   car_category,
+                   MIN(scraped_at) AS first_seen,
+                   MAX(scraped_at) AS last_seen
+            FROM rates
+            WHERE COALESCE(car_model, canonical_name) IS NOT NULL
+              AND COALESCE(car_model, canonical_name) != ''
+            GROUP BY competitor, car_name, canonical_name, car_category
+        """)
+        rows = await cursor.fetchall()
+
+        count = 0
+        for r in rows:
+            await db.execute(
+                """
+                INSERT INTO competitor_catalog
+                    (competitor, car_name, canonical_name, car_category, first_seen, last_seen)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(competitor, car_name) DO UPDATE SET
+                    canonical_name = COALESCE(excluded.canonical_name, canonical_name),
+                    car_category   = COALESCE(excluded.car_category, car_category),
+                    last_seen      = MAX(last_seen, excluded.last_seen)
+                """,
+                (r["competitor"], r["car_name"], r["canonical_name"],
+                 r["car_category"], r["first_seen"], r["last_seen"]),
+            )
+            count += 1
+
+        await db.execute(
+            "INSERT OR REPLACE INTO config (key, value, updated_at) VALUES (?, ?, ?)",
+            ("catalog_backfill_v1", str(count), datetime.now(timezone.utc).isoformat()),
+        )
+        await db.commit()
+
+    if count:
+        print(f"[migration] Seeded competitor_catalog with {count} entries from historical rates.")
 
 
 async def recanonicalize_all_rates():
@@ -1746,6 +1878,263 @@ async def get_fleet_pressure(
         FROM fleet_pressure
         {where}
         ORDER BY scraped_at ASC, competitor ASC
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(query, params) as cur:
+            return [dict(r) for r in await cur.fetchall()]
+
+
+async def insert_fleet_sold_out_models(records: list[dict]) -> None:
+    """Persist per-model availability records from a fleet poll."""
+    if not records:
+        return
+    now = datetime.utcnow().isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.executemany(
+            """
+            INSERT INTO fleet_sold_out_models
+                (scraped_at, competitor, location, pickup_date, return_date,
+                 window_label, car_name, class_id, is_available)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    now,
+                    r["competitor"],
+                    r["location"],
+                    r["pickup_date"],
+                    r["return_date"],
+                    r.get("window_label", "1w"),
+                    r["car_name"],
+                    r.get("class_id"),
+                    1 if r.get("is_available") else 0,
+                )
+                for r in records
+            ],
+        )
+        await db.commit()
+
+
+async def get_fleet_sold_out_models(
+    competitor: str = None,
+    location: str = None,
+    window_label: str = None,
+    limit: int = 1000,
+) -> list[dict]:
+    """Return the latest per-model snapshot per competitor × location × window × car."""
+    conds: list[str] = []
+    params: list = []
+    if competitor:
+        conds.append("competitor = ?")
+        params.append(competitor)
+    if location:
+        conds.append("location = ?")
+        params.append(location)
+    if window_label:
+        conds.append("window_label = ?")
+        params.append(window_label)
+
+    where = ("WHERE " + " AND ".join(conds)) if conds else ""
+    query = f"""
+        WITH ranked AS (
+            SELECT *,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY competitor, location, window_label, car_name
+                       ORDER BY scraped_at DESC
+                   ) AS rn
+            FROM fleet_sold_out_models
+            {where}
+        )
+        SELECT scraped_at, competitor, location, pickup_date, return_date,
+               window_label, car_name, class_id, is_available
+        FROM ranked
+        WHERE rn = 1
+        ORDER BY competitor, window_label, is_available ASC, car_name
+        LIMIT ?
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(query, params + [limit]) as cur:
+            return [dict(r) for r in await cur.fetchall()]
+
+
+async def insert_fleet_calendar(records: list[dict]) -> None:
+    """Persist a batch of 12-month calendar availability records."""
+    if not records:
+        return
+    now = datetime.utcnow().isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.executemany(
+            """
+            INSERT INTO fleet_availability_calendar
+                (scraped_at, competitor, location, anchor_month, pickup_date,
+                 total_classes, available_classes, unavailable_classes, availability_pct)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    now,
+                    r["competitor"],
+                    r["location"],
+                    r["anchor_month"],
+                    r["pickup_date"],
+                    r["total_classes"],
+                    r["available_classes"],
+                    r["unavailable_classes"],
+                    r["availability_pct"],
+                )
+                for r in records
+            ],
+        )
+        await db.commit()
+
+
+async def get_fleet_calendar(location: str = None) -> list[dict]:
+    """Return the most-recent availability snapshot per competitor × anchor_month."""
+    conds: list[str] = []
+    params: list = []
+    if location:
+        conds.append("location = ?")
+        params.append(location)
+
+    where = ("WHERE " + " AND ".join(conds)) if conds else ""
+    query = f"""
+        WITH ranked AS (
+            SELECT *,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY competitor, location, anchor_month
+                       ORDER BY scraped_at DESC
+                   ) AS rn
+            FROM fleet_availability_calendar
+            {where}
+        )
+        SELECT scraped_at, competitor, location, anchor_month, pickup_date,
+               total_classes, available_classes, unavailable_classes, availability_pct
+        FROM ranked
+        WHERE rn = 1
+        ORDER BY competitor, anchor_month
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(query, params) as cur:
+            return [dict(r) for r in await cur.fetchall()]
+
+
+async def update_competitor_catalog(rates: list[dict]) -> None:
+    """Upsert models seen in a rate scrape into competitor_catalog (first_seen/last_seen)."""
+    if not rates:
+        return
+    now = datetime.utcnow().isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        for r in rates:
+            competitor = r.get("competitor", "")
+            car_name = r.get("car_model") or r.get("canonical_name", "")
+            if not competitor or not car_name:
+                continue
+            await db.execute(
+                """
+                INSERT INTO competitor_catalog
+                    (competitor, car_name, canonical_name, car_category, first_seen, last_seen)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(competitor, car_name) DO UPDATE SET
+                    canonical_name = COALESCE(excluded.canonical_name, canonical_name),
+                    car_category   = COALESCE(excluded.car_category, car_category),
+                    last_seen      = excluded.last_seen
+                """,
+                (
+                    competitor,
+                    car_name,
+                    r.get("canonical_name"),
+                    r.get("car_category"),
+                    now,
+                    now,
+                ),
+            )
+        await db.commit()
+
+
+async def get_competitor_catalog(
+    competitor: str = None,
+    days: int = None,
+) -> list[dict]:
+    """Return the competitor model catalog, optionally filtered by competitor or recency."""
+    conds: list[str] = []
+    params: list = []
+    if competitor:
+        conds.append("competitor = ?")
+        params.append(competitor)
+    if days:
+        conds.append("last_seen >= datetime('now', ?)")
+        params.append(f"-{days} days")
+
+    where = ("WHERE " + " AND ".join(conds)) if conds else ""
+    query = f"""
+        SELECT competitor, car_name, canonical_name, car_category, first_seen, last_seen
+        FROM competitor_catalog
+        {where}
+        ORDER BY competitor, car_name
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(query, params) as cur:
+            return [dict(r) for r in await cur.fetchall()]
+
+
+async def insert_fleet_absence(records: list[dict]) -> None:
+    """Persist inferred absence events for Hertz/Avis/Holdur."""
+    if not records:
+        return
+    now = datetime.utcnow().isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.executemany(
+            """
+            INSERT INTO fleet_absence
+                (detected_at, competitor, location, pickup_date, return_date,
+                 car_name, canonical_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    now,
+                    r["competitor"],
+                    r["location"],
+                    r["pickup_date"],
+                    r["return_date"],
+                    r["car_name"],
+                    r.get("canonical_name"),
+                )
+                for r in records
+            ],
+        )
+        await db.commit()
+
+
+async def get_fleet_absence(
+    competitor: str = None,
+    location: str = None,
+    days: int = 90,
+) -> list[dict]:
+    """Return recent absence-inferred sold-out events."""
+    from datetime import date as _date, timedelta as _td
+    cutoff = (_date.today() - _td(days=days)).isoformat()
+
+    conds: list[str] = ["detected_at >= ?"]
+    params: list = [cutoff]
+    if competitor:
+        conds.append("competitor = ?")
+        params.append(competitor)
+    if location:
+        conds.append("location = ?")
+        params.append(location)
+
+    where = "WHERE " + " AND ".join(conds)
+    query = f"""
+        SELECT detected_at, competitor, location, pickup_date, return_date,
+               car_name, canonical_name
+        FROM fleet_absence
+        {where}
+        ORDER BY detected_at DESC, competitor, pickup_date
     """
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row

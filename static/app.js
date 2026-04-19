@@ -4980,7 +4980,8 @@ function renderWLDrill() {
 }
 
 // ── Fleet Pressure ─────────────────────────────────────────────────────────
-let _fleetChart = null;
+let _fleetChart     = null;
+let _fleetSoldOutCache = [];  // last fetched sold-out records
 
 async function loadFleetPressure() {
   const snapshotEl = document.getElementById('fleet-snapshot-cards');
@@ -4992,23 +4993,39 @@ async function loadFleetPressure() {
   chartCard.style.display = 'none';
   tableCard.style.display = 'none';
   emptyEl.style.display   = 'none';
+  const soldOutCard  = document.getElementById('fleet-sold-out-card');
+  const calendarCard = document.getElementById('fleet-calendar-card');
+  const absenceCard  = document.getElementById('fleet-absence-card');
+  if (soldOutCard)  soldOutCard.style.display  = 'none';
+  if (calendarCard) calendarCard.style.display = 'none';
+  if (absenceCard)  absenceCard.style.display  = 'none';
 
   try {
     const days   = document.getElementById('fleet-days')?.value   || 30;
-    const window = document.getElementById('fleet-window')?.value || '';
+    const win    = document.getElementById('fleet-window')?.value || '';
     const loc    = document.getElementById('filter-location')?.value || '';
 
     const params = new URLSearchParams({ days });
-    if (window) params.set('window_label', window);
-    if (loc)    params.set('location', loc);
+    if (win) params.set('window_label', win);
+    if (loc) params.set('location', loc);
 
-    const [histData, snapData] = await Promise.all([
+    const locQS = loc ? '?location=' + encodeURIComponent(loc) : '';
+
+    const [histData, snapData, soldOutData, calendarData, absenceData] = await Promise.all([
       apiFetch(`/api/fleet/pressure?${params}`),
-      apiFetch(`/api/fleet/pressure/latest${loc ? '?location=' + encodeURIComponent(loc) : ''}`),
+      apiFetch(`/api/fleet/pressure/latest${locQS}`),
+      apiFetch(`/api/fleet/sold-out${locQS}`),
+      apiFetch(`/api/fleet/calendar${locQS}`),
+      apiFetch(`/api/fleet/absence${locQS}`),
     ]);
 
-    const records = histData.records || [];
-    const latest  = snapData.records || [];
+    const records  = histData.records    || [];
+    const latest   = snapData.records    || [];
+    const soldOut  = soldOutData.records || [];
+    const calendar = calendarData.records || [];
+    const absences = absenceData.records  || [];
+
+    _fleetSoldOutCache = soldOut;
 
     if (!latest.length && !records.length) {
       emptyEl.style.display = '';
@@ -5021,6 +5038,9 @@ async function loadFleetPressure() {
       renderFleetChart(records);
       renderFleetTable(latest);
     }
+    renderFleetSoldOut(soldOut);
+    renderFleetCalendar(calendar);
+    renderFleetAbsence(absences);
   } catch (e) {
     showToast('Failed to load fleet pressure: ' + e.message, 'error');
     emptyEl.style.display   = '';
@@ -5049,12 +5069,27 @@ function renderFleetSnapshot(latest) {
     const avColor = overall >= 80 ? '#16a34a' : overall >= 60 ? '#ca8a04' : '#dc2626';
     const barBg   = overall >= 80 ? '#16a34a' : overall >= 60 ? '#ca8a04' : '#dc2626';
 
+    // Count sold-out models for this competitor across all windows
+    const soCount = _fleetSoldOutCache.filter(
+      s => s.competitor === comp && !s.is_available
+    ).length;
+    const soBadge = soCount > 0
+      ? `<span style="display:inline-block;background:#dc2626;color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700;margin-left:6px">${soCount} sold out</span>`
+      : '';
+
     const windowRows = rows.map(r => {
       const wc = r.availability_pct >= 80 ? '#16a34a' : r.availability_pct >= 60 ? '#ca8a04' : '#dc2626';
+      // Count sold-out for this specific window
+      const wSO = _fleetSoldOutCache.filter(
+        s => s.competitor === comp && s.window_label === r.window_label && !s.is_available
+      ).length;
+      const wBadge = wSO > 0
+        ? `<span style="font-size:10px;color:#dc2626;font-weight:600">${wSO} sold out</span>`
+        : '';
       return `
-        <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:3px 0">
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:3px 0;gap:6px">
           <span style="color:var(--text-muted)">${WINDOW_LABELS[r.window_label] || r.window_label} out</span>
-          <span style="font-weight:700;color:${wc}">${r.availability_pct}%</span>
+          <span style="display:flex;align-items:center;gap:6px">${wBadge}<span style="font-weight:700;color:${wc}">${r.availability_pct}%</span></span>
         </div>`;
     }).join('');
 
@@ -5063,6 +5098,7 @@ function renderFleetSnapshot(latest) {
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
           <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0"></div>
           <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(comp)}</div>
+          ${soBadge}
         </div>
         <div style="display:flex;align-items:baseline;gap:5px;margin-bottom:6px">
           <span style="font-size:28px;font-weight:800;line-height:1;color:${avColor}">${overall.toFixed(0)}%</span>
@@ -5100,6 +5136,7 @@ function renderFleetChart(records) {
     'Blue Car Rental':  '#2563eb',
     'Lotus Car Rental': '#16a34a',
     'Lava Car Rental':  '#dc2626',
+    'Go Car Rental':    '#7c3aed',
   };
   const WINDOW_STYLE = { '1w': [], '2w': [5, 3], '4w': [2, 2] };
 
@@ -5222,6 +5259,247 @@ async function triggerFleetPoll() {
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Poll Now`; }
   }
+}
+
+async function triggerFleetCalendarPoll() {
+  const btn = document.getElementById('fleet-calendar-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Sweeping 12 months…'; }
+  try {
+    const data = await apiFetch('/api/fleet/calendar/poll', { method: 'POST' });
+    showToast(`✓ ${data.message}`, 'success');
+    await loadFleetPressure();
+  } catch (e) {
+    showToast('Calendar sweep failed: ' + e.message, 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Sweep 12 Months`;
+    }
+  }
+}
+
+// ── Option 1: Sold-out model names ─────────────────────────────────────────
+
+function renderFleetSoldOutFromCache() {
+  renderFleetSoldOut(_fleetSoldOutCache);
+}
+
+function renderFleetSoldOut(records) {
+  const card     = document.getElementById('fleet-sold-out-card');
+  const body     = document.getElementById('fleet-sold-out-body');
+  const subtitle = document.getElementById('fleet-sold-out-subtitle');
+  if (!card) return;
+
+  const winFilter = document.getElementById('fleet-sold-out-window')?.value || '';
+  const filtered  = winFilter ? records.filter(r => r.window_label === winFilter) : records;
+  const soldOut   = filtered.filter(r => !r.is_available);
+
+  if (!soldOut.length) { card.style.display = 'none'; return; }
+
+  // Group by competitor → list of sold-out names
+  const byComp = {};
+  soldOut.forEach(r => {
+    byComp[r.competitor] = byComp[r.competitor] || new Set();
+    byComp[r.competitor].add(r.car_name);
+  });
+
+  const ts = records[0]?.scraped_at
+    ? new Date(records[0].scraped_at).toLocaleString('en-GB', { dateStyle:'short', timeStyle:'short' })
+    : '';
+  subtitle.textContent = ts ? `As of ${ts}` : 'Models fully booked across tracked windows';
+
+  const WINDOW_LABELS = { '1w': '1 wk', '2w': '2 wks', '4w': '4 wks' };
+
+  body.innerHTML = Object.entries(byComp).map(([comp, names]) => {
+    const color = compColor(comp);
+    const pills = [...names].sort().map(n =>
+      `<span style="display:inline-block;background:rgba(220,38,38,.12);color:#b91c1c;border:1px solid rgba(220,38,38,.25);border-radius:5px;padding:2px 9px;font-size:11px;font-weight:600;margin:2px">${escHtml(n)}</span>`
+    ).join('');
+    return `
+      <div style="margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+          <div style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0"></div>
+          <span style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">${escHtml(comp)}</span>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:2px;padding-left:14px">${pills}</div>
+      </div>`;
+  }).join('');
+
+  card.style.display = '';
+}
+
+// ── Option 2: Seasonal availability calendar heatmap ───────────────────────
+
+let _calendarSoldOutMap = {};  // key: "comp|month" → [sold-out names]
+
+function renderFleetCalendar(records) {
+  const card = document.getElementById('fleet-calendar-card');
+  const body = document.getElementById('fleet-calendar-body');
+  if (!card || !records.length) { if (card) card.style.display = 'none'; return; }
+
+  // Build lookup of sold-out models per (competitor, anchor_month)
+  _calendarSoldOutMap = {};
+  records.forEach(r => {
+    if (r.sold_out_models?.length) {
+      _calendarSoldOutMap[`${r.competitor}|${r.anchor_month}`] = r.sold_out_models;
+    }
+  });
+
+  const competitors = [...new Set(records.map(r => r.competitor))].sort();
+  const months      = [...new Set(records.map(r => r.anchor_month))].sort();
+
+  // Month label: "2026-04" → "Apr '26"
+  const fmtMonth = m => {
+    const [y, mo] = m.split('-');
+    return new Date(+y, +mo - 1, 1).toLocaleString('en-GB', { month: 'short' }) + ' \'' + y.slice(2);
+  };
+
+  const cellW = 72;
+
+  let html = `<table style="border-collapse:collapse;font-size:11px;min-width:${months.length * cellW + 160}px">
+    <thead><tr>
+      <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;white-space:nowrap;min-width:140px">Competitor</th>
+      ${months.map(m => `<th style="text-align:center;padding:6px 4px;font-size:10px;font-weight:600;color:var(--text-muted);white-space:nowrap;min-width:${cellW}px">${fmtMonth(m)}</th>`).join('')}
+    </tr></thead><tbody>`;
+
+  competitors.forEach(comp => {
+    const color = compColor(comp);
+    html += `<tr>
+      <td style="padding:8px 12px;font-size:12px;font-weight:600;white-space:nowrap">
+        <span style="display:inline-flex;align-items:center;gap:6px">
+          <span style="width:8px;height:8px;border-radius:50%;background:${color};display:inline-block;flex-shrink:0"></span>
+          ${escHtml(comp)}
+        </span>
+      </td>`;
+    months.forEach(month => {
+      const row = records.find(r => r.competitor === comp && r.anchor_month === month);
+      if (!row) {
+        html += `<td style="text-align:center;padding:4px;color:var(--text-muted);font-size:11px">—</td>`;
+        return;
+      }
+      const pct    = row.availability_pct;
+      const soList = row.sold_out_models || [];
+      const soN    = soList.length;
+      // Colour: green→yellow→red as availability drops
+      const bg  = pct >= 80 ? 'rgba(22,163,74,.18)'  : pct >= 60 ? 'rgba(202,138,4,.18)'  : pct >= 40 ? 'rgba(234,88,12,.18)' : 'rgba(220,38,38,.20)';
+      const col = pct >= 80 ? '#15803d'               : pct >= 60 ? '#854d0e'               : pct >= 40 ? '#9a3412'            : '#b91c1c';
+      const cursor = soN > 0 ? 'cursor:pointer' : '';
+      const title  = soN > 0 ? `title="${soN} sold out"` : '';
+      html += `
+        <td style="text-align:center;padding:4px" ${title}>
+          <div onclick="showCalendarDetail('${escHtml(comp)}','${month}')"
+               style="display:inline-flex;flex-direction:column;align-items:center;min-width:58px;padding:5px 6px;border-radius:6px;background:${bg};color:${col};${cursor}">
+            <span style="font-size:13px;font-weight:800;line-height:1">${pct}%</span>
+            ${soN > 0 ? `<span style="font-size:9px;font-weight:600;margin-top:1px">${soN} sold out</span>` : `<span style="font-size:9px;opacity:.6">${row.available_classes}/${row.total_classes}</span>`}
+          </div>
+        </td>`;
+    });
+    html += '</tr>';
+  });
+
+  html += '</tbody></table>';
+  body.innerHTML = html;
+  card.style.display = '';
+
+  const detail = document.getElementById('fleet-calendar-detail');
+  if (detail) detail.style.display = 'none';
+}
+
+function showCalendarDetail(competitor, month) {
+  const detail  = document.getElementById('fleet-calendar-detail');
+  const title   = document.getElementById('fleet-calendar-detail-title');
+  const detBody = document.getElementById('fleet-calendar-detail-body');
+  if (!detail) return;
+
+  const key   = `${competitor}|${month}`;
+  const names = _calendarSoldOutMap[key] || [];
+
+  const [y, mo] = month.split('-');
+  const monthLabel = new Date(+y, +mo - 1, 1).toLocaleString('en-GB', { month: 'long', year: 'numeric' });
+
+  title.textContent = `${competitor} — ${monthLabel}`;
+
+  if (!names.length) {
+    detBody.innerHTML = '<span style="color:var(--text-muted)">No sold-out models detected for this month.</span>';
+  } else {
+    detBody.innerHTML = '<div style="margin-bottom:4px;font-weight:600;color:var(--text)">Sold-out models:</div>'
+      + names.map(n =>
+          `<div style="padding:3px 0;display:flex;align-items:center;gap:6px">
+            <span style="width:5px;height:5px;border-radius:50%;background:#dc2626;display:inline-block;flex-shrink:0"></span>
+            ${escHtml(n)}
+          </div>`
+        ).join('');
+  }
+
+  detail.style.display = '';
+}
+
+// ── Option 3: Absence-inferred alerts ─────────────────────────────────────
+
+function renderFleetAbsence(records) {
+  const card = document.getElementById('fleet-absence-card');
+  const body = document.getElementById('fleet-absence-body');
+  if (!card || !records.length) { if (card) card.style.display = 'none'; return; }
+
+  // Group by competitor → pickup_month → car_name
+  const byComp = {};
+  records.forEach(r => {
+    const month = r.pickup_date.slice(0, 7);
+    byComp[r.competitor] = byComp[r.competitor] || {};
+    byComp[r.competitor][month] = byComp[r.competitor][month] || new Set();
+    byComp[r.competitor][month].add(r.car_name);
+  });
+
+  const competitors = Object.keys(byComp).sort();
+  const allMonths   = [...new Set(records.map(r => r.pickup_date.slice(0, 7)))].sort();
+
+  const fmtMonth = m => {
+    const [y, mo] = m.split('-');
+    return new Date(+y, +mo - 1, 1).toLocaleString('en-GB', { month: 'short', year: '2-digit' });
+  };
+
+  let html = `
+    <div style="padding:10px 16px 6px;font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:6px">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      Inferred from absence in scrape results — only session-based scrapers (Hertz, Avis, Holdur). Not as reliable as direct availability data.
+    </div>
+    <table style="border-collapse:collapse;font-size:11px;width:100%">
+      <thead><tr>
+        <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600">Competitor</th>
+        ${allMonths.map(m => `<th style="text-align:center;padding:6px 4px;font-size:10px;font-weight:600;color:var(--text-muted)">${fmtMonth(m)}</th>`).join('')}
+      </tr></thead><tbody>`;
+
+  competitors.forEach(comp => {
+    const color = compColor(comp);
+    html += `<tr>
+      <td style="padding:8px 12px;font-size:12px;font-weight:600;white-space:nowrap">
+        <span style="display:inline-flex;align-items:center;gap:6px">
+          <span style="width:8px;height:8px;border-radius:50%;background:${color};display:inline-block"></span>
+          ${escHtml(comp)}
+        </span>
+      </td>`;
+    allMonths.forEach(month => {
+      const absent = byComp[comp]?.[month];
+      if (!absent) {
+        html += `<td style="text-align:center;padding:4px;color:var(--text-muted)">—</td>`;
+        return;
+      }
+      const n = absent.size;
+      const tip = [...absent].sort().join(', ');
+      html += `
+        <td style="text-align:center;padding:4px" title="${escHtml(tip)}">
+          <div style="display:inline-flex;flex-direction:column;align-items:center;min-width:50px;padding:4px 6px;border-radius:6px;background:rgba(220,38,38,.10);color:#b91c1c;cursor:help">
+            <span style="font-size:12px;font-weight:700">${n}</span>
+            <span style="font-size:9px">absent</span>
+          </div>
+        </td>`;
+    });
+    html += '</tr>';
+  });
+
+  html += '</tbody></table>';
+  body.innerHTML = html;
+  card.style.display = '';
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────
