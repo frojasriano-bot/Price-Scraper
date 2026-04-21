@@ -280,6 +280,31 @@ _EXACT: dict[str, str] = {
     "volkswagen caravelle 4x4 - 9 seater":       "VW Caravelle",
     "mercedes benz vito tourer 4x4 - 9 seater":  "Mercedes Vito",
 
+    # ── Sixt Iceland / Enterprise Iceland models ─────────────────────────────
+    "volkswagen tiguan":                         "VW Tiguan",
+    "volkswagen t-roc":                          "VW T-Roc",
+    "volkswagen t roc":                          "VW T-Roc",
+    "vw tiguan":                                 "VW Tiguan",
+    "vw t-roc":                                  "VW T-Roc",
+    "seat leon":                                 "Seat Leon",
+    "ford focus":                                "Ford Focus",
+    "ford focus wagon":                          "Ford Focus",
+    "audi a3":                                   "Audi A3",
+    "audi a3 sportback":                         "Audi A3",
+    "audi q5":                                   "Audi Q5",
+    "audi q7":                                   "Audi Q7",
+    "bmw x1":                                    "BMW X1",
+    "volvo xc90":                                "Volvo XC90",
+    "volvo xc60":                                "Volvo XC60",
+    "toyota corolla sedan":                      "Toyota Corolla",
+    "kia picanto":                               "Kia Picanto",
+    "hyundai i20":                               "Hyundai i20",
+    "renault megane e-tech":                     "Renault Megane",
+    "opel astra":                                "Opel Astra",
+    "peugeot 308":                               "Peugeot 308",
+    "ford tourneo":                              "Ford Tourneo",
+    "ford tourneo connect":                      "Ford Tourneo",
+
     # ── Avis Iceland ─────────────────────────────────────────────────────────
     "volkswagen polo":                           "VW Polo",
 
@@ -315,6 +340,10 @@ CANONICAL_CATEGORIES: dict[str, str] = {
     "MG4":                   "Economy",
     "Smart #5":              "Economy",
 
+    "Kia Picanto":           "Economy",
+    "Opel Astra":            "Economy",
+    "Peugeot 308":           "Economy",
+
     # ── Compact (mid-size sedans, wagons, small crossovers) ─────────────────
     "Dacia Jogger":          "Compact",
     "Kia Stonic":            "Compact",
@@ -334,6 +363,10 @@ CANONICAL_CATEGORIES: dict[str, str] = {
     "Renault Megane Wagon":  "Compact",
     "Mazda CX-30":           "Compact",
     "Tesla Model 3":         "Compact",
+    "Seat Leon":             "Compact",
+    "Ford Focus":            "Compact",
+    "Audi A3":               "Compact",
+    "VW T-Roc":              "Compact",
 
     # ── SUV (crossovers, mid-size SUVs) ─────────────────────────────────────
     "Dacia Duster":                "SUV",
@@ -362,7 +395,10 @@ CANONICAL_CATEGORIES: dict[str, str] = {
     "Tesla Model Y":         "SUV",
     "Renault Koleos":        "SUV",
     "VW ID.4":               "SUV",
+    "VW Tiguan":             "SUV",
     "Skoda Kodiaq":          "SUV",
+    "Audi Q5":               "SUV",
+    "BMW X1":                "SUV",
 
     # ── 4x4 (large SUVs, off-road / F-road capable) ────────────────────────
     "Toyota Land Cruiser 150": "4x4",
@@ -386,6 +422,9 @@ CANONICAL_CATEGORIES: dict[str, str] = {
     "Jeep Wrangler":         "4x4",
     "BMW X3":                "4x4",
     "BMW X5":                "4x4",
+    "Audi Q7":               "4x4",
+    "Volvo XC90":            "4x4",
+    "Volvo XC60":            "4x4",
     "Mercedes GLE":          "4x4",
     "Mitsubishi Outlander":  "4x4",
     "Dacia Duster 4x4 + Roof Tent": "4x4",
