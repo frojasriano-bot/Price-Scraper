@@ -1,23 +1,32 @@
 """
 Scraper for Sixt Iceland (sixt.is).
 
-Sixt Iceland runs on Cloudflare via a proprietary "sitegen" JS framework
-(client-sitegen-rent.*.js, ~324 KB).  Extensive static analysis of the
-bundle and network probing of known Sixt API patterns
-(api.sixt.com, /api/v1/offers, station codes IKEF01/KEFAV/REYAV01) all
-returned 404 or connection refused — the Iceland site appears to call
-Sixt's internal CDN API that is not publicly accessible without a session
-cookie / auth token obtained via browser-rendered JS.
+Architecture discovered via deep static analysis (2026-04-21)
+──────────────────────────────────────────────────────────────
+Sixt.is is a Cloudflare Workers SPA (sitegen framework, React + Module Federation).
+The booking funnel is a micro-frontend called ZenFunnelContainer which lazy-loads
+the rent-offer-list MFE.
 
-Strategy:
-  1. Attempt to fetch the Sixt Iceland booking page HTML and extract any
-     price data rendered server-side (SSR JSON blocks, <script> tags with
-     structured pricing, or visible price text).
-  2. If live extraction fails (likely), fall back to mock data based on a
-     researched FLEET definition.
+Vehicle search API: gRPC-Web (binary protobuf)
+  Endpoint: https://grpc-prod.orange.sixt.com
+  Service:  api_v1_ecommerce_data  (EcommerceData service)
+  Method:   ListOffers
+  Params:   pickupStationId, returnStationId, pickupDate, returnDate, ...
 
-The scraper is structured so that if Sixt's API becomes discoverable in
-a future session, only `scrape_rates()` needs to be updated.
+Metadata REST API (not sufficient for pricing):
+  https://web-api.orange.sixt.com
+  GET /v2/apps/fleet/country  → confirms Iceland (IS) is in the fleet
+  GET /v2/apps/regions/{code}/branches → returns [] for IS
+
+The gRPC endpoint returns HTTP 464 for non-gRPC requests. Constructing valid
+gRPC-Web protobuf frames requires the .proto definitions which are not publicly
+available. The API is NOT accessible via REST or JSON-over-HTTP2.
+
+Activation path:
+  Option A: Capture a complete browser network trace with the binary gRPC frames
+            and use grpcurl + .proto extraction to build valid requests.
+  Option B: Monitor Sixt for a REST fallback API (they have one for subscription
+            services; the rent search may eventually get one too).
 
 Sixt Iceland operates at:
   • Keflavik Airport (KEF)
@@ -26,51 +35,15 @@ Sixt Iceland operates at:
 
 from __future__ import annotations
 
-import json
-import re
-from datetime import datetime
-
-from bs4 import BeautifulSoup
-
 from .base import BaseScraper
-from canonical import canonicalize
 
 
 SIXT_BASE_URL = "https://www.sixt.is"
 
-# Sixt Iceland location slugs used in their booking URL
-SIXT_LOCATION_SLUGS: dict[str, str | None] = {
-    "Keflavik Airport": "keflavik-airport",
-    "Reykjavik":        "reykjavik",
+SIXT_LOCATIONS: dict[str, bool] = {
+    "Keflavik Airport": True,
+    "Reykjavik":        True,
 }
-
-_4X4_KW     = ["land cruiser", "defender", "discovery", "santa fe", "sorento",
-               "wrangler", "hilux", "highlander", "bmw x", "volvo xc90"]
-_MINIVAN_KW = ["trafic", "caravelle", "vito", "proace", "transit", "sprinter",
-               "transporter"]
-_SUV_KW     = ["duster", "jimny", "vitara", "qashqai", "tucson", "sportage",
-               "rav4", "x-trail", "forester", "eclipse", "kodiaq", "tiguan",
-               "t-roc", "ariya", "model y", "cr-v", "compass", "renegade",
-               "ateca", "karoq", "mg "]
-_COMPACT_KW = ["captur", "megane", "octavia", "sportswagon", "golf", "leon",
-               "focus", "astra", "308", "a3", "model 3"]
-
-
-def _infer_category(name: str) -> str:
-    n = name.lower()
-    for kw in _4X4_KW:
-        if kw in n:
-            return "4x4"
-    for kw in _MINIVAN_KW:
-        if kw in n:
-            return "Minivan"
-    for kw in _SUV_KW:
-        if kw in n:
-            return "SUV"
-    for kw in _COMPACT_KW:
-        if kw in n:
-            return "Compact"
-    return "Economy"
 
 
 class SixtIsScraper(BaseScraper):
@@ -113,55 +86,21 @@ class SixtIsScraper(BaseScraper):
         ],
     }
 
-    async def _try_ssr_extraction(
-        self,
-        location_slug: str,
-        pickup_date: str,
-        return_date: str,
-    ) -> list[dict] | None:
-        """
-        Attempt to extract pricing from SSR HTML or embedded JSON on the
-        Sixt booking page.  Returns a list of rate dicts on success, or
-        None if no usable data is found.
-        """
-        url = (
-            f"{SIXT_BASE_URL}/en/rent-a-car/{location_slug}"
-            f"?dateFrom={pickup_date}&dateTo={return_date}"
-        )
-        try:
-            resp = await self.client.get(url, timeout=15)
-            if resp.status_code != 200:
-                return None
-            soup = BeautifulSoup(resp.text, "lxml")
-
-            # Look for __NEXT_DATA__ or similar JSON blobs
-            for script in soup.find_all("script"):
-                src = script.string or ""
-                if "__NEXT_DATA__" in src or '"offers"' in src or '"vehicles"' in src:
-                    # Try to pull a JSON block
-                    match = re.search(r'(\{.{200,}\})', src, re.DOTALL)
-                    if match:
-                        try:
-                            data = json.loads(match.group(1))
-                            # TODO: parse Sixt-specific offer schema when discovered
-                            _ = data
-                        except json.JSONDecodeError:
-                            pass
-        except Exception:
-            pass
-        return None   # SSR extraction not yet working
-
     async def scrape_rates(self, location: str, pickup_date: str, return_date: str) -> list[dict]:
-        slug = SIXT_LOCATION_SLUGS.get(location)
-        if not slug:
-            return []
+        """
+        Sixt Iceland vehicle search uses a gRPC-Web binary API at:
+          https://grpc-prod.orange.sixt.com  (service: api_v1_ecommerce_data)
 
-        live = await self._try_ssr_extraction(slug, pickup_date, return_date)
-        if live is not None and len(live) > 0:
-            return live
+        The binary protobuf protocol requires .proto definitions which are not
+        publicly available.  Raising here triggers the FLEET mock data fallback.
 
-        # Sixt's API is not publicly accessible — raise to trigger mock fallback
-        raise RuntimeError(
-            "Sixt Iceland API not accessible — no public endpoint discovered. "
-            "Falling back to FLEET mock data."
+        To activate live scraping:
+          1. Run: npm install -g grpc-tools
+          2. Capture a browser network trace and extract the binary gRPC frames
+          3. Use buf.build or protoc to decode/reconstruct the .proto schema
+          4. Build a grpc.io/grpc-web client here using those proto definitions
+        """
+        raise NotImplementedError(
+            "Sixt Iceland uses gRPC-Web binary API (grpc-prod.orange.sixt.com). "
+            "Not accessible without .proto definitions. Using FLEET mock data."
         )

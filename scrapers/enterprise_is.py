@@ -1,28 +1,29 @@
 """
-Scraper for Enterprise Iceland (enterprise.is).
+Scraper for Enterprise Iceland (www.enterpriserentacar.is).
 
-Current status: UNREACHABLE
-─────────────────────────────
-All connection attempts to enterprise.is (93.95.224.165) result in
-ECONNREFUSED. The server actively refuses TCP connections on port 80/443.
-Possible causes: geo-blocking, server maintenance, or the Iceland site
-may be defunct / redirecting to a regional hub.
+Booking platform: PartnerBookingKit (EHI — Enterprise Holdings International)
+─────────────────────────────────────────────────────────────────────────────
+The site (Vercel / Next.js) embeds the PartnerBookingKit widget:
+  JS bundle: https://widget-cdn.partnerbookingkit.com/bundles/8beb76d6139f5/widget.js
+  API:       https://pbk.partnerbookingkit.com  (session-auth required)
 
-The scraper is implemented as a clean stub so that:
-  1. Enterprise Iceland appears in the dashboard with realistic mock data.
-  2. The scraper can be fully activated once the site becomes reachable —
-     only `scrape_rates()` needs to be updated.
+The widget calls `https://pbk.partnerbookingkit.com` for availability and
+pricing, but all endpoints return 404 without a valid browser-generated
+session (the widget performs a browser-driven OAuth-style flow against the
+EHI API before querying rates).
+
+The site itself IS live and returns HTTP 200:
+  https://www.enterpriserentacar.is/
+
+Activation path when/if the API becomes accessible:
+  1. Capture a network trace of the PartnerBookingKit widget in a browser.
+  2. Identify the `Authorization` header and bearer token format.
+  3. Implement a token exchange flow against `pbk.partnerbookingkit.com`.
+  4. Replace the `raise ConnectionError(...)` below with the actual API call.
 
 Enterprise Iceland operates at:
-  • Keflavik Airport (KEF) — confirmed via web references
-  • Reykjavik city centre — confirmed via Google Maps listing
-
-When the site becomes reachable the recommended approach is:
-  • Check for Enterprise's standard EHI API (ecars.enterprise.com/api/…)
-    or the XMLRPC booking interface used by European Enterprise branches.
-  • Try fetching https://www.enterprise.is/en/car-rental/locations/ to
-    discover location codes, then probe /en/car-rental/reservation/select-vehicle/
-    which sometimes embeds availability JSON in __NEXT_DATA__.
+  • Keflavik Airport (KEF)
+  • Reykjavik city centre
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ from __future__ import annotations
 from .base import BaseScraper
 
 
-ENTERPRISE_BASE_URL = "https://www.enterprise.is"
+ENTERPRISE_BASE_URL = "https://www.enterpriserentacar.is"
 
 ENTERPRISE_LOCATIONS: dict[str, bool] = {
     "Keflavik Airport": True,
@@ -77,16 +78,17 @@ class EnterpriseIsScraper(BaseScraper):
 
     async def scrape_rates(self, location: str, pickup_date: str, return_date: str) -> list[dict]:
         """
-        Enterprise Iceland is currently unreachable (ECONNREFUSED on all ports).
-        This method raises immediately so BaseScraper falls back to mock data.
+        Enterprise Iceland uses the PartnerBookingKit (EHI) widget which requires
+        a browser-initiated OAuth session to access pricing data.
 
-        To activate live scraping when the site is back online:
-          1. Probe https://www.enterprise.is/ to confirm connectivity.
-          2. Inspect network requests on the booking flow to identify the
-             vehicle availability API (EHI API or XMLRPC).
-          3. Implement the API call here and return a list of rate dicts.
+        The site is reachable at https://www.enterpriserentacar.is/ (HTTP 200, Vercel).
+        The booking widget bundle is:
+          https://widget-cdn.partnerbookingkit.com/bundles/8beb76d6139f5/widget.js
+
+        To activate live scraping, implement the EHI API auth flow and replace
+        this raise with the actual API call.
         """
         raise ConnectionError(
-            "enterprise.is is unreachable (ECONNREFUSED). "
-            "Using FLEET mock data until the site is accessible."
+            "Enterprise Iceland uses PartnerBookingKit (EHI API) which requires "
+            "browser auth. Using FLEET mock data."
         )
