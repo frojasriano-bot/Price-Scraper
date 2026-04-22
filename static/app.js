@@ -1579,7 +1579,11 @@ function renderMatrix() {
     return;
   }
 
-  const shortName = c => c.replace(' Car Rental', '').replace(' Iceland', '');
+  const shortName = c => {
+    if (c === 'Go Car Rental') return 'Go Car';
+    if (c === 'Go Iceland')    return 'Go Iceland';
+    return c.replace(' Car Rental', '').replace(' Iceland', '');
+  };
   const BLUE = 'Blue Car Rental';
 
   // Reorder: Blue first, then others alphabetically
@@ -1791,7 +1795,7 @@ function renderExecutiveSummary() {
         blueAvg > mktAvg ? '#f87171' : '#4ade80')
     : '';
   const cheapestChip = minRate
-    ? chip('💰', 'Market Low', `${formatISK(minRate.price_isk)} (${minRate.competitor.replace(' Car Rental','').replace(' Iceland','')})`, '#fbbf24')
+    ? chip('💰', 'Market Low', `${formatISK(minRate.price_isk)} (${shortName(minRate.competitor)})`, '#fbbf24')
     : '';
   const undercutChip = chip(
     undercutters.size > 0 ? '⚠️' : '✅',
@@ -1822,8 +1826,12 @@ function renderRateChart() {
   });
 
   const fullLabels = Object.keys(competitorMap);
-  // Shorten labels for the x-axis so they fit cleanly at full width
-  const shortLabel = name => name.replace(' Car Rental', '').replace(' Iceland', '');
+  // Shorten labels for the x-axis — keep Go Car vs Go Iceland distinct
+  const shortLabel = name => {
+    if (name === 'Go Car Rental') return 'Go Car';
+    if (name === 'Go Iceland')    return 'Go Iceland';
+    return name.replace(' Car Rental', '').replace(' Iceland', '');
+  };
   const labels = fullLabels.map(shortLabel);
   const data = fullLabels.map(c => Math.round(
     competitorMap[c].reduce((a, b) => a + b, 0) / competitorMap[c].length
@@ -2600,7 +2608,11 @@ function exportMatrixCSV() {
     return showToast('No matrix data to export. Scrape first.', 'error');
   }
   const { cars, competitors } = data;
-  const shortName = c => c.replace(' Car Rental', '').replace(' Iceland', '');
+  const shortName = c => {
+    if (c === 'Go Car Rental') return 'Go Car';
+    if (c === 'Go Iceland')    return 'Go Iceland';
+    return c.replace(' Car Rental', '').replace(' Iceland', '');
+  };
   // Derive date window from the first rate that has dates
   let pickupDate = '', returnDate = '';
   for (const car of cars) {
