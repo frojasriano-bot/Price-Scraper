@@ -64,7 +64,9 @@ DEFAULT_HEADERS = {
         "application/signed-exchange;v=b3;q=0.7"
     ),
     "Accept-Language":          "en-GB,en;q=0.9,is;q=0.8",
-    "Accept-Encoding":          "gzip, deflate, br",
+    # Accept-Encoding is intentionally omitted — httpx adds it automatically
+    # and handles decompression.  Manually setting it breaks decompression on
+    # some Caren/Cloudflare endpoints that return Brotli-encoded JSON.
     "Cache-Control":            "max-age=0",
     "Upgrade-Insecure-Requests": "1",
     "Sec-Ch-Ua":                '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',

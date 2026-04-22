@@ -317,9 +317,9 @@ _EXACT: dict[str, str] = {
     # ── Go Iceland live API variants ──────────────────────────────────────────
     # Year-suffixed, roof-tent, and typo variants from goiceland-backend API
     "crosscamp flex":                               "Crosscamp Flex",
-    "dacia duster 4wd diesel - (2022)":             "Dacia Duster",
-    "dacia duster 4x4 diesel - (2023)":             "Dacia Duster",
-    "dacia duster 4x4 petrol (2018-2022)":          "Dacia Duster",
+    "dacia duster 4wd diesel - (2022)":             "Dacia Duster (Older Model)",
+    "dacia duster 4x4 diesel - (2023)":             "Dacia Duster (Older Model)",
+    "dacia duster 4x4 petrol (2018-2022)":          "Dacia Duster (Older Model)",
     "dacia duster 4x4 roof top tent":               "Dacia Duster",
     "dacia jogger 7 seats":                         "Dacia Jogger",
     "fiat doblo maxi":                              "Fiat Doblo",
