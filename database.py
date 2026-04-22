@@ -311,6 +311,15 @@ async def init_db():
             "CREATE INDEX IF NOT EXISTS idx_fleet_absence "
             "ON fleet_absence(detected_at, competitor)"
         )
+        # Composite indexes for the matrix / seasonal / horizon hot paths
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_rates_seasonal "
+            "ON rates(pickup_date, location, competitor)"
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_rates_latest "
+            "ON rates(competitor, location, scraped_at DESC)"
+        )
 
         await db.commit()
 
@@ -712,7 +721,8 @@ async def get_rates_matrix(
     )
 
     competitors = ["Blue Car Rental", "Go Car Rental", "Lava Car Rental",
-                   "Hertz Iceland", "Lotus Car Rental", "Avis Iceland", "Holdur"]
+                   "Hertz Iceland", "Lotus Car Rental", "Avis Iceland", "Holdur",
+                   "Go Iceland"]
 
     # Build map: canonical_name → {competitor: rate_dict}
     matrix: dict[str, dict] = {}

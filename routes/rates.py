@@ -416,24 +416,31 @@ async def get_seasonal_rates(
     today = date.today()
     scrape_loc = location or "Keflavik Airport"
 
-    # Build 12 anchor months
+    # Build 12 future anchor months — skip any 15th that is already past
+    # (past-date queries return HTTP 500 from most APIs and yield no useful data)
     sweep_months = []
-    for offset in range(12):
-        total_month = today.month + offset
+    skipped_months: list[str] = []
+    candidate_offset = 0
+    while len(sweep_months) < 12:
+        total_month = today.month + candidate_offset
         year  = today.year + (total_month - 1) // 12
         month = (total_month - 1) % 12 + 1
         pickup = date(year, month, 15)
         ret    = pickup + timedelta(days=_RENTAL_DAYS)
         season, season_label = _SEASON_MAP[month]
-        sweep_months.append({
-            "month_str":    pickup.strftime("%Y-%m"),
-            "month_label":  pickup.strftime("%b %Y"),
-            "month_num":    month,
-            "pickup":       pickup.isoformat(),
-            "return":       ret.isoformat(),
-            "season":       season,
-            "season_label": season_label,
-        })
+        if pickup < today + timedelta(days=2):
+            skipped_months.append(pickup.strftime("%b %Y"))
+        else:
+            sweep_months.append({
+                "month_str":    pickup.strftime("%Y-%m"),
+                "month_label":  pickup.strftime("%b %Y"),
+                "month_num":    month,
+                "pickup":       pickup.isoformat(),
+                "return":       ret.isoformat(),
+                "season":       season,
+                "season_label": season_label,
+            })
+        candidate_offset += 1
 
     # --- DB-first: check stored rates for each anchor month ---
     month_rates: dict[str, list[dict]] = {}
@@ -576,6 +583,7 @@ async def get_seasonal_rates(
         "season_months":           season_months,
         "source":                  source,
         "rental_days":             _RENTAL_DAYS,
+        "skipped_months":          skipped_months,
     }
     await set_seasonal_cache(cache_key, result_payload)
     return result_payload
@@ -681,6 +689,7 @@ async def scrape_seasonal_anchors(
         "duration_seconds": round(duration, 1),
         "months":           month_log,
         "errors":           all_errors[:20],
+        "skipped_months":   skipped_months,
     }
 
 
@@ -1048,31 +1057,77 @@ async def get_scrape_log_endpoint(limit: int = Query(20, ge=1, le=100)):
 @router.get("/scraper-status")
 async def get_scraper_status():
     """
-    Return live-vs-mock status for each scraper by checking the DB for recent data.
-    A competitor is 'live' if it has any scraped rows in the database.
+    Return live-vs-mock status and reliability for each scraper.
+
+    reliability field:
+      "ok"        — appeared without errors in at least 1 of the last 5 scrape runs
+      "unstable"  — appeared in errors in 3+ of the last 5 scrape runs
+      "unknown"   — fewer than 3 scrape runs recorded
     """
     import aiosqlite
+    import json as _json
 
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
+
+        # Basic rate-table stats per competitor
         async with db.execute(
             "SELECT competitor, MAX(scraped_at) as last_scraped, COUNT(*) as row_count "
             "FROM rates GROUP BY competitor"
         ) as cursor:
-            rows = await cursor.fetchall()
+            rate_rows = await cursor.fetchall()
 
-    live_set          = {row["competitor"] for row in rows if row["row_count"] > 0}
-    last_scraped_map  = {row["competitor"]: row["last_scraped"] for row in rows if row["last_scraped"]}
+        # Last 5 scrape log entries — look for competitor names in errors
+        async with db.execute(
+            "SELECT errors FROM scrape_log ORDER BY scraped_at DESC LIMIT 5"
+        ) as cursor:
+            log_rows = await cursor.fetchall()
+
+    live_set         = {r["competitor"] for r in rate_rows if r["row_count"] > 0}
+    last_scraped_map = {r["competitor"]: r["last_scraped"] for r in rate_rows if r["last_scraped"]}
+
+    # Count how many of the last 5 runs each competitor appeared in errors
+    error_counts: dict[str, int] = {}
+    valid_log_count = 0
+    for log_row in log_rows:
+        raw = log_row["errors"]
+        if not raw:
+            valid_log_count += 1
+            continue
+        try:
+            errs = _json.loads(raw) if isinstance(raw, str) else raw
+        except Exception:
+            errs = []
+        valid_log_count += 1
+        for err_str in errs:
+            for name in _COMPETITOR_NAMES:
+                if err_str.startswith(f"{name}:"):
+                    error_counts[name] = error_counts.get(name, 0) + 1
+                    break
+
+    def _reliability(name: str) -> str:
+        if valid_log_count < 3:
+            return "unknown"
+        errs = error_counts.get(name, 0)
+        if errs >= 3:
+            return "unstable"
+        return "ok"
 
     scrapers = [
         {
             "name":         name,
             "source":       "live" if name in live_set else "mock",
             "last_scraped": last_scraped_map.get(name),
+            "reliability":  _reliability(name),
+            "error_runs":   error_counts.get(name, 0),
+            "runs_checked": valid_log_count,
         }
         for name in _COMPETITOR_NAMES
     ]
-    return {"scrapers": scrapers}
+
+    # Summary flag for the header badge
+    unstable = [s["name"] for s in scrapers if s["reliability"] == "unstable"]
+    return {"scrapers": scrapers, "unstable_competitors": unstable}
 
 
 @router.get("/car-catalog")

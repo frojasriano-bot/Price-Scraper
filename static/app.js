@@ -463,30 +463,62 @@ function loadCurrentView() {
 }
 
 async function checkDataFreshness() {
-  if (_staleDismissed) return;
   try {
-    const data    = await apiFetch('/api/scheduler/status');
-    const banner  = document.getElementById('stale-banner');
-    const msgEl   = document.getElementById('stale-banner-msg');
-    if (!banner || !msgEl) return;
+    // Fetch rates age and fleet age in parallel
+    const [schedData, fleetData] = await Promise.all([
+      apiFetch('/api/scheduler/status').catch(() => null),
+      apiFetch('/api/fleet/pressure/latest').catch(() => null),
+    ]);
 
-    if (!data.last_scrape_at) {
-      msgEl.textContent = 'No rate data has been scraped yet. Trigger a manual scrape or wait for the scheduler to run.';
-      banner.style.display = 'flex';
-      return;
+    // ── Update persistent data-age indicator in the header ────────────────
+    const indicator = document.getElementById('data-age-indicator');
+    if (indicator) {
+      const ratesTs = schedData?.last_scrape_at;
+      // Fleet: find the most recent scraped_at across all fleet rows
+      const fleetRows = fleetData?.latest || [];
+      const fleetTs   = fleetRows.length
+        ? fleetRows.reduce((max, r) => (!max || r.scraped_at > max ? r.scraped_at : max), null)
+        : null;
+
+      const ratesAge = ratesTs ? (Date.now() - new Date(ratesTs).getTime()) / 3600000 : null;
+      const fleetAge = fleetTs ? (Date.now() - new Date(fleetTs).getTime()) / 3600000 : null;
+
+      const ageColor = h => h === null ? '#6b7280' : h < 4 ? '#22c55e' : h < 24 ? '#f59e0b' : '#ef4444';
+      const ageLabel = h => h === null ? 'never' : h < 1 ? '<1h ago' : h < 24 ? `${Math.floor(h)}h ago` : `${Math.floor(h/24)}d ago`;
+
+      indicator.innerHTML =
+        `<span style="color:${ageColor(ratesAge)}" title="Last rate scrape: ${ratesTs || 'never'}">` +
+        `📡 Rates: ${ageLabel(ratesAge)}</span>` +
+        (fleetTs
+          ? ` <span style="color:var(--text-muted);margin:0 4px">·</span>` +
+            `<span style="color:${ageColor(fleetAge)}" title="Last fleet poll: ${fleetTs}">` +
+            `🚗 Fleet: ${ageLabel(fleetAge)}</span>`
+          : '');
+      indicator.style.display = '';
     }
 
-    const ageMs  = Date.now() - new Date(data.last_scrape_at).getTime();
-    const ageHrs = ageMs / 3600000;
+    // ── Stale banner (dismissable, only for seriously old data) ───────────
+    if (!_staleDismissed) {
+      const banner = document.getElementById('stale-banner');
+      const msgEl  = document.getElementById('stale-banner-msg');
+      if (!banner || !msgEl) return;
 
-    if (ageHrs > 6) {
-      const label = ageHrs >= 24
-        ? `${Math.floor(ageHrs / 24)}d ${Math.floor(ageHrs % 24)}h`
-        : `${Math.floor(ageHrs)}h`;
-      msgEl.textContent = `Rate data is ${label} old — last scraped ${timeAgo(data.last_scrape_at)}. The scheduler may need attention.`;
-      banner.style.display = 'flex';
-    } else {
-      banner.style.display = 'none';
+      if (!schedData?.last_scrape_at) {
+        msgEl.textContent = 'No rate data has been scraped yet. Trigger a manual scrape or wait for the scheduler to run.';
+        banner.style.display = 'flex';
+        return;
+      }
+
+      const ageHrs = (Date.now() - new Date(schedData.last_scrape_at).getTime()) / 3600000;
+      if (ageHrs > 6) {
+        const label = ageHrs >= 24
+          ? `${Math.floor(ageHrs / 24)}d ${Math.floor(ageHrs % 24)}h`
+          : `${Math.floor(ageHrs)}h`;
+        msgEl.textContent = `Rate data is ${label} old — last scraped ${timeAgo(schedData.last_scrape_at)}. The scheduler may need attention.`;
+        banner.style.display = 'flex';
+      } else {
+        banner.style.display = 'none';
+      }
     }
   } catch (_) {
     // Not critical — silently ignore
@@ -776,6 +808,16 @@ async function loadSeasonal(force = false) {
     setSourceBadge('seasonal-source-badge', data.source);
     document.querySelectorAll('#seasonal-source-badge').forEach(el => el.style.display = '');
 
+    // Show note if any months were skipped (15th already past)
+    const skipNote = document.getElementById('seasonal-skip-note');
+    if (skipNote) {
+      const skipped = data.skipped_months || [];
+      skipNote.textContent = skipped.length
+        ? `ℹ️ ${skipped.join(', ')} skipped — the 15th of that month has already passed.`
+        : '';
+      skipNote.style.display = skipped.length ? '' : 'none';
+    }
+
     renderSeasonalChart();
     renderSeasonalTable();
     renderSeasonalCategoryTable();
@@ -813,7 +855,10 @@ async function scrapeSeasonalAnchors() {
 
   try {
     const data = await apiFetch('/api/rates/scrape-seasonal', { method: 'POST' });
-    showToast(`Scraped ${data.scraped.toLocaleString()} rates across ${data.months_scraped} months in ${data.duration_seconds}s.`, 'success');
+    const skipNote = (data.skipped_months?.length)
+      ? ` (${data.skipped_months.join(', ')} skipped — 15th already passed)`
+      : '';
+    showToast(`Scraped ${data.scraped.toLocaleString()} rates across ${data.months_scraped} months in ${data.duration_seconds}s.${skipNote}`, 'success');
     // Invalidate cached seasonal data so next load reads fresh DB results
     state.seasonalData = null;
     await loadSeasonal(true);
@@ -2265,6 +2310,7 @@ async function loadSettings() {
     renderMappingsTable();
     await loadScraperStatus();
     loadAlertConfig();
+    loadWatchlist();
   } catch (e) {
     showToast(`Failed to load settings: ${e.message}`, 'error');
   }
@@ -2278,15 +2324,39 @@ async function loadScraperStatus() {
 
     document.querySelectorAll('.scraper-status-badge').forEach(badge => {
       const s = scraperMap[badge.dataset.competitor];
-      const source = s?.source || 'mock';
+      const source      = s?.source || 'mock';
+      const reliability = s?.reliability || 'unknown';
       badge.textContent = source === 'live' ? 'Live Data' : 'Mock Data';
-      badge.className = `badge ${source === 'live' ? 'badge-green' : 'badge-gray'} scraper-status-badge`;
+      badge.className   = `badge ${source === 'live' ? 'badge-green' : 'badge-gray'} scraper-status-badge`;
+      // Add reliability indicator alongside badge
+      const rel = badge.nextElementSibling?.classList.contains('scraper-reliability')
+        ? badge.nextElementSibling
+        : (() => { const span = document.createElement('span'); span.className = 'scraper-reliability'; badge.insertAdjacentElement('afterend', span); return span; })();
+      if (reliability === 'unstable') {
+        rel.innerHTML = `<span title="${s.error_runs} of last ${s.runs_checked} scrapes had errors" style="margin-left:6px;font-size:11px;color:#f59e0b;font-weight:600">⚠ unstable</span>`;
+      } else {
+        rel.innerHTML = '';
+      }
     });
 
     document.querySelectorAll('.scraper-ts').forEach(el => {
       const s = scraperMap[el.dataset.competitor];
       el.textContent = s?.last_scraped ? timeAgo(s.last_scraped) : '';
     });
+
+    // ── Show/hide the "competitor silent" warning banner in Settings ───────
+    const unstable = data.unstable_competitors || [];
+    const silentBanner = document.getElementById('scraper-silent-banner');
+    if (silentBanner) {
+      if (unstable.length > 0) {
+        silentBanner.innerHTML = `
+          <span style="font-size:15px">⚠️</span>
+          <span><strong>${unstable.join(', ')}</strong> failed in 3+ of the last ${(data.scrapers?.[0]?.runs_checked ?? 5)} scrape runs — check Settings → Scrape History for details.</span>`;
+        silentBanner.style.display = 'flex';
+      } else {
+        silentBanner.style.display = 'none';
+      }
+    }
   } catch (_) { /* leave badges as-is on failure */ }
 }
 
@@ -2541,6 +2611,84 @@ async function loadAlertConfig() {
     if (webhookEl)   webhookEl.placeholder = data.webhook_set ? '(webhook configured)' : 'https://hooks.slack.com/services/...';
     if (thresholdEl) thresholdEl.value = data.threshold_pct ?? 10;
   } catch (_) { /* silent — alerts are optional */ }
+}
+
+// ── Model Watchlist ────────────────────────────────────────────────────────
+
+let _watchlistModels = [];
+
+async function loadWatchlist() {
+  try {
+    const [watchData, catalogData] = await Promise.all([
+      apiFetch('/api/alerts/watchlist'),
+      state.catalog ? Promise.resolve({ catalog: state.catalog }) : apiFetch('/api/rates/car-catalog'),
+    ]);
+    _watchlistModels = watchData.models || [];
+    if (catalogData?.catalog) state.catalog = catalogData.catalog;
+    renderWatchlist();
+    populateWatchlistDropdown();
+  } catch (_) { /* silent */ }
+}
+
+function renderWatchlist() {
+  const container = document.getElementById('watchlist-chips');
+  if (!container) return;
+  if (!_watchlistModels.length) {
+    container.innerHTML = `<span style="color:var(--text-muted);font-size:13px;font-style:italic">No models on watchlist — add one below.</span>`;
+    return;
+  }
+  container.innerHTML = _watchlistModels.map(m => `
+    <span style="display:inline-flex;align-items:center;gap:5px;background:var(--bg-alt);border:1px solid var(--border);border-radius:20px;padding:3px 10px 3px 12px;font-size:12px;font-weight:600;color:var(--text)">
+      🎯 ${escHtml(m)}
+      <button onclick="removeWatchlistModel('${escHtml(m.replace(/'/g,"\\'"))}')"
+        style="background:none;border:none;cursor:pointer;color:#9ca3af;font-size:14px;line-height:1;padding:0 2px"
+        title="Remove from watchlist">×</button>
+    </span>
+  `).join('');
+}
+
+function populateWatchlistDropdown() {
+  const sel = document.getElementById('watchlist-model-select');
+  if (!sel) return;
+  // Populate from canonical catalog if loaded, else from state
+  const catalog = state.catalog || [];
+  const currentSet = new Set(_watchlistModels);
+  const options = catalog
+    .filter(c => !currentSet.has(c.canonical_name))
+    .sort((a, b) => a.canonical_name.localeCompare(b.canonical_name));
+  sel.innerHTML = '<option value="">Select a model to watch…</option>' +
+    options.map(c => `<option value="${escHtml(c.canonical_name)}">${escHtml(c.canonical_name)}</option>`).join('');
+}
+
+async function addWatchlistModel() {
+  const sel = document.getElementById('watchlist-model-select');
+  const model = sel?.value?.trim();
+  if (!model) return;
+  try {
+    const data = await apiFetch('/api/alerts/watchlist', {
+      method: 'POST',
+      body: JSON.stringify({ model }),
+    });
+    _watchlistModels = data.models || [];
+    renderWatchlist();
+    populateWatchlistDropdown();
+    showToast(`🎯 ${model} added to watchlist`, 'success');
+    if (sel) sel.value = '';
+  } catch (e) {
+    showToast(`Failed to add to watchlist: ${e.message}`, 'error');
+  }
+}
+
+async function removeWatchlistModel(model) {
+  try {
+    const data = await apiFetch(`/api/alerts/watchlist/${encodeURIComponent(model)}`, { method: 'DELETE' });
+    _watchlistModels = data.models || [];
+    renderWatchlist();
+    populateWatchlistDropdown();
+    showToast(`Removed ${model} from watchlist`, 'success');
+  } catch (e) {
+    showToast(`Failed to remove: ${e.message}`, 'error');
+  }
 }
 
 async function saveAlertConfig() {
