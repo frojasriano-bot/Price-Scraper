@@ -740,12 +740,12 @@ const BRAND_COLORS = {
   'Avis Iceland':    '#ef4444',   // Avis red
   'Blue Car Rental': '#2563eb',   // Blue blue
   'Go Car Rental':   '#f97316',   // Go orange
-  'Go Iceland':      '#0ea5e9',   // Go Iceland sky blue
+  'Go Iceland':      '#4ade80',   // Go Iceland light green
   'Hertz Iceland':   '#eab308',   // Hertz yellow
   'Holdur':          '#22c55e',   // Holdur green
   'Lava Car Rental': '#a855f7',   // Lava purple
   'Lotus Car Rental':'#881337',   // Lotus maroon
-  'MyCar':           '#06b6d4',   // MyCar cyan
+  'MyCar':           '#f472b6',   // MyCar pink
 };
 const COMP_PALETTE = [
   '#2563eb','#ef4444','#22c55e','#eab308','#a855f7','#f97316','#881337',
