@@ -146,7 +146,7 @@ async def trigger_scrape(
                 )
                 return results, None
             except Exception as e:
-                return [], str(e)
+                return [], f"{ScraperClass.competitor_name}: {e}"
 
     tasks = [run_scraper(cls) for cls in ALL_SCRAPERS]
     results_list = await asyncio.gather(*tasks)
@@ -627,6 +627,7 @@ async def scrape_seasonal_anchors(
     # least 2 days in the future so we never query past or same-day dates
     # (most APIs return HTTP 500 / "24h notice" errors for past dates).
     anchor_months: list[tuple[date, date]] = []
+    skipped_months: list[str] = []
     candidate_offset = 0
     while len(anchor_months) < 12:
         total_month = today.month + candidate_offset
@@ -635,6 +636,8 @@ async def scrape_seasonal_anchors(
         pickup_d = date(year, month, 15)
         if pickup_d >= today + timedelta(days=2):
             anchor_months.append((pickup_d, pickup_d + timedelta(days=_RENTAL_DAYS)))
+        else:
+            skipped_months.append(pickup_d.strftime("%b %Y"))
         candidate_offset += 1
 
     for pickup_d, ret_d in anchor_months:

@@ -494,7 +494,7 @@ async function checkDataFreshness() {
             `<span style="color:${ageColor(fleetAge)}" title="Last fleet poll: ${fleetTs}">` +
             `🚗 Fleet: ${ageLabel(fleetAge)}</span>`
           : '');
-      indicator.style.display = '';
+      indicator.style.display = 'inline-flex';
     }
 
     // ── Stale banner (dismissable, only for seriously old data) ───────────
@@ -2634,7 +2634,7 @@ function renderWatchlist() {
   const container = document.getElementById('watchlist-chips');
   if (!container) return;
   if (!_watchlistModels.length) {
-    container.innerHTML = `<span style="color:var(--text-muted);font-size:13px;font-style:italic">No models on watchlist — add one below.</span>`;
+    container.innerHTML = `<span style="color:var(--text-muted);font-size:13px;font-style:italic">No models on watchlist yet — use the dropdown above to add one.</span>`;
     return;
   }
   container.innerHTML = _watchlistModels.map(m => `
