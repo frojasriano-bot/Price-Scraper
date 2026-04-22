@@ -140,7 +140,17 @@ class AvisIsScraper(BaseScraper):
             "templateName":       "AvisBookingFlow:pages/homePageAbg",
         }
 
-        response = await self.client.post(AVIS_RESULTS_URL, data=form_data)
+        response = await self.post_with_retry(
+            AVIS_RESULTS_URL,
+            data=form_data,
+            headers={
+                "Referer":        self.base_url + "/",
+                "Origin":         self.base_url,
+                "Sec-Fetch-Site": "same-origin",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Dest": "document",
+            },
+        )
         response.raise_for_status()
         soup = BeautifulSoup(response.text, "lxml")
 

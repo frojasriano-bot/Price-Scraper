@@ -179,7 +179,17 @@ class HoldurScraper(BaseScraper):
             "search":             "Leita",
             "step":               "search",
         }
-        response = await self.client.post(HOLDUR_RESULTS_URL, data=form_data)
+        response = await self.post_with_retry(
+            HOLDUR_RESULTS_URL,
+            data=form_data,
+            headers={
+                "Referer":        self.base_url + "/boka",
+                "Origin":         self.base_url,
+                "Sec-Fetch-Site": "same-origin",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Dest": "document",
+            },
+        )
         response.raise_for_status()
         soup = BeautifulSoup(response.text, "lxml")
 

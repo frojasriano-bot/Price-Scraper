@@ -3392,38 +3392,74 @@ function renderGapByModel() {
   const monthLabels = data.months.map(m => m.month_label);
   const colWidth    = '72px';
 
+  // Collect all competitors that appear across any model/month
+  const compSet = new Set();
+  data.models.forEach(({ gaps }) => {
+    gaps.forEach(g => {
+      if (g?.by_competitor) Object.keys(g.by_competitor).forEach(c => compSet.add(c));
+    });
+  });
+  const competitors = [...compSet].filter(c => c !== 'Blue Car Rental').sort();
+
   let html = `<table style="border-collapse:collapse;width:100%;font-size:12px">
     <thead>
       <tr>
-        <th style="text-align:left;padding:8px 12px 8px 0;color:var(--text-muted);font-weight:600;white-space:nowrap;min-width:180px">Model (${escHtml(data.category)})</th>
+        <th style="text-align:left;padding:8px 12px 8px 0;color:var(--text-muted);font-weight:600;white-space:nowrap;min-width:130px">Model</th>
+        <th style="text-align:left;padding:8px 8px 8px 0;color:var(--text-muted);font-weight:600;white-space:nowrap;min-width:150px">vs Competitor</th>
         ${monthLabels.map(l => `<th style="text-align:center;padding:6px 4px;color:var(--text-muted);font-weight:600;min-width:${colWidth};font-size:11px;white-space:nowrap">${l}</th>`).join('')}
       </tr>
     </thead>
     <tbody>`;
 
-  data.models.forEach(({ canonical_name, gaps }) => {
-    html += `<tr>
-      <td style="padding:6px 12px 6px 0;font-weight:600;white-space:nowrap;color:var(--text);font-size:13px">${escHtml(canonical_name)}</td>
-      ${gaps.map(g => {
-        if (!g) {
-          return `<td style="text-align:center;padding:5px 3px"><div style="background:var(--bg-alt);color:var(--text-muted);border-radius:6px;padding:6px 4px;font-size:11px">—</div></td>`;
-        }
-        // If Blue has no price for this model/month, show a muted "no Blue" indicator
-        if (g.blue_price == null) {
-          const tip = `No Blue price for this model · market avg ${formatISK(g.market_avg)}/day (from ${g.comp_n} comp${g.comp_n === 1 ? '' : 's'})`;
-          return `<td style="text-align:center;padding:5px 3px" title="${escHtml(tip)}"><div style="background:var(--bg-alt);color:var(--text-muted);border-radius:6px;padding:6px 4px;font-size:11px;font-style:italic">n/a</div></td>`;
-        }
-        if (g.market_avg == null) {
-          const tip = `Blue ${formatISK(g.blue_price)}/day · no competitor match for this model`;
-          return `<td style="text-align:center;padding:5px 3px" title="${escHtml(tip)}"><div style="background:var(--bg-alt);color:var(--text-muted);border-radius:6px;padding:6px 4px;font-size:11px;font-style:italic">solo</div></td>`;
-        }
-        const { bg, text, label } = gapCellStyle(g.gap_pct);
-        const tip = `Blue ${formatISK(g.blue_price)}/day · market ${formatISK(g.market_avg)}/day (${g.comp_n} comp${g.comp_n === 1 ? '' : 's'}) · ${label}`;
-        return `<td style="text-align:center;padding:5px 3px" title="${escHtml(tip)}">
-          <div style="background:${bg};color:${text};border-radius:6px;padding:6px 4px;font-weight:700;font-size:12px;min-width:52px">${label}</div>
-        </td>`;
-      }).join('')}
-    </tr>`;
+  data.models.forEach(({ canonical_name, gaps }, modelIdx) => {
+    // Determine which competitors appear for this model
+    const modelComps = new Set();
+    gaps.forEach(g => {
+      if (g?.by_competitor) Object.keys(g.by_competitor).forEach(c => modelComps.add(c));
+    });
+    const compsForModel = [...modelComps].sort();
+
+    if (!compsForModel.length) {
+      // Blue only — no competitor data for this model
+      html += `<tr style="border-top:2px solid var(--border)">
+        <td style="padding:7px 12px 7px 0;font-weight:700;white-space:nowrap;color:var(--text);font-size:13px">${escHtml(canonical_name)}</td>
+        <td style="padding:7px 8px 7px 0;font-size:11px;color:var(--text-muted);font-style:italic">no competitors</td>
+        ${gaps.map(() => `<td style="text-align:center;padding:5px 3px"><div style="background:var(--bg-alt);color:var(--text-muted);border-radius:6px;padding:6px 4px;font-size:11px">—</div></td>`).join('')}
+      </tr>`;
+      return;
+    }
+
+    compsForModel.forEach((comp, compIdx) => {
+      const isFirstRow = compIdx === 0;
+      const rowBorder  = isFirstRow ? 'border-top:2px solid var(--border)' : '';
+      const compColor  = compIdx % 2 === 0 ? 'var(--bg-alt)' : 'transparent';
+      const modelCell  = isFirstRow
+        ? `<td rowspan="${compsForModel.length}" style="padding:7px 12px 7px 0;font-weight:700;white-space:nowrap;color:var(--text);font-size:13px;vertical-align:top;${rowBorder}">${escHtml(canonical_name)}</td>`
+        : '';
+
+      html += `<tr style="${rowBorder}">
+        ${modelCell}
+        <td style="padding:5px 8px 5px 0;white-space:nowrap;font-size:11px;font-weight:600;color:var(--text-muted)">${escHtml(comp)}</td>
+        ${gaps.map(g => {
+          if (!g) {
+            return `<td style="text-align:center;padding:4px 3px"><div style="background:var(--bg-alt);color:var(--text-muted);border-radius:5px;padding:5px 3px;font-size:11px">—</div></td>`;
+          }
+          const compData = g.by_competitor?.[comp];
+          if (!compData) {
+            return `<td style="text-align:center;padding:4px 3px"><div style="background:var(--bg-alt);color:var(--text-muted);border-radius:5px;padding:5px 3px;font-size:11px;opacity:.5">—</div></td>`;
+          }
+          if (g.blue_price == null) {
+            const tip = `No Blue price · ${escHtml(comp)} ${formatISK(compData.price)}/day`;
+            return `<td style="text-align:center;padding:4px 3px" title="${tip}"><div style="background:var(--bg-alt);color:var(--text-muted);border-radius:5px;padding:5px 3px;font-size:11px;font-style:italic">n/a</div></td>`;
+          }
+          const { bg, text, label } = gapCellStyle(compData.gap_pct);
+          const tip = `Blue ${formatISK(g.blue_price)}/day · ${escHtml(comp)} ${formatISK(compData.price)}/day · ${label}`;
+          return `<td style="text-align:center;padding:4px 3px" title="${escHtml(tip)}">
+            <div style="background:${bg};color:${text};border-radius:5px;padding:5px 3px;font-weight:700;font-size:12px;min-width:48px">${label}</div>
+          </td>`;
+        }).join('')}
+      </tr>`;
+    });
   });
 
   html += `</tbody></table>`;
@@ -3432,10 +3468,10 @@ function renderGapByModel() {
   const legendGreen = isDark ? '#86efac' : '#14532d';
   const legendRed   = isDark ? '#fca5a5' : '#7f1d1d';
   html += `<div style="margin-top:14px;display:flex;gap:20px;font-size:11px;color:var(--text-muted);flex-wrap:wrap">
-    <span><strong style="color:${legendGreen}">+%</strong> = Blue is more expensive than market average for this model</span>
-    <span><strong style="color:${legendRed}">−%</strong> = Blue is cheaper</span>
+    <span><strong style="color:${legendRed}">+%</strong> = Blue is more expensive than this competitor</span>
+    <span><strong style="color:${legendGreen}">−%</strong> = Blue is cheaper than this competitor</span>
     <span><strong style="color:var(--text-muted)">n/a</strong> = no Blue price for this model</span>
-    <span><strong style="color:var(--text-muted)">solo</strong> = Blue has this model, no competitor match</span>
+    <span><strong style="color:var(--text-muted)">—</strong> = competitor doesn't carry this model that month</span>
     <span style="opacity:.7">Hover a cell for exact prices</span>
   </div>`;
 
@@ -5294,11 +5330,15 @@ function renderFleetSoldOut(records) {
 
   if (!soldOut.length) { card.style.display = 'none'; return; }
 
-  // Group by competitor → list of sold-out names
+  // Group by competitor → car_name → [{window_label, pickup_date}]
   const byComp = {};
   soldOut.forEach(r => {
-    byComp[r.competitor] = byComp[r.competitor] || new Set();
-    byComp[r.competitor].add(r.car_name);
+    byComp[r.competitor] = byComp[r.competitor] || {};
+    byComp[r.competitor][r.car_name] = byComp[r.competitor][r.car_name] || [];
+    byComp[r.competitor][r.car_name].push({
+      window:      r.window_label,
+      pickup_date: r.pickup_date,
+    });
   });
 
   const ts = records[0]?.scraped_at
@@ -5306,22 +5346,52 @@ function renderFleetSoldOut(records) {
     : '';
   subtitle.textContent = ts ? `As of ${ts}` : 'Models fully booked across tracked windows';
 
-  const WINDOW_LABELS = { '1w': '1 wk', '2w': '2 wks', '4w': '4 wks' };
+  // Window label → human-readable
+  const WIN_HUMAN = { '1w': '1 week out', '2w': '2 weeks out', '4w': '4 weeks out' };
 
-  body.innerHTML = Object.entries(byComp).map(([comp, names]) => {
-    const color = compColor(comp);
-    const pills = [...names].sort().map(n =>
-      `<span style="display:inline-block;background:rgba(220,38,38,.12);color:#b91c1c;border:1px solid rgba(220,38,38,.25);border-radius:5px;padding:2px 9px;font-size:11px;font-weight:600;margin:2px">${escHtml(n)}</span>`
-    ).join('');
-    return `
-      <div style="margin-bottom:12px">
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
-          <div style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0"></div>
-          <span style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">${escHtml(comp)}</span>
-        </div>
-        <div style="display:flex;flex-wrap:wrap;gap:2px;padding-left:14px">${pills}</div>
-      </div>`;
-  }).join('');
+  // Format pickup date as "15 Jul" style
+  const fmtDate = iso => {
+    if (!iso) return '';
+    const d = new Date(iso + 'T12:00:00Z');
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  };
+
+  body.innerHTML = Object.entries(byComp)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([comp, cars]) => {
+      const color    = compColor(comp);
+      const carCount = Object.keys(cars).length;
+
+      const carRows = Object.entries(cars)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([car, windows]) => {
+          // Sort windows by pickup_date ascending
+          const sorted = windows.sort((a, b) => (a.pickup_date || '').localeCompare(b.pickup_date || ''));
+          const windowPills = sorted.map(w => {
+            const dateStr = w.pickup_date ? `pickup ${fmtDate(w.pickup_date)}` : (WIN_HUMAN[w.window] || w.window);
+            return `<span style="display:inline-block;background:rgba(220,38,38,.10);color:#b91c1c;border:1px solid rgba(220,38,38,.22);border-radius:4px;padding:1px 7px;font-size:10px;font-weight:600;margin:1px 2px;white-space:nowrap">${escHtml(dateStr)}</span>`;
+          }).join('');
+
+          return `
+            <div style="display:flex;align-items:flex-start;gap:8px;padding:4px 0 4px 14px;border-bottom:1px solid var(--border)">
+              <div style="flex:0 0 auto;margin-top:3px;width:7px;height:7px;border-radius:50%;background:#dc2626"></div>
+              <div style="flex:1;min-width:0">
+                <span style="font-size:12px;font-weight:600;color:var(--text)">${escHtml(car)}</span>
+                <div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:2px">${windowPills}</div>
+              </div>
+            </div>`;
+        }).join('');
+
+      return `
+        <div style="margin-bottom:16px;border:1px solid var(--border);border-radius:8px;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg-alt);border-bottom:1px solid var(--border)">
+            <div style="width:9px;height:9px;border-radius:50%;background:${color};flex-shrink:0"></div>
+            <span style="font-size:12px;font-weight:700;color:var(--text)">${escHtml(comp)}</span>
+            <span style="margin-left:auto;font-size:11px;font-weight:600;color:#b91c1c;background:rgba(220,38,38,.10);border-radius:10px;padding:1px 8px">${carCount} model${carCount !== 1 ? 's' : ''} sold out</span>
+          </div>
+          <div>${carRows}</div>
+        </div>`;
+    }).join('');
 
   card.style.display = '';
 }
@@ -5420,13 +5490,37 @@ function showCalendarDetail(competitor, month) {
   if (!names.length) {
     detBody.innerHTML = '<span style="color:var(--text-muted)">No sold-out models detected for this month.</span>';
   } else {
-    detBody.innerHTML = '<div style="margin-bottom:4px;font-weight:600;color:var(--text)">Sold-out models:</div>'
-      + names.map(n =>
-          `<div style="padding:3px 0;display:flex;align-items:center;gap:6px">
+    // Also try to pull per-car date detail from the sold-out records cache
+    // _fleetSoldOutCache contains {car_name, pickup_date, window_label, is_available, ...}
+    const monthPrefix = month; // "2026-07"
+    const relevantRecords = (_fleetSoldOutCache || []).filter(r =>
+      r.competitor === competitor &&
+      !r.is_available &&
+      (r.pickup_date || '').startsWith(monthPrefix)
+    );
+    const carDateMap = {};
+    relevantRecords.forEach(r => {
+      carDateMap[r.car_name] = carDateMap[r.car_name] || [];
+      if (r.pickup_date) carDateMap[r.car_name].push(r.pickup_date);
+    });
+
+    const fmtDate = iso => {
+      const d = new Date(iso + 'T12:00:00Z');
+      return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    };
+
+    detBody.innerHTML = `<div style="margin-bottom:8px;font-weight:600;color:var(--text)">${names.length} sold-out model${names.length !== 1 ? 's' : ''} in ${monthLabel}:</div>`
+      + names.sort().map(n => {
+          const dates = [...new Set(carDateMap[n] || [])].sort();
+          const dateStr = dates.length
+            ? `<span style="font-size:10px;color:var(--text-muted);margin-left:6px">${dates.map(fmtDate).join(', ')}</span>`
+            : '';
+          return `<div style="padding:4px 0;display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--border)">
             <span style="width:5px;height:5px;border-radius:50%;background:#dc2626;display:inline-block;flex-shrink:0"></span>
-            ${escHtml(n)}
-          </div>`
-        ).join('');
+            <span style="font-size:12px;font-weight:600;color:var(--text)">${escHtml(n)}</span>
+            ${dateStr}
+          </div>`;
+        }).join('');
   }
 
   detail.style.display = '';

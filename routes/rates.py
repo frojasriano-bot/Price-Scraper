@@ -767,9 +767,9 @@ async def get_seasonal_gap_by_model(
             "season":      season,
         })
 
-    # Collect per-model, per-month prices from stored rates
-    # Structure: { canonical_name: { month_str: {"blue": [...], "comp": [...]} } }
-    per_model: dict[str, dict[str, dict[str, list[int]]]] = {}
+    # Collect per-model, per-month prices from stored rates.
+    # Structure: { canonical_name: { month_str: {"blue": [...], "by_comp": {comp: [prices]}} } }
+    per_model: dict[str, dict[str, dict]] = {}
     any_data = False
 
     for m in sweep_months:
@@ -785,38 +785,57 @@ async def get_seasonal_gap_by_model(
             name    = r.get("canonical_name") or r["car_model"]
             per_day = round(r["price_isk"] / _RENTAL_DAYS)
             bucket  = per_model.setdefault(name, {}).setdefault(
-                m["month_str"], {"blue": [], "comp": []}
+                m["month_str"], {"blue": [], "by_comp": {}}
             )
             if r["competitor"] == "Blue Car Rental":
                 bucket["blue"].append(per_day)
             else:
-                bucket["comp"].append(per_day)
+                bucket["by_comp"].setdefault(r["competitor"], []).append(per_day)
 
-    # Build response — one row per model, 12 monthly gap entries
+    # Build response — one row per model, 12 monthly gap entries.
+    # Each gap entry includes per-competitor breakdown (not just a market average).
     models = []
     for name in sorted(per_model.keys()):
         gaps = []
         has_any = False
         for m in sweep_months:
             bucket = per_model[name].get(m["month_str"])
-            if not bucket or (not bucket["blue"] and not bucket["comp"]):
+            if not bucket or (not bucket["blue"] and not bucket["by_comp"]):
                 gaps.append(None)
                 continue
+
             blue_avg = round(sum(bucket["blue"]) / len(bucket["blue"])) if bucket["blue"] else None
-            mkt_avg  = round(sum(bucket["comp"]) / len(bucket["comp"])) if bucket["comp"] else None
-            gap_pct  = (
+
+            # Per-competitor prices and gap vs Blue
+            by_competitor: dict[str, dict] = {}
+            all_comp_prices: list[int] = []
+            for comp_name, prices in bucket["by_comp"].items():
+                comp_avg = round(sum(prices) / len(prices))
+                all_comp_prices.extend(prices)
+                comp_gap = (
+                    round((blue_avg / comp_avg - 1) * 100)
+                    if blue_avg is not None and comp_avg > 0
+                    else None
+                )
+                by_competitor[comp_name] = {"price": comp_avg, "gap_pct": comp_gap}
+
+            # Market average = pool of all competitor prices
+            mkt_avg = round(sum(all_comp_prices) / len(all_comp_prices)) if all_comp_prices else None
+            gap_pct = (
                 round((blue_avg / mkt_avg - 1) * 100)
                 if blue_avg is not None and mkt_avg not in (None, 0)
                 else None
             )
+
             gaps.append({
-                "blue_price": blue_avg,
-                "market_avg": mkt_avg,
-                "gap_pct":    gap_pct,
-                "blue_n":     len(bucket["blue"]),
-                "comp_n":     len(bucket["comp"]),
+                "blue_price":    blue_avg,
+                "market_avg":    mkt_avg,
+                "gap_pct":       gap_pct,
+                "blue_n":        len(bucket["blue"]),
+                "comp_n":        len(all_comp_prices),
+                "by_competitor": by_competitor,  # NEW: per-competitor breakdown
             })
-            if gap_pct is not None:
+            if gap_pct is not None or by_competitor:
                 has_any = True
         if has_any:
             models.append({"canonical_name": name, "gaps": gaps})

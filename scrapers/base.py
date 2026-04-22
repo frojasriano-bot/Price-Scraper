@@ -3,6 +3,8 @@ Base scraper class for Blue Rental Intelligence.
 All competitor scrapers inherit from BaseScraper.
 """
 
+import asyncio
+import logging
 import random
 from abc import ABC, abstractmethod
 from datetime import datetime
@@ -13,6 +15,7 @@ from bs4 import BeautifulSoup
 
 from canonical import canonicalize
 
+logger = logging.getLogger("blue_rental.scrapers")
 
 LOCATIONS = [
     "Keflavik Airport",
@@ -47,16 +50,38 @@ DEFAULT_FLEET: dict[str, list[dict]] = {
     "Minivan": [{"model": "Minivan",     "price_range": (22000, 38000)}],
 }
 
-# Common headers to mimic a real browser
+# Full browser-grade headers.  The Sec-Ch-Ua / Sec-Fetch-* family is what most
+# Cloudflare / bot-detection checks look for beyond the User-Agent string.
 DEFAULT_HEADERS = {
     "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
+        "Chrome/124.0.0.0 Safari/537.36"
     ),
-    "Accept-Language": "en-US,en;q=0.9,is;q=0.8",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept": (
+        "text/html,application/xhtml+xml,application/xml;"
+        "q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,"
+        "application/signed-exchange;v=b3;q=0.7"
+    ),
+    "Accept-Language":          "en-GB,en;q=0.9,is;q=0.8",
+    "Accept-Encoding":          "gzip, deflate, br",
+    "Cache-Control":            "max-age=0",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Ch-Ua":                '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+    "Sec-Ch-Ua-Mobile":         "?0",
+    "Sec-Ch-Ua-Platform":       '"Windows"',
+    "Sec-Fetch-Dest":           "document",
+    "Sec-Fetch-Mode":           "navigate",
+    "Sec-Fetch-Site":           "none",
+    "Sec-Fetch-User":           "?1",
 }
+
+# How many times to retry a transient HTTP error before giving up
+_MAX_RETRIES = 3
+# Base delay in seconds (doubles on each retry: 1s, 2s, 4s)
+_RETRY_BASE_DELAY = 1.0
+# HTTP status codes that are worth retrying
+_RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
 
 class BaseScraper(ABC):
@@ -74,12 +99,14 @@ class BaseScraper(ABC):
     # Define each competitor's real fleet here. See DEFAULT_FLEET for format.
     FLEET: dict[str, list[dict]] = {}
 
-    def __init__(self, timeout: int = 15):
+    def __init__(self, timeout: int = 30):
         self.timeout = timeout
         self.client = httpx.AsyncClient(
             headers=DEFAULT_HEADERS,
             timeout=timeout,
             follow_redirects=True,
+            # Maintain a cookie jar across requests in the same session
+            # (important for WordPress nonce-based flows like Hertz)
         )
 
     async def __aenter__(self):
@@ -107,6 +134,57 @@ class BaseScraper(ABC):
         response = await self.client.get(url, **kwargs)
         response.raise_for_status()
         return BeautifulSoup(response.text, "lxml")
+
+    async def get_with_retry(self, url: str, **kwargs) -> httpx.Response:
+        """
+        GET with automatic retry on transient errors.
+        Retries up to _MAX_RETRIES times with exponential backoff.
+        Raises the last exception if all retries fail.
+        """
+        last_exc: Exception | None = None
+        for attempt in range(_MAX_RETRIES):
+            try:
+                resp = await self.client.get(url, **kwargs)
+                if resp.status_code in _RETRYABLE_STATUS:
+                    raise httpx.HTTPStatusError(
+                        f"HTTP {resp.status_code}", request=resp.request, response=resp
+                    )
+                return resp
+            except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as exc:
+                last_exc = exc
+                if attempt < _MAX_RETRIES - 1:
+                    delay = _RETRY_BASE_DELAY * (2 ** attempt) + random.uniform(0, 0.5)
+                    logger.debug(
+                        "%s: retry %d/%d after %.1fs — %s",
+                        self.competitor_name, attempt + 1, _MAX_RETRIES, delay, exc,
+                    )
+                    await asyncio.sleep(delay)
+        raise last_exc  # type: ignore[misc]
+
+    async def post_with_retry(self, url: str, **kwargs) -> httpx.Response:
+        """
+        POST with automatic retry on transient errors.
+        Same backoff strategy as get_with_retry.
+        """
+        last_exc: Exception | None = None
+        for attempt in range(_MAX_RETRIES):
+            try:
+                resp = await self.client.post(url, **kwargs)
+                if resp.status_code in _RETRYABLE_STATUS:
+                    raise httpx.HTTPStatusError(
+                        f"HTTP {resp.status_code}", request=resp.request, response=resp
+                    )
+                return resp
+            except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as exc:
+                last_exc = exc
+                if attempt < _MAX_RETRIES - 1:
+                    delay = _RETRY_BASE_DELAY * (2 ** attempt) + random.uniform(0, 0.5)
+                    logger.debug(
+                        "%s: POST retry %d/%d after %.1fs — %s",
+                        self.competitor_name, attempt + 1, _MAX_RETRIES, delay, exc,
+                    )
+                    await asyncio.sleep(delay)
+        raise last_exc  # type: ignore[misc]
 
     def get_mock_rates(
         self,

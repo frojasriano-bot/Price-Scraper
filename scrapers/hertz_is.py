@@ -116,10 +116,22 @@ class HertzIsScraper(BaseScraper):
 
     async def _get_nonce(self) -> str:
         """Fetch the homepage and extract the nonce from wp_ccw JS object."""
-        resp = await self.client.get(self.base_url + "/")
+        resp = await self.get_with_retry(
+            self.base_url + "/",
+            headers={"Sec-Fetch-Site": "none", "Sec-Fetch-User": "?1"},
+        )
         resp.raise_for_status()
-        m = re.search(r'"nonce"\s*:\s*"([a-f0-9]+)"', resp.text)
-        return m.group(1) if m else ""
+        # Try multiple nonce patterns — the exact key name varies by CarCloud version
+        for pattern in [
+            r'"nonce"\s*:\s*"([a-f0-9]+)"',
+            r'nonce["\']?\s*:\s*["\']([a-f0-9]+)["\']',
+            r'"wp_nonce"\s*:\s*"([a-f0-9]+)"',
+            r'ccwNonce\s*=\s*["\']([a-f0-9]+)["\']',
+        ]:
+            m = re.search(pattern, resp.text)
+            if m:
+                return m.group(1)
+        return ""
 
     def _get_category(self, mix_el) -> str:
         """Derive our category from the CSS classes on the .mix element."""
@@ -165,10 +177,16 @@ class HertzIsScraper(BaseScraper):
             "duration":              "",
         }
 
-        ajax_resp = await self.client.post(
+        ajax_resp = await self.post_with_retry(
             f"{self.base_url}/wp-admin/admin-ajax.php",
             data=ajax_data,
-            headers={"Referer": self.base_url + "/"},
+            headers={
+                "Referer":        self.base_url + "/",
+                "Sec-Fetch-Site": "same-origin",
+                "Sec-Fetch-Mode": "same-origin",
+                "Sec-Fetch-Dest": "empty",
+                "X-Requested-With": "XMLHttpRequest",
+            },
         )
         ajax_resp.raise_for_status()
         ajax_json = ajax_resp.json()
@@ -176,9 +194,14 @@ class HertzIsScraper(BaseScraper):
             raise RuntimeError(f"Hertz ajax failed: {ajax_json.get('message','')}")
 
         # Fetch the results page (session now has search state)
-        results_resp = await self.client.get(
+        results_resp = await self.get_with_retry(
             f"{self.base_url}/?step=search-results",
-            headers={"Referer": self.base_url + "/"},
+            headers={
+                "Referer":        self.base_url + "/",
+                "Sec-Fetch-Site": "same-origin",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Dest": "document",
+            },
         )
         results_resp.raise_for_status()
         soup = BeautifulSoup(results_resp.text, "lxml")
