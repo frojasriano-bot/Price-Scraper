@@ -313,6 +313,38 @@ _EXACT: dict[str, str] = {
     "mg4":                                       "MG4",
     "tesla model y (awd)":                       "Tesla Model Y",
     "renault kangoo campervan":                  "Renault Kangoo",
+
+    # ── Go Iceland live API variants ──────────────────────────────────────────
+    # Year-suffixed, roof-tent, and typo variants from goiceland-backend API
+    "crosscamp flex":                               "Crosscamp Flex",
+    "dacia duster 4wd diesel - (2022)":             "Dacia Duster",
+    "dacia duster 4x4 diesel - (2023)":             "Dacia Duster",
+    "dacia duster 4x4 petrol (2018-2022)":          "Dacia Duster",
+    "dacia duster 4x4 roof top tent":               "Dacia Duster",
+    "dacia jogger 7 seats":                         "Dacia Jogger",
+    "fiat doblo maxi":                              "Fiat Doblo",
+    "ford mondeo":                                  "Ford Mondeo",
+    "jeep compass 4xe":                             "Jeep Compass",
+    "jeep renagade 4xe roof top tent":              "Jeep Renegade",  # source typo
+    "jeep wrangler 4xe roof top tent":              "Jeep Wrangler",
+    "mazda 3":                                      "Mazda 3",
+    "motorhome 3":                                  "Motorhome",
+    "motorhome 4":                                  "Motorhome",
+    "nissan qashqai 4x4":                           "Nissan Qashqai",
+    "renault kangoo camper":                        "Renault Kangoo",
+    "renault master 5":                             "Renault Master",
+    "renault trafic 3":                             "Renault Trafic",
+    "renault trafic minibus (9 seats":              "Renault Trafic",  # malformed (missing paren)
+    "renault trafic minibus (9 seats)":             "Renault Trafic",
+    "suzuki jimny 4x4 (2026) - roof top tent":      "Suzuki Jimny",
+    "suzuki s-cross 2025 -":                        "Suzuki S-Cross",
+    "suzuki vitara 2024":                           "Suzuki Vitara",
+    "vw caddy camper":                              "VW Caddy Maxi",
+    "vw california 4x4":                            "VW California",
+    "vw california beach 2026 -":                   "VW California",
+    "vw california beach 4x4 (automatic) 2024 model": "VW California",
+    "vw carravelle":                                "VW Caravelle",   # source typo
+    "wv caddy camper":                              "VW Caddy Maxi",  # source typo (WV → VW)
 }
 
 # ---------------------------------------------------------------------------
@@ -430,7 +462,16 @@ CANONICAL_CATEGORIES: dict[str, str] = {
     "Dacia Duster 4x4 + Roof Tent": "4x4",
     "Toyota Rav4 4x4 + Roof Tent (Older Model)": "4x4",
 
+    # ── Compact (additional) ────────────────────────────────────────────────
+    "Ford Mondeo":           "Compact",
+    "Mazda 3":               "Compact",
+    "Suzuki S-Cross":        "SUV",     # crossover, sits between Compact and SUV
+
     # ── Minivan (people carriers, passenger vans) ───────────────────────────
+    "Crosscamp Flex":        "Minivan",
+    "Fiat Doblo":            "Minivan",
+    "Motorhome":             "Minivan",
+    "Renault Master":        "Minivan",
     "VW Caravelle":          "Minivan",
     "VW Caddy Maxi":         "Minivan",
     "VW Caddy Maxi 7 seater": "Minivan",
