@@ -8,7 +8,6 @@ from .lotus import LotusCarRentalScraper
 from .avis_is import AvisIsScraper
 from .holdur import HoldurScraper
 from .goiceland_com import GoIcelandScraper
-from .mycar_is import MyCarIsScraper
 
 ALL_SCRAPERS = [
     BlueCarRentalScraper,
@@ -19,7 +18,6 @@ ALL_SCRAPERS = [
     AvisIsScraper,
     HoldurScraper,
     GoIcelandScraper,
-    MyCarIsScraper,
 ]
 
 __all__ = [
@@ -31,6 +29,5 @@ __all__ = [
     "AvisIsScraper",
     "HoldurScraper",
     "GoIcelandScraper",
-    "MyCarIsScraper",
     "ALL_SCRAPERS",
 ]

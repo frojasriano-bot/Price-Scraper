@@ -96,12 +96,13 @@ routes/
 scrapers/
   base.py                BaseScraper abstract class + mock data fallback
   blue_rental.py         ✅ Live — Caren API (bluecarrental.is)
-  holdur.py              ✅ Live — HTML scraper (holdur.is)
+  holdur.py              ✅ Live — HTML form scraper (holdur.is)
   lotus.py               ✅ Live — Caren API (lotuscarrental.is)
-  avis_is.py             ✅ Live — HTML scraper (avis.is)
+  avis_is.py             ✅ Live — HTML form scraper (avis.is)
   gocarrental.py         ✅ Live — GoRentals JSON API + Sanity CMS
   hertz_is.py            ✅ Live — WordPress/CarCloud ajax + HTML (hertz.is)
   lavacarrental.py       ✅ Live — Caren API (lavacarrental.is)
+  goiceland_com.py       ✅ Live — Cloudflare Worker JSON API (goiceland.com, KEF only)
   fleet_pressure.py      Fleet intelligence: Caren + Go Car availability polling,
                          12-month calendar sweep, absence detection for
                          Hertz/Avis/Holdur via catalog comparison
@@ -131,13 +132,15 @@ Keflavik Airport and Reykjavik only — the two locations Blue Car Rental operat
 | Hertz Iceland | ✅ | ✅ | WordPress nonce → ajax + HTML |
 | Lava Car Rental | ✅ | — | Caren API (KEF only) |
 | Lotus Car Rental | ✅ | — | Caren API (KEF only) |
+| Go Iceland | ✅ | — | Cloudflare Worker JSON API (KEF only) |
 
 ### Known scraper behaviours
 
-- **Hertz**: Displays a single "from" floor price for multiple Economy models (website design, not a scraper bug)
+- **Hertz**: Displays a single "from" floor price for multiple Economy models (website design, not a scraper bug). Returns HTTP 400 "at least 24 hours advance notice" for pickup dates within 24h — affects the nearest seasonal anchor slot only.
 - **Holdur**: Server ignores `vehicleCategoryId` filter and returns all cars for every POST — duplicates stripped client-side
-- **Go Car Rental**: Dacia Jogger appears twice (5-seat Compact + 7-seat Minivan) — two distinct class IDs in their CMS, both legitimate
-- **Lava Car Rental**: "4x4 Cars" group contains mixed SUVs and true 4x4s — classified as SUV with keyword promotion for vehicles like Land Rover Defender, Land Cruiser, Sorento
+- **Go Car Rental**: Dacia Jogger appears twice (5-seat Compact + 7-seat Minivan) — two distinct class IDs in their CMS, both legitimate. API occasionally returns HTTP 500 (transient, retried automatically).
+- **Lava Car Rental**: "4x4 Cars" group contains mixed SUVs and true 4x4s — classified as SUV with keyword promotion for vehicles like Land Rover Defender, Land Cruiser, Sorento. Occasionally returns HTTP 500 for past/near-future dates.
+- **Go Iceland**: Uses a Cloudflare Worker backend (`goiceland-backend.orn-d86.workers.dev`). KEF only. Occasionally returns HTTP 500 for historical date ranges.
 
 ### Adding a live scraper
 
@@ -309,12 +312,12 @@ The **Gap Map** toggle switches the seasonal chart to a heatmap showing Blue's p
 A 5×12 grid: 5 car categories (rows) × 12 future months (columns). Uses the same `state.seasonalData` already loaded — no extra API call.
 
 #### By Model
-A per-model breakdown for the selected category, showing each canonical model as a row across all 12 anchor months. Fetches from `GET /api/rates/seasonal/gap-by-model?category=`. Useful for spotting individual model outliers within a category.
+A per-model, per-competitor breakdown for the selected category. Each row is one canonical model × one competitor, showing Blue's exact gap % versus that specific company across all 12 anchor months. Fetches from `GET /api/rates/seasonal/gap-by-model?category=`. More actionable than the category view — reveals whether pricing pressure comes from one specific rival or the whole market.
 
 **Cell colour scale (both views):**
-- **Green** = Blue is more expensive than market (premium positioning or pricing room to reduce)
-- **Red** = Blue is cheaper than market (competitive advantage or underpricing risk)
-- **Neutral** = within ±3% of market average
+- **Green** = Blue is more expensive than the competitor (Blue charges a premium over that rival)
+- **Red** = Blue is cheaper than the competitor (Blue undercuts that rival)
+- **Neutral** = within ±3% of the competitor's price
 
 **Special states:**
 - *n/a* (grey) — no Blue price for this model/month
@@ -369,11 +372,11 @@ The Forward Rates view shows **actual scraped prices** for future weekly pickup 
 
 A **3M / 6M / 12M** toggle controls how many weeks are displayed and scraped:
 
-| Button | Weeks | Scrape calls (7 competitors) |
+| Button | Weeks | Scrape calls (8 competitors) |
 |--------|-------|------------------------------|
-| 3M | 13 | 91 |
-| **6M** | **26** | **182** ← default |
-| 12M | 52 | 364 |
+| 3M | 13 | 104 |
+| **6M** | **26** | **208** ← default |
+| 12M | 52 | 416 |
 
 The daily cron job always scrapes the full 26-week (6M) range.
 
@@ -403,7 +406,7 @@ Pills (All / Economy / Compact / SUV / 4x4 / Minivan) re-fetch the API with a `?
 
 ### Scraping
 
-The **Scrape Horizon** button (`POST /api/rates/scrape-horizon`) runs all 7 scrapers against each weekly anchor date in the selected range. Results are stored in the `rates` table and available immediately.
+The **Scrape Horizon** button (`POST /api/rates/scrape-horizon`) runs all 8 scrapers against each weekly anchor date in the selected range. Results are stored in the `rates` table and available immediately.
 
 The daily cron job also runs a 26-week horizon scrape at 07:15 automatically.
 
@@ -452,7 +455,7 @@ APScheduler (`AsyncIOScheduler`) runs eight jobs:
 | `seo_check` | Daily 07:30 (configurable) | Checks stored keywords via SerpAPI |
 | `alert_check` | Daily 07:45 (configurable) | Fires Slack alerts if competitors undercut Blue |
 | `scrape_seasonal` | **Every Monday 08:00** | Re-scrapes all 12 anchor months; always weekly |
-| `scrape_horizon` | Daily 07:15 | Scrapes all 7 competitors × 26 future weekly windows (6 months) |
+| `scrape_horizon` | Daily 07:15 | Scrapes all 8 competitors × 26 future weekly windows (6 months) |
 | `fleet_poll_morning` | Daily 09:00 | Polls Caren + Go Car for fleet availability across 1w / 2w / 4w; saves aggregate + named model records |
 | `fleet_poll_evening` | Daily 21:00 | Same as morning poll — twice-daily cadence captures intra-day inventory changes |
 | `fleet_calendar_poll` | **Every Monday 08:30** | 12-month calendar sweep for Caren + Go Car; then absence detection for Hertz/Avis/Holdur via catalog comparison |
@@ -684,6 +687,7 @@ POST /api/alerts/check
 | Lotus Car Rental | `#881337` |
 | Avis Iceland | `#ef4444` |
 | Go Car Rental | `#f97316` |
+| Go Iceland | `#4ade80` |
 | Hertz Iceland | `#eab308` |
 | Lava Car Rental | `#a855f7` |
 

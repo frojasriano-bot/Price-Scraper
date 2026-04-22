@@ -14,17 +14,18 @@ Key concepts:
 
 ## Live scrapers
 
-All 7 scrapers are live:
+All 8 scrapers are live:
 
 | Scraper | Method | Notes |
 |---------|--------|-------|
-| `blue_rental.py` | Caren API | bluecarrental.is |
-| `gocarrental.py` | GoRentals JSON API + Sanity CMS | Car names resolved via CMS |
+| `blue_rental.py` | Caren API | bluecarrental.is — KEF + Reykjavik |
+| `gocarrental.py` | GoRentals JSON API + Sanity CMS | Car names resolved via Sanity CMS — KEF + Reykjavik |
 | `lavacarrental.py` | Caren API | KEF only |
 | `hertz_is.py` | WordPress nonce → ajax + HTML | KEF + Reykjavik |
 | `lotus.py` | Caren API | KEF only |
 | `avis_is.py` | HTML form | KEF + Reykjavik |
-| `holdur.py` | HTML form (3 POST requests) | Server-side deduplication strips duplicate results |
+| `holdur.py` | HTML form (3 POST requests) | Server-side deduplication strips duplicate results — KEF + Reykjavik |
+| `goiceland_com.py` | Cloudflare Worker JSON API | KEF only (`goiceland-backend.orn-d86.workers.dev`) |
 
 If a live scrape fails (network error, selector change, timeout), the base class falls back to `get_mock_rates()` so the dashboard always has data.
 

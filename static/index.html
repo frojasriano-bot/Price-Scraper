@@ -1633,11 +1633,11 @@
                 </li>
                 <li style="margin-bottom:12px">
                   <strong>Run your first rate scrape</strong><br>
-                  Go to <strong>Rate Intelligence → Now</strong>. Click <strong>Scrape Now</strong> to pull live prices from all 7 competitors (~30–60 s). The dashboard shows mock data until real data exists.
+                  Go to <strong>Rate Intelligence → Now</strong>. Click <strong>Scrape Now</strong> to pull live prices from all 8 competitors (~30–60 s). The dashboard shows mock data until real data exists.
                 </li>
                 <li style="margin-bottom:12px">
                   <strong>Populate the Forward Rates horizon</strong><br>
-                  Go to <strong>Rate Intelligence → Forward</strong> and click <strong>Scrape Horizon</strong>. Scrapes all 7 competitors × 26 weekly windows (6 months). The daily scheduler keeps it fresh from 07:15 onwards.
+                  Go to <strong>Rate Intelligence → Forward</strong> and click <strong>Scrape Horizon</strong>. Scrapes all 8 competitors × 26 weekly windows (6 months). The daily scheduler keeps it fresh from 07:15 onwards.
                 </li>
                 <li style="margin-bottom:12px">
                   <strong>Populate Seasonal Analysis</strong><br>
@@ -1680,12 +1680,12 @@
                   <tr style="border-bottom:1px solid var(--border)">
                     <td style="padding:8px 12px 8px 0;font-weight:500">Rate Scrape</td>
                     <td style="padding:8px 12px;color:var(--text-muted)">Daily 07:00</td>
-                    <td style="padding:8px 0;color:var(--text-muted)">Live rates for today+7 → today+10, all 7 competitors</td>
+                    <td style="padding:8px 0;color:var(--text-muted)">Live rates for today+7 → today+10, all 8 competitors</td>
                   </tr>
                   <tr style="border-bottom:1px solid var(--border)">
                     <td style="padding:8px 12px 8px 0;font-weight:500">Horizon Scrape</td>
                     <td style="padding:8px 12px;color:var(--text-muted)">Daily 07:15</td>
-                    <td style="padding:8px 0;color:var(--text-muted)">Next 26 weekly windows × 7 competitors; feeds Forward Rates &amp; Booking Window</td>
+                    <td style="padding:8px 0;color:var(--text-muted)">Next 26 weekly windows × 8 competitors; feeds Forward Rates &amp; Booking Window</td>
                   </tr>
                   <tr style="border-bottom:1px solid var(--border)">
                     <td style="padding:8px 12px 8px 0;font-weight:500">SEO Check</td>
@@ -1759,7 +1759,7 @@
               <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-top:16px;margin-bottom:4px;padding-bottom:4px;border-bottom:1px solid var(--border)">SEASONAL</div>
               <dl style="margin:0">
                 <dt style="font-weight:600;margin-top:10px">Seasonal Analysis</dt>
-                <dd style="margin:0 0 4px 0;color:var(--text-muted)">Per-day pricing across the next 12 months (pickup on the 15th, 7-night stay). Three modes: line chart; <strong>History</strong> (how one month's price evolved across scrapes — clearest yield-management signal); and <strong>Gap Map</strong> (5×12 heatmap of Blue vs market average by category × month).</dd>
+                <dd style="margin:0 0 4px 0;color:var(--text-muted)">Per-day pricing across the next 12 months (pickup on the 15th, 7-night stay). Three modes: line chart; <strong>History</strong> (how one month's price evolved across scrapes — clearest yield-management signal); and <strong>Gap Map</strong> — a heatmap showing Blue's price vs each individual competitor by model × month. Green = Blue charges more than that rival, red = Blue undercuts that rival. Switch granularity between By Category (5×12 grid) and By Model (per-model, per-competitor rows).</dd>
               </dl>
 
               <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-top:16px;margin-bottom:4px;padding-bottom:4px;border-bottom:1px solid var(--border)">FORWARD</div>
@@ -1782,7 +1782,7 @@
                 </dd>
                 <dt style="font-weight:600;margin-top:10px">Fleet Pressure</dt>
                 <dd style="margin:0 0 4px 0;color:var(--text-muted)">
-                  Three layers of fleet intelligence covering all 7 competitors:<br>
+                  Three layers of fleet intelligence covering all 8 competitors:<br>
                   • <strong>Availability Snapshot</strong> — Blue, Lotus, Lava &amp; Go Car Rental polled for real-time class availability across 1w / 2w / 4w forward windows. A red badge shows how many models are sold out; click <strong>Poll Now</strong> for an immediate refresh (auto-runs 09:00 + 21:00).<br>
                   • <strong>Sold-Out Models panel</strong> — named list of every sold-out model per competitor and window, shown as red pills. Filter by window (1w / 2w / 4w).<br>
                   • <strong>12-Month Calendar heatmap</strong> — competitor × month grid colour-coded by availability % (green = open, red = squeezed). Click any cell to see the sold-out model list for that month. Click <strong>Sweep 12 Months</strong> to refresh (auto-runs every Monday 08:30).<br>
@@ -1812,7 +1812,7 @@
                 <dd style="margin:0 0 4px 0;color:var(--text-muted)">Paste your Slack incoming webhook URL and set the <strong>Alert Threshold %</strong>. <strong>Check Now</strong> runs the alert check immediately; <strong>Test Webhook</strong> sends a test message.</dd>
 
                 <dt style="font-weight:600;margin-top:12px">Tracked Competitors</dt>
-                <dd style="margin:0 0 4px 0;color:var(--text-muted)">Live/mock status for each of the 7 scrapers with the timestamp of the last successful scrape. Green = live data; gray = mock only.</dd>
+                <dd style="margin:0 0 4px 0;color:var(--text-muted)">Live/mock status for each of the 8 scrapers with the timestamp of the last successful scrape. Green = live data; gray = mock only.</dd>
 
                 <dt style="font-weight:600;margin-top:12px">Category Audit</dt>
                 <dd style="margin:0 0 4px 0;color:var(--text-muted)">Lists every car model with its stored vs canonical category. Filter to "Conflicts Only" to find misclassified models and fix via Car Model Mappings.</dd>
@@ -1836,7 +1836,7 @@
             <div style="padding:0 20px 20px;font-size:14px;line-height:1.7;color:var(--text)">
               <ul style="padding-left:20px;margin:0">
                 <li style="margin-bottom:8px"><strong>Mock data badge</strong> — if you see "Mock Data" in the top bar, no real scraped data exists for the current filters. Run a scrape first.</li>
-                <li style="margin-bottom:8px"><strong>Fleet Pressure — 4 direct + 3 inferred</strong> — Blue, Lotus, Lava, and Go Car Rental return real availability data (Caren API / GoRentals POST API). Holdur, Avis, and Hertz only expose <em>available</em> cars in their HTML responses — their fleet intelligence is inferred by comparing scrape results against a known model catalog built from historical rate data. Absence signals are weaker but still actionable, especially when a model disappears across multiple anchor months.</li>
+                <li style="margin-bottom:8px"><strong>Fleet Pressure — 4 direct + 3 inferred</strong> — Blue, Lotus, Lava, and Go Car Rental return real availability data (Caren API / GoRentals POST API). Holdur, Avis, and Hertz only expose <em>available</em> cars in their HTML responses — their fleet intelligence is inferred by comparing scrape results against a known model catalog built from historical rate data. Absence signals are weaker but still actionable, especially when a model disappears across multiple anchor months. Go Iceland is not polled for fleet pressure (their Cloudflare Worker API does not expose availability flags).</li>
                 <li style="margin-bottom:8px"><strong>Win/Loss needs a recent scrape</strong> — the scorecard uses the latest rate snapshot. If your last scrape was more than a day ago, the data may be stale. The availability % badge on each competitor card shows the scrape timestamp.</li>
                 <li style="margin-bottom:8px"><strong>Price Changes &amp; Booking Window need history</strong> — these require multiple weekly scrape runs. The more horizon snapshots exist for a pickup date, the richer the lead-time curve.</li>
                 <li style="margin-bottom:8px"><strong>Unknown car models</strong> — if a model appears as "Unknown" in the matrix, go to Settings → Category Audit to find it, then add a mapping in Settings → Car Model Mappings.</li>

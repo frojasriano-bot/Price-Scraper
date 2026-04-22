@@ -140,7 +140,7 @@ Base URL (when running locally): `http://localhost:8000`
   - Response: `{ "weeks": [ { "pickup_date", "competitors": { "<name>": <per_day_isk> } } ] }`
 
 - `POST /api/rates/scrape-horizon`
-  - Scrapes all 7 competitors × N weekly windows and persists results
+  - Scrapes all 8 competitors × N weekly windows and persists results
   - Optional query params: `location`, `weeks` (default 26, min 4, max 52)
 
 - `GET /api/rates/model-horizon`

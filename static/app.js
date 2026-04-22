@@ -745,7 +745,6 @@ const BRAND_COLORS = {
   'Holdur':          '#22c55e',   // Holdur green
   'Lava Car Rental': '#a855f7',   // Lava purple
   'Lotus Car Rental':'#881337',   // Lotus maroon
-  'MyCar':           '#f472b6',   // MyCar pink
 };
 const COMP_PALETTE = [
   '#2563eb','#ef4444','#22c55e','#eab308','#a855f7','#f97316','#881337',
