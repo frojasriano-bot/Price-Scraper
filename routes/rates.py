@@ -3,6 +3,7 @@ API routes for competitor rate intelligence.
 """
 
 import asyncio
+import random
 from datetime import date, timedelta
 from typing import Optional
 
@@ -599,30 +600,45 @@ async def scrape_seasonal_anchors(
     all_errors: list[str] = []
     month_log:  list[dict] = []
 
-    semaphore = asyncio.Semaphore(10)
+    semaphore = asyncio.Semaphore(6)   # limit concurrent live connections
 
-    async def _scrape_one(ScraperClass, pickup_iso: str, ret_iso: str):
+    async def _scrape_one(ScraperClass, pickup_iso: str, ret_iso: str, delay: float = 0.0):
+        await asyncio.sleep(delay)   # stagger so all 8 scrapers don't hit APIs simultaneously
         async with semaphore:
             async with ScraperClass() as scraper:
                 try:
                     rates = await asyncio.wait_for(
                         scraper.scrape_rates(scrape_loc, pickup_iso, ret_iso),
-                        timeout=15,
+                        timeout=20,
                     )
                     return rates, None
                 except Exception as e:
                     return [], f"{ScraperClass.competitor_name}: {e}"
 
-    for offset in range(12):
-        total_month = today.month + offset
+    # Build 12 future anchor months.  Always start from the 15th that is at
+    # least 2 days in the future so we never query past or same-day dates
+    # (most APIs return HTTP 500 / "24h notice" errors for past dates).
+    anchor_months: list[tuple[date, date]] = []
+    candidate_offset = 0
+    while len(anchor_months) < 12:
+        total_month = today.month + candidate_offset
         year  = today.year + (total_month - 1) // 12
         month = (total_month - 1) % 12 + 1
         pickup_d = date(year, month, 15)
-        ret_d    = pickup_d + timedelta(days=_RENTAL_DAYS)
+        if pickup_d >= today + timedelta(days=2):
+            anchor_months.append((pickup_d, pickup_d + timedelta(days=_RENTAL_DAYS)))
+        candidate_offset += 1
+
+    for pickup_d, ret_d in anchor_months:
         pickup   = pickup_d.isoformat()
         ret      = ret_d.isoformat()
 
-        tasks   = [_scrape_one(Cls, pickup, ret) for Cls in ALL_SCRAPERS]
+        # Stagger each scraper by 0.3–0.7 s so they don't all hit the same
+        # API endpoints simultaneously (reduces 500 / rate-limit responses)
+        tasks = [
+            _scrape_one(Cls, pickup, ret, delay=i * random.uniform(0.3, 0.7))
+            for i, Cls in enumerate(ALL_SCRAPERS)
+        ]
         results = await asyncio.gather(*tasks)
 
         month_rates: list[dict] = []
@@ -1125,15 +1141,16 @@ async def scrape_horizon(
     all_errors: list[str] = []
     week_log: list[dict] = []
 
-    semaphore = asyncio.Semaphore(10)
+    semaphore = asyncio.Semaphore(6)
 
-    async def _scrape_one(ScraperClass, pickup_iso: str, ret_iso: str):
+    async def _scrape_one(ScraperClass, pickup_iso: str, ret_iso: str, delay: float = 0.0):
+        await asyncio.sleep(delay)
         async with semaphore:
             async with ScraperClass() as scraper:
                 try:
                     rates = await asyncio.wait_for(
                         scraper.scrape_rates(scrape_loc, pickup_iso, ret_iso),
-                        timeout=15,
+                        timeout=20,
                     )
                     return rates, None
                 except Exception as e:
@@ -1145,7 +1162,10 @@ async def scrape_horizon(
         pickup   = pickup_d.isoformat()
         ret      = ret_d.isoformat()
 
-        tasks   = [_scrape_one(Cls, pickup, ret) for Cls in ALL_SCRAPERS]
+        tasks = [
+            _scrape_one(Cls, pickup, ret, delay=i * random.uniform(0.2, 0.5))
+            for i, Cls in enumerate(ALL_SCRAPERS)
+        ]
         results = await asyncio.gather(*tasks)
 
         week_rates:  list[dict] = []

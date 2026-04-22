@@ -171,7 +171,7 @@ class GoCarRentalScraper(BaseScraper):
             "couponCode":       "",
         }
 
-        response = await self.client.post(
+        response = await self.post_with_retry(
             GOCAR_API_URL,
             json=payload,
             headers={**dict(self.client.headers), "Content-Type": "application/json"},

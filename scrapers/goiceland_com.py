@@ -134,7 +134,7 @@ class GoIcelandScraper(BaseScraper):
             "dropoffLocation": str(loc_id),
         }
 
-        resp = await self.client.get(
+        resp = await self.get_with_retry(
             f"{GOICELAND_API_BASE}/vehicles",
             params=params,
             headers={

@@ -158,7 +158,7 @@ class LavaCarRentalScraper(BaseScraper):
             "language":          "en",
         }
 
-        response = await self.client.get(
+        response = await self.get_with_retry(
             LAVA_API_URL,
             params=params,
             headers={**dict(self.client.headers), "Referer": f"{self.base_url}/book/cars"},
