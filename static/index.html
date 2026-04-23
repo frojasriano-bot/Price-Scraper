@@ -692,11 +692,52 @@
 
         <!-- PRICE CHANGE TIMELINE VIEW -->
         <div id="view-timeline" style="display:none">
+
+          <!-- ── Period Summary card ─────────────────────────────── -->
           <div class="card" style="margin-bottom:16px">
             <div class="card-header" style="flex-wrap:wrap;gap:10px">
               <div>
-                <div class="card-title">Competitor Price Change Timeline</div>
-                <div class="card-subtitle">Every meaningful price move across all competitors — sorted by most recent</div>
+                <div class="card-title">Period Pricing Summary</div>
+                <div class="card-subtitle">Actual first→last price movement per competitor · <span style="color:#16a34a">green = pricier (good for Blue)</span> · <span style="color:#dc2626">red = cheaper (risk)</span></div>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center">
+                <select id="summary-days" class="form-select" onchange="loadPeriodSummary()" style="width:auto">
+                  <option value="7">Last 7 days</option>
+                  <option value="14">Last 14 days</option>
+                  <option value="30" selected>Last 30 days</option>
+                  <option value="90">Last 90 days</option>
+                </select>
+              </div>
+            </div>
+            <div id="period-summary-body">
+              <div style="padding:30px;text-align:center;color:#9ca3af;font-size:13px">Loading summary…</div>
+            </div>
+          </div>
+
+          <!-- ── Model Lens card ────────────────────────────────────── -->
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-header" style="flex-wrap:wrap;gap:10px">
+              <div>
+                <div class="card-title">Model Price Comparison</div>
+                <div class="card-subtitle">Current price from every competitor for one model, ranked cheapest→most expensive</div>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <select id="lens-model" class="form-select" onchange="loadModelLens()" style="min-width:200px">
+                  <option value="">— Pick a model —</option>
+                </select>
+              </div>
+            </div>
+            <div id="lens-body">
+              <div style="padding:30px;text-align:center;color:#9ca3af;font-size:13px">Select a model above to compare prices across competitors.</div>
+            </div>
+          </div>
+
+          <!-- ── Price Change Log ───────────────────────────────────── -->
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-header" style="flex-wrap:wrap;gap:10px">
+              <div>
+                <div class="card-title">Price Change Log</div>
+                <div class="card-subtitle">Every detected repricing event — filter by category, model, or minimum move size</div>
               </div>
               <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
                 <select id="timeline-days" class="form-select" onchange="loadTimeline()" style="width:auto">
@@ -729,8 +770,6 @@
               </div>
             </div>
           </div>
-          <!-- Drift summary — populated by renderTimelineDrift() -->
-          <div id="timeline-drift-bar" style="display:none;margin-bottom:12px"></div>
 
           <div id="timeline-loading" style="display:none;text-align:center;padding:40px;color:#6b7280;font-size:13px">
             <span class="spinner" style="border-color:rgba(0,0,0,.15);border-top-color:#2563eb;width:14px;height:14px;display:inline-block"></span>

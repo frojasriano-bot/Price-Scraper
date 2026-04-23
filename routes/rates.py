@@ -1300,6 +1300,96 @@ async def get_price_timeline_endpoint(
     return {"events": events, "count": len(events)}
 
 
+@router.get("/period-summary")
+async def get_period_summary(
+    days: int = Query(30, ge=7, le=365),
+    location: Optional[str] = Query(None),
+):
+    """
+    First-vs-last average daily price per competitor × category within the
+    lookback window.  Powers the Pricing Trends summary table — actual net
+    price movement, not a sum of individual change events.
+    """
+    import aiosqlite
+    from datetime import date as _date, timedelta
+    from collections import defaultdict
+
+    cutoff = (_date.today() - timedelta(days=days)).isoformat()
+    loc    = location or "Keflavik Airport"
+
+    query = """
+        SELECT competitor, car_category,
+               DATE(scraped_at) AS scrape_date,
+               AVG(CAST(price_isk AS REAL)
+                   / NULLIF(julianday(return_date) - julianday(pickup_date), 0)) AS per_day
+        FROM rates
+        WHERE scraped_at >= ?
+          AND location    = ?
+          AND julianday(return_date) > julianday(pickup_date)
+          AND price_isk   > 0
+        GROUP BY competitor, car_category, DATE(scraped_at)
+        ORDER BY competitor, car_category, scrape_date ASC
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(query, [cutoff, loc]) as cur:
+            rows = [dict(r) for r in await cur.fetchall()]
+
+    CATEGORIES = ["Economy", "Compact", "SUV", "4x4", "Minivan"]
+
+    # Time-series per (competitor, category)
+    series: dict = defaultdict(list)
+    for r in rows:
+        series[(r["competitor"], r["car_category"])].append(
+            {"date": r["scrape_date"], "per_day": r["per_day"]}
+        )
+
+    # Blue's most-recent daily price per category (reference baseline)
+    blue_current: dict = {}
+    for cat in CATEGORIES:
+        pts = series.get(("Blue Car Rental", cat), [])
+        if pts:
+            blue_current[cat] = pts[-1]["per_day"]
+
+    competitors = sorted(
+        {r["competitor"] for r in rows if r["competitor"] != "Blue Car Rental"}
+    )
+
+    result = []
+    for comp in competitors:
+        by_cat: dict = {}
+        for cat in CATEGORIES:
+            pts = series.get((comp, cat), [])
+            if not pts:
+                by_cat[cat] = None
+                continue
+            first_pd = pts[0]["per_day"]
+            last_pd  = pts[-1]["per_day"]
+            # change_pct = None when only 1 snapshot (can't compute trend)
+            change_pct = (
+                round((last_pd - first_pd) / first_pd * 100, 1)
+                if len(pts) > 1 and first_pd
+                else None
+            )
+            blue = blue_current.get(cat)
+            vs_blue = round((last_pd - blue) / blue * 100, 1) if blue else None
+            by_cat[cat] = {
+                "first":        round(first_pd),
+                "last":         round(last_pd),
+                "change_pct":   change_pct,
+                "vs_blue_pct":  vs_blue,
+                "scrape_count": len(pts),
+            }
+        result.append({"competitor": comp, "categories": by_cat})
+
+    return {
+        "competitors":  result,
+        "blue_current": {k: round(v) for k, v in blue_current.items()},
+        "days":         days,
+        "location":     loc,
+    }
+
+
 @router.get("/booking-window")
 async def get_booking_window_endpoint(
     pickup_date: str           = Query(..., description="YYYY-MM-DD — the future pickup date to analyse"),

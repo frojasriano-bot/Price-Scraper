@@ -59,6 +59,7 @@ const state = {
   gapByModelData: null,             // cached response from /seasonal/gap-by-model
   gapByModelCategory: null,         // what category the cache was fetched for
   timelineModelChart: null,
+  lensHistoryChart:   null,
   horizonData: null,
   horizonChart: null,
   horizonCategory: '',
@@ -328,7 +329,7 @@ function setRatesView(view) {
   if (view === 'history')                               loadHistory();
   if (view === 'seasonal'       && !state.seasonalData) loadSeasonal();
   if (view === 'horizon-fwd'    && !state.horizonData)  loadHorizon();
-  if (view === 'timeline')                              loadTimeline();
+  if (view === 'timeline')                              { loadPeriodSummary(); loadTimeline(); initModelLens(); }
   if (view === 'booking-window')                        initBookingWindow();
   if (view === 'win-loss')                              loadWinLoss();
   if (view === 'fleet-pressure')                        loadFleetPressure();
@@ -447,7 +448,7 @@ function loadCurrentView() {
     'view-list':          () => { typeof loadRates         === 'function' && loadRates(); },
     'view-matrix':        () => { typeof loadMatrix       === 'function' && loadMatrix(); },
     'view-history':       () => { typeof loadHistory      === 'function' && loadHistory(); },
-    'view-timeline':      () => { typeof loadTimeline     === 'function' && loadTimeline(); },
+    'view-timeline':      () => { typeof loadPeriodSummary === 'function' && loadPeriodSummary(); typeof loadTimeline === 'function' && loadTimeline(); typeof initModelLens === 'function' && initModelLens(); },
     'view-win-loss':      () => { typeof loadWinLoss      === 'function' && loadWinLoss(); },
     'view-fleet-pressure':() => { typeof loadFleetPressure=== 'function' && loadFleetPressure(); },
     'view-seasonal':      () => { typeof loadSeasonal     === 'function' && loadSeasonal(); },
@@ -3794,54 +3795,303 @@ async function loadTimeline() {
   }
 }
 
-// ── Timeline: Cumulative Drift bar ──────────────────────────────────────────
-function renderTimelineDrift(events) {
-  const bar = document.getElementById('timeline-drift-bar');
-  if (!bar) return;
-  if (!events || !events.length) { bar.style.display = 'none'; return; }
+// ── Period Summary table ────────────────────────────────────────────────────
 
-  // Aggregate net price movement per competitor
-  const drift = {};
-  const moves = {};
-  events.forEach(ev => {
-    if (!drift[ev.competitor]) { drift[ev.competitor] = 0; moves[ev.competitor] = { up: 0, down: 0 }; }
-    if (ev.direction === 'up') { drift[ev.competitor] += ev.change_pct; moves[ev.competitor].up++; }
-    else                       { drift[ev.competitor] -= ev.change_pct; moves[ev.competitor].down++; }
+async function loadPeriodSummary() {
+  const days     = document.getElementById('summary-days')?.value || 30;
+  const location = document.getElementById('filter-location')?.value || '';
+  const body     = document.getElementById('period-summary-body');
+  if (!body) return;
+
+  body.innerHTML = `<div style="padding:24px;text-align:center;color:#9ca3af;font-size:13px">
+    <span class="spinner" style="border-color:rgba(0,0,0,.15);border-top-color:#2563eb;width:12px;height:12px;display:inline-block"></span>
+    &nbsp;Loading…</div>`;
+
+  try {
+    const params = new URLSearchParams({ days });
+    if (location) params.set('location', location);
+    const data = await apiFetch(`/api/rates/period-summary?${params}`);
+    renderPeriodSummary(data);
+  } catch (e) {
+    body.innerHTML = `<div style="padding:24px;text-align:center;color:#9ca3af;font-size:13px">Failed to load summary: ${escHtml(e.message)}</div>`;
+  }
+}
+
+function renderPeriodSummary(data) {
+  const body = document.getElementById('period-summary-body');
+  if (!body) return;
+
+  const CATS = ['Economy', 'Compact', 'SUV', '4x4', 'Minivan'];
+  const { competitors = [], blue_current = {}, days } = data;
+
+  if (!competitors.length) {
+    body.innerHTML = `<div style="padding:24px;text-align:center;color:#9ca3af;font-size:13px">No data for this period yet — run a scrape to populate.</div>`;
+    return;
+  }
+
+  // Cell renderer — returns td HTML
+  function cell(d) {
+    if (!d) return `<td style="text-align:center;padding:10px 6px;color:#d1d5db">—</td>`;
+
+    const { change_pct, vs_blue_pct, first, last, scrape_count } = d;
+    const hasHistory = change_pct !== null && change_pct !== undefined;
+
+    let topHtml;
+    if (!hasHistory) {
+      topHtml = `<span style="font-size:11px;color:#9ca3af">snapshot only</span>`;
+    } else if (Math.abs(change_pct) < 1) {
+      topHtml = `<span style="font-size:13px;font-weight:700;color:#6b7280">Stable</span>`;
+    } else {
+      const col  = change_pct > 0 ? '#16a34a' : '#dc2626';
+      const sign = change_pct > 0 ? '+' : '';
+      topHtml = `<span style="font-size:15px;font-weight:800;color:${col}">${sign}${change_pct.toFixed(1)}%</span>`;
+    }
+
+    let vsHtml = '';
+    if (vs_blue_pct !== null && vs_blue_pct !== undefined) {
+      const vc  = vs_blue_pct < 0 ? '#dc2626' : '#16a34a';
+      const vs  = vs_blue_pct > 0 ? '+' : '';
+      const lbl = vs_blue_pct < 0 ? 'vs Blue ↓' : 'vs Blue ↑';
+      vsHtml = `<div style="font-size:10px;color:${vc};margin-top:3px;font-weight:600">${vs}${vs_blue_pct.toFixed(1)}% ${lbl}</div>`;
+    }
+
+    const bg = !hasHistory ? '' : change_pct > 5
+      ? 'background:rgba(22,163,74,.06);'
+      : change_pct < -5
+        ? 'background:rgba(220,38,38,.06);'
+        : '';
+    const title = hasHistory
+      ? `title="${formatISK(first)}/day → ${formatISK(last)}/day · ${scrape_count} scrapes"`
+      : `title="${formatISK(last)}/day (single snapshot)"`;
+
+    return `<td style="text-align:center;padding:10px 6px;${bg}vertical-align:middle" ${title}>
+      ${topHtml}${vsHtml}
+    </td>`;
+  }
+
+  const isDark = document.body.classList.contains('dark-mode');
+  const thStyle = `padding:8px 6px;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;text-align:center;border-bottom:2px solid var(--border);white-space:nowrap`;
+  const tdNameStyle = `padding:10px 12px;font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;border-right:1px solid var(--border)`;
+
+  let rows = competitors.map(c => {
+    const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${compColor(c.competitor)};margin-right:6px;flex-shrink:0"></span>`;
+    const cats = CATS.map(cat => cell(c.categories[cat])).join('');
+    return `<tr style="border-bottom:1px solid var(--border)">
+      <td style="${tdNameStyle}">${dot}${escHtml(c.competitor)}</td>
+      ${cats}
+    </tr>`;
+  }).join('');
+
+  // Blue reference row
+  const blueRef = CATS.map(cat => {
+    const p = blue_current[cat];
+    return p
+      ? `<td style="text-align:center;padding:8px 6px;font-size:12px;font-weight:700;color:var(--text)">${formatISK(p)}<span style="font-size:10px;font-weight:400;color:var(--text-muted)">/day</span></td>`
+      : `<td style="text-align:center;color:#d1d5db">—</td>`;
+  }).join('');
+
+  body.innerHTML = `
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;min-width:560px">
+        <thead>
+          <tr style="border-bottom:2px solid var(--border)">
+            <th style="${thStyle};text-align:left;padding-left:12px">Competitor</th>
+            ${CATS.map(c => `<th style="${thStyle}">${c}</th>`).join('')}
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+          <tr style="background:rgba(37,99,235,.04);border-top:2px solid var(--border)">
+            <td style="${tdNameStyle};color:#2563eb">
+              <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#2563eb;margin-right:6px"></span>
+              Blue (reference)
+            </td>
+            ${blueRef}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div style="padding:8px 12px;font-size:11px;color:var(--text-muted)">
+      % = actual price change over ${days} days (first scrape → latest scrape in window). Hover a cell for absolute prices.
+    </div>`;
+}
+
+// ── Model Lens ──────────────────────────────────────────────────────────────
+
+async function initModelLens() {
+  const sel = document.getElementById('lens-model');
+  if (!sel || sel.options.length > 1) return;
+  try {
+    const catalog = state.catalog
+      ? state.catalog
+      : (await apiFetch('/api/rates/car-catalog')).catalog || [];
+    if (!state.catalog) state.catalog = catalog;
+    const sorted = [...catalog].sort((a, b) => a.canonical_name.localeCompare(b.canonical_name));
+    sel.innerHTML = '<option value="">— Pick a model —</option>' +
+      sorted.map(c => `<option value="${escHtml(c.canonical_name)}">${escHtml(c.canonical_name)}</option>`).join('');
+  } catch (_) {}
+}
+
+async function loadModelLens() {
+  const model    = document.getElementById('lens-model')?.value || '';
+  const location = document.getElementById('filter-location')?.value || '';
+  const body     = document.getElementById('lens-body');
+  if (!body) return;
+
+  if (!model) {
+    body.innerHTML = `<div style="padding:30px;text-align:center;color:#9ca3af;font-size:13px">Select a model above to compare prices across competitors.</div>`;
+    return;
+  }
+
+  body.innerHTML = `<div style="padding:24px;text-align:center;color:#9ca3af;font-size:13px">
+    <span class="spinner" style="border-color:rgba(0,0,0,.15);border-top-color:#2563eb;width:12px;height:12px;display:inline-block"></span>
+    &nbsp;Loading…</div>`;
+
+  try {
+    const ratesParams = new URLSearchParams({ car_model: model });
+    if (location) ratesParams.set('location', location);
+    const tlParams = new URLSearchParams({ model, days: 90, min_change_pct: 1 });
+    if (location) tlParams.set('location', location);
+
+    const [ratesData, tlData] = await Promise.all([
+      apiFetch(`/api/rates?${ratesParams}`),
+      apiFetch(`/api/rates/price-timeline?${tlParams}`).catch(() => ({ events: [] })),
+    ]);
+
+    renderModelLens(model, ratesData.rates || [], tlData.events || []);
+  } catch (e) {
+    body.innerHTML = `<div style="padding:24px;text-align:center;color:#9ca3af;font-size:13px">Failed to load: ${escHtml(e.message)}</div>`;
+  }
+}
+
+function renderModelLens(model, rates, events) {
+  const body = document.getElementById('lens-body');
+  if (!body) return;
+
+  if (!rates.length) {
+    body.innerHTML = `<div style="padding:30px;text-align:center;color:#9ca3af;font-size:13px">No rate data found for <strong>${escHtml(model)}</strong> yet.</div>`;
+    return;
+  }
+
+  // Aggregate: best (lowest) price per competitor for this model
+  const byComp = {};
+  rates.forEach(r => {
+    const perDay = r.price_isk / Math.max((new Date(r.return_date) - new Date(r.pickup_date)) / 86400000, 1);
+    if (!byComp[r.competitor] || perDay < byComp[r.competitor].per_day) {
+      byComp[r.competitor] = { per_day: perDay, price_isk: r.price_isk, car_category: r.car_category };
+    }
   });
 
-  // Sort: largest net increase first (most expensive = most relevant to Blue)
-  const comps = Object.keys(drift).sort((a, b) => drift[b] - drift[a]);
+  const sorted = Object.entries(byComp).sort((a, b) => a[1].per_day - b[1].per_day);
+  const blueEntry = byComp['Blue Car Rental'];
+  const maxPrice  = Math.max(...sorted.map(([, v]) => v.per_day));
+  const category  = sorted[0]?.[1]?.car_category || '';
 
-  bar.innerHTML = `
-    <div class="card" style="padding:12px 16px">
-      <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">
-        Cumulative Price Drift This Period
-        <span style="font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px">· competitor ↑ = getting pricier (good for Blue) · ↓ = getting cheaper (risk)</span>
+  // Bar chart rows
+  const barsHtml = sorted.map(([comp, v], i) => {
+    const pct    = (v.per_day / maxPrice * 100).toFixed(1);
+    const color  = compColor(comp);
+    const rank   = i + 1;
+    let vsBadge  = '';
+    if (blueEntry && comp !== 'Blue Car Rental') {
+      const diff    = ((v.per_day - blueEntry.per_day) / blueEntry.per_day * 100).toFixed(1);
+      const isBelow = diff < 0;
+      const badgeC  = isBelow ? '#dc2626' : '#16a34a';
+      const sign    = diff > 0 ? '+' : '';
+      vsBadge = `<span style="font-size:10px;font-weight:700;color:${badgeC};margin-left:8px">${sign}${diff}% vs Blue</span>`;
+    }
+    const rankBadge = rank === 1
+      ? `<span style="font-size:10px;background:#16a34a;color:#fff;border-radius:4px;padding:1px 5px;margin-left:6px">cheapest</span>`
+      : '';
+
+    return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <div style="width:130px;font-size:12px;font-weight:600;color:var(--text);flex-shrink:0;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(comp)}</div>
+      <div style="flex:1;background:var(--bg-alt);border-radius:4px;height:22px;overflow:hidden">
+        <div style="height:100%;width:${pct}%;background:${color};border-radius:4px;transition:width .4s ease;opacity:.85"></div>
       </div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px">
-        ${comps.map(comp => {
-          const net = drift[comp];
-          const mc  = moves[comp];
-          const isRising = net > 0;
-          // Good for Blue when competitor raises prices; bad when they lower
-          const sentColor  = net >  5 ? '#16a34a' : net < -5 ? '#dc2626' : '#6b7280';
-          const sentLabel  = net >  5 ? '↑ Pricier' : net < -5 ? '↓ Cheaper' : '≈ Stable';
-          const bgColor    = net >  5 ? 'rgba(22,163,74,.08)' : net < -5 ? 'rgba(220,38,38,.08)' : 'var(--bg)';
-          const dotColor   = compColor(comp);
-          const netStr     = (net > 0 ? '+' : '') + net.toFixed(1) + '%';
-          return `
-            <div style="display:flex;align-items:center;gap:7px;padding:7px 11px;border-radius:8px;border:1px solid var(--border);background:${bgColor}">
-              <div style="width:9px;height:9px;border-radius:50%;background:${dotColor};flex-shrink:0"></div>
-              <div>
-                <div style="font-size:12px;font-weight:600;color:var(--text);white-space:nowrap">${escHtml(comp)}</div>
-                <div style="font-size:11px;color:${sentColor};font-weight:600">${sentLabel} &nbsp;${mc.up}↑ ${mc.down}↓</div>
-              </div>
-              <div style="font-size:15px;font-weight:800;color:${sentColor};margin-left:4px">${netStr}</div>
-            </div>`;
-        }).join('')}
+      <div style="width:110px;font-size:13px;font-weight:700;color:var(--text);flex-shrink:0">
+        ${formatISK(Math.round(v.per_day))}<span style="font-size:10px;font-weight:400;color:var(--text-muted)">/day</span>
+        ${vsBadge}${rankBadge}
       </div>
     </div>`;
-  bar.style.display = '';
+  }).join('');
+
+  // History sparkline using events (if any)
+  let chartHtml = '';
+  if (events.length) {
+    // Build per-competitor time series from events
+    const byCompEvents = {};
+    events.forEach(ev => {
+      byCompEvents[ev.competitor] = byCompEvents[ev.competitor] || [];
+      byCompEvents[ev.competitor].push(ev);
+    });
+    Object.values(byCompEvents).forEach(arr => arr.sort((a, b) => a.scraped_at.localeCompare(b.scraped_at)));
+
+    const dateSet = new Set();
+    Object.values(byCompEvents).forEach(arr => arr.forEach(ev => dateSet.add(ev.scraped_at.slice(0, 10))));
+    const dates = Array.from(dateSet).sort();
+
+    if (dates.length >= 2) {
+      const comps = Object.keys(byCompEvents).sort();
+      const isDark    = document.body.classList.contains('dark-mode');
+      const gridColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
+      const tickColor = isDark ? '#9ca3af' : '#6b7280';
+
+      const datasets = comps.map(comp => {
+        const priceMap = {};
+        byCompEvents[comp].forEach(ev => { priceMap[ev.scraped_at.slice(0, 10)] = ev.curr_per_day; });
+        return {
+          label: comp,
+          data: dates.map(d => priceMap[d] ?? null),
+          borderColor: compColor(comp),
+          backgroundColor: compColor(comp) + '18',
+          tension: 0.35,
+          pointRadius: 4,
+          borderWidth: 2,
+          spanGaps: true,
+        };
+      });
+
+      chartHtml = `
+        <div style="margin-top:20px;border-top:1px solid var(--border);padding-top:16px">
+          <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Price History (last 90 days)</div>
+          <div style="position:relative;height:220px"><canvas id="lens-history-chart"></canvas></div>
+        </div>`;
+
+      // Render chart after DOM update
+      setTimeout(() => {
+        const ctx = document.getElementById('lens-history-chart')?.getContext('2d');
+        if (!ctx) return;
+        if (state.lensHistoryChart) state.lensHistoryChart.destroy();
+        state.lensHistoryChart = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: dates.map(d => { const dt = new Date(d + 'T00:00:00'); return dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }); }),
+            datasets,
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+              legend: { display: true, position: 'bottom', labels: { color: tickColor, boxWidth: 10, padding: 14, font: { size: 11 } } },
+              tooltip: { callbacks: { label: c => c.parsed.y != null ? ` ${c.dataset.label}: ${formatISK(c.parsed.y)}/day` : ` ${c.dataset.label}: no data` } },
+            },
+            scales: {
+              x: { grid: { color: gridColor }, ticks: { color: tickColor, font: { size: 10 }, maxRotation: 30 } },
+              y: { grid: { color: gridColor }, ticks: { color: tickColor, font: { size: 11 }, callback: v => formatISK(v) } },
+            },
+          },
+        });
+      }, 50);
+    }
+  }
+
+  body.innerHTML = `
+    <div style="padding:4px 0 12px">
+      <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:14px">${escHtml(model)} ${category ? '· ' + category : ''}</div>
+      ${barsHtml}
+    </div>
+    ${chartHtml}`;
 }
 
 function renderTimeline(events, modelFilter = '') {
@@ -3849,16 +4099,12 @@ function renderTimeline(events, modelFilter = '') {
   if (!feed) return;
 
   if (!events.length) {
-    document.getElementById('timeline-drift-bar').style.display = 'none';
     feed.innerHTML = `<div style="padding:60px;text-align:center;color:#6b7280;font-size:13px">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:36px;height:36px;margin-bottom:10px;opacity:.4;display:block;margin-left:auto;margin-right:auto"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
       No price changes found matching these filters. Try a wider date range or lower threshold.
     </div>`;
     return;
   }
-
-  // Always render drift bar (works for both all-models and filtered views)
-  renderTimelineDrift(events);
 
   // When a specific model is selected, render a chart showing its price history per competitor
   if (modelFilter) {
