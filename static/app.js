@@ -58,6 +58,7 @@ const state = {
   heatmapGranularity: 'category',   // 'category' | 'model'
   gapByModelData: null,             // cached response from /seasonal/gap-by-model
   gapByModelCategory: null,         // what category the cache was fetched for
+  catalog:            null,           // canonical car catalog (cached from /api/rates/car-catalog)
   timelineModelChart: null,
   lensHistoryChart:   null,
   horizonData: null,

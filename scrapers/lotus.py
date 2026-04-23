@@ -167,7 +167,7 @@ class LotusCarRentalScraper(BaseScraper):
             "couponCode":       "",
         }
 
-        response = await self.client.get(LOTUS_API_URL, params=params)
+        response = await self.get_with_retry(LOTUS_API_URL, params=params)
         response.raise_for_status()
         data = response.json()
 
