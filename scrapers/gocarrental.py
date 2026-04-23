@@ -115,7 +115,7 @@ class GoCarRentalScraper(BaseScraper):
         Query the public Sanity CMS to build class-ID → (car name, category) mapping.
         Sanity stores carenVehicleBase records with the Caren class ID and brand/model.
         """
-        resp = await self.client.get(GOCAR_SANITY_URL, params={"query": GOCAR_SANITY_QUERY})
+        resp = await self.get_with_retry(GOCAR_SANITY_URL, params={"query": GOCAR_SANITY_QUERY})
         resp.raise_for_status()
         items = resp.json().get("result", [])
 
