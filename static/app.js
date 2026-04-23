@@ -390,34 +390,73 @@ async function refreshAllData() {
   btn.style.opacity = '0.6';
   btn.style.cursor  = 'not-allowed';
 
-  const origMsg = msgEl.textContent;
-
+  // Full data refresh sequence — order matters (rates before alerts so
+  // alerts fire against fresh data; fleet calendar last as it's slowest)
   const steps = [
-    { label: 'Scraping current rates…',        url: '/api/rates/scrape',          method: 'POST', body: {} },
-    { label: 'Scraping 12-month seasonal…',    url: '/api/rates/scrape-seasonal', method: 'POST', body: {} },
-    { label: 'Scraping 26-week horizon…',      url: '/api/rates/scrape-horizon',  method: 'POST', body: {} },
+    {
+      label: 'Scraping current rates…',
+      url:   '/api/rates/scrape',
+      method: 'POST',
+      countField: ['scraped'],
+    },
+    {
+      label: 'Scraping 12-month seasonal anchors…',
+      url:   '/api/rates/scrape-seasonal',
+      method: 'POST',
+      countField: ['scraped'],
+    },
+    {
+      label: 'Scraping 26-week forward horizon…',
+      url:   '/api/rates/scrape-horizon',
+      method: 'POST',
+      countField: ['scraped'],
+    },
+    {
+      label: 'Polling near-term fleet availability…',
+      url:   '/api/fleet/poll',
+      method: 'POST',
+      countField: ['polled'],
+    },
+    {
+      label: 'Running 12-month fleet calendar sweep…',
+      url:   '/api/fleet/calendar/poll',
+      method: 'POST',
+      countField: ['calendar'],
+    },
+    {
+      label: 'Checking price alerts…',
+      url:   '/api/alerts/check',
+      method: 'POST',
+      countField: [],   // fire-and-forget; don't add to rate count
+    },
   ];
 
   let totalRates = 0;
+  const errors   = [];
 
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
-    msgEl.innerHTML = `<span style="margin-right:6px">⏳</span>${step.label} (${i + 1}/${steps.length})`;
+    msgEl.innerHTML =
+      `<span style="margin-right:6px">⏳</span>${step.label} <span style="opacity:.6">(${i + 1}/${steps.length})</span>`;
 
     try {
       const res = await fetch(step.url, {
-        method: step.method,
+        method:  step.method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(step.body),
+        body:    JSON.stringify({}),
       });
       if (res.ok) {
         const data = await res.json().catch(() => ({}));
-        // Different endpoints use different field names
-        totalRates += data.scraped || data.total_rates || data.rates_stored || data.count || 0;
+        for (const field of (step.countField || [])) {
+          totalRates += data[field] || 0;
+        }
+      } else {
+        errors.push(`step ${i + 1} (${res.status})`);
       }
     } catch (err) {
+      errors.push(`step ${i + 1} (network error)`);
       console.warn(`refreshAllData step ${i + 1} failed:`, err);
-      // Continue with remaining steps
+      // Always continue — a single scraper failure shouldn't block the rest
     }
   }
 
@@ -426,20 +465,22 @@ async function refreshAllData() {
   btn.style.opacity = '';
   btn.style.cursor  = '';
 
-  // Show success in banner briefly, then dismiss
-  msgEl.innerHTML = `<span style="margin-right:6px">✅</span>All scrapers complete! ${totalRates ? totalRates + ' rate records updated.' : 'Data refreshed.'}`;
+  // Update topbar freshness badge immediately
+  checkDataFreshness();
 
-  showToast(`All scrapers finished. ${totalRates ? totalRates + ' rates updated.' : 'Data refreshed.'}`, 'success');
+  const rateMsg  = totalRates ? `${totalRates.toLocaleString()} rate records updated.` : 'Data refreshed.';
+  const errorMsg = errors.length ? ` (${errors.length} step(s) had errors — check console)` : '';
 
-  // Dismiss banner after 3 s and reload active view
+  msgEl.innerHTML = `<span style="margin-right:6px">✅</span>All scrapers complete! ${rateMsg}${errorMsg}`;
+  showToast(`Full refresh done. ${rateMsg}`, 'success');
+
+  // Dismiss banner after 4 s and reload active view
   setTimeout(() => {
     _staleDismissed = true;
     const banner = document.getElementById('stale-banner');
     if (banner) banner.style.display = 'none';
-    // Reload whatever view is active
-    const active = document.querySelector('.panel[style*="display: block"], .panel:not([style*="display: none"])')?.id;
     loadCurrentView();
-  }, 3000);
+  }, 4000);
 }
 
 /** Reload data for the currently visible view */
