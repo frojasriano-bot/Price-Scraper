@@ -42,7 +42,9 @@ const state = {
   matrix: null,
   matrixSource: 'mock',
   historyData: null,
-  historyCharts: {},
+  historyCharts: {},        // kept for teardown safety
+  historyFocusModel: null,  // canonical model name currently focused in history
+  historyFocusChart: null,  // Chart.js instance for the focus panel
   historySource: 'mock',
   historyCategory: '',
   historyModelSearch: '',
@@ -569,9 +571,22 @@ async function checkDataFreshness() {
 }
 
 // ── PRICE HISTORY VIEW ─────────────────────────────────────────────────────
+// Per-competitor colour palette (used in focus chart + coverage chips)
+const COMPETITOR_COLORS = {
+  'Blue Car Rental':   '#3b82f6',   // blue
+  'Lotus Car Rental':  '#f59e0b',   // amber
+  'Go Car Rental':     '#10b981',   // emerald
+  'Hertz Iceland':     '#f97316',   // orange
+  'Avis Iceland':      '#ef4444',   // red
+  'Holdur':            '#8b5cf6',   // purple
+  'Europcar Iceland':  '#06b6d4',   // cyan
+  'Go Iceland':        '#15803d',   // dark green
+};
+const COMPETITOR_COLORS_DEFAULT = '#9ca3af';
+
 const MODEL_COLORS = [
   '#3b82f6','#ef4444','#22c55e','#f59e0b','#8b5cf6',
-  '#06b6d4','#f97316','#ec4899','#10b981','#eab308',
+  '#06b6d4','#f97316','#15803d','#10b981','#eab308',
   '#6366f1','#14b8a6','#f43f5e','#a855f7','#84cc16',
   '#0ea5e9','#fb923c','#e879f9','#34d399','#fbbf24',
   '#818cf8','#2dd4bf','#fb7185','#c084fc','#a3e635',
@@ -582,29 +597,24 @@ const CATEGORY_ICONS = {
 };
 
 async function loadHistory() {
-  const location   = document.getElementById('filter-location').value;
-  const competitor = document.getElementById('history-competitor').value;
-  const days       = document.getElementById('history-days').value;
+  const location = document.getElementById('filter-location').value;
+  const days     = document.getElementById('history-days').value;
 
   const params = new URLSearchParams({ days });
-  if (location)   params.set('location',   location);
-  if (competitor) params.set('competitor', competitor);
-
-  // Coverage doesn't filter by competitor — we want all companies even when
-  // the chart is scoped to one, so the grid stays fully populated.
-  const coverageParams = new URLSearchParams({ days });
-  if (location) coverageParams.set('location', location);
+  if (location) params.set('location', location);
 
   try {
     const [result, coverageResult] = await Promise.all([
       apiFetch(`/api/rates/history/models?${params}`),
-      apiFetch(`/api/rates/history/coverage?${coverageParams}`).catch(() => null),
+      apiFetch(`/api/rates/history/coverage?${params}`).catch(() => null),
     ]);
-    state.historyData     = result.data       || {};
-    state.historySource   = result.source     || 'mock';
+    state.historyData     = result.data      || {};
+    state.historySource   = result.source    || 'mock';
     state.historyCoverage = coverageResult?.coverage || null;
     setSourceBadge('history-source-badge', state.historySource);
-    renderHistoryCharts();
+    // Reset focus when data reloads
+    closeFocusPanel();
+    renderModelNavigator();
   } catch (e) {
     showToast(`Failed to load price history: ${e.message}`, 'error');
   }
@@ -613,193 +623,251 @@ async function loadHistory() {
 // ── HISTORY FILTER HANDLERS ────────────────────────────────────────────────
 function setHistoryCategory(cat) {
   state.historyCategory = cat;
-  // Update pill button active state
   ['', 'Economy', 'Compact', 'SUV', '4x4', 'Minivan'].forEach(c => {
     const btn = document.getElementById(`hcat-btn-${c}`);
     if (btn) btn.classList.toggle('active', c === cat);
   });
-  renderHistoryCharts();
+  renderModelNavigator();
 }
 
 function filterHistoryModels(query) {
   state.historyModelSearch = query.trim().toLowerCase();
-  renderHistoryCharts();
+  renderModelNavigator();
 }
 
-function toggleCoverageGrid(cat, btn) {
-  const grid = document.getElementById(`coverage-${cat}`);
-  if (!grid) return;
-  const isHidden = grid.style.display === 'none';
-  grid.style.display = isHidden ? 'block' : 'none';
-  btn.textContent = isHidden ? '🏢 Hide coverage' : '🏢 Show coverage';
+function closeFocusPanel() {
+  const empty  = document.getElementById('history-focus-empty');
+  const active = document.getElementById('history-focus-active');
+  if (empty)  empty.style.display  = 'flex';
+  if (active) active.style.display = 'none';
+  if (state.historyFocusChart) {
+    state.historyFocusChart.destroy();
+    state.historyFocusChart = null;
+  }
+  state.historyFocusModel = null;
+  document.querySelectorAll('.history-model-row').forEach(r => {
+    r.classList.remove('selected');
+    r.style.background  = '';
+    r.style.borderLeft  = '';
+  });
 }
 
-function renderHistoryCharts() {
-  // Destroy previous charts
-  Object.values(state.historyCharts).forEach(c => c.destroy());
-  state.historyCharts = {};
-
-  const container = document.getElementById('history-charts');
+// ── MODEL NAVIGATOR ────────────────────────────────────────────────────────
+function renderModelNavigator() {
+  const container = document.getElementById('history-model-list');
   if (!container) return;
-  container.innerHTML = '';
 
   const CATEGORY_ORDER = ['Economy', 'Compact', 'SUV', '4x4', 'Minivan'];
-  const data = state.historyData || {};
+  const data        = state.historyData    || {};
+  const coverage    = state.historyCoverage || {};
   const modelSearch = state.historyModelSearch || '';
 
-  // Apply category filter
   let categories = CATEGORY_ORDER.filter(c => data[c] && Object.keys(data[c]).length > 0);
-  if (state.historyCategory) {
-    categories = categories.filter(c => c === state.historyCategory);
-  }
+  if (state.historyCategory) categories = categories.filter(c => c === state.historyCategory);
 
   if (categories.length === 0) {
-    container.innerHTML = '<p style="padding:40px;text-align:center;color:#6b7280">No history data available.</p>';
+    container.innerHTML = '<div style="padding:24px;text-align:center;color:#6b7280;font-size:13px">No data available.</div>';
+    renderTopMovers([]);
     return;
   }
 
-  categories.forEach(cat => {
-    const allModels = data[cat];
+  let html = '';
+  const allModelsForMovers = [];
 
-    // Apply model search filter
-    const models = modelSearch
-      ? Object.fromEntries(
-          Object.entries(allModels).filter(([name]) =>
-            name.toLowerCase().includes(modelSearch)
-          )
-        )
-      : allModels;
+  categories.forEach((cat, catIdx) => {
+    const catData    = data[cat];
+    const catCov     = coverage[cat] || {};
+    const icon       = CATEGORY_ICONS[cat] || '🚗';
 
-    if (Object.keys(models).length === 0) return; // nothing matches — skip card
+    const models = Object.entries(catData).filter(([name]) =>
+      !modelSearch || name.toLowerCase().includes(modelSearch)
+    );
+    if (models.length === 0) return;
 
-    // Collect all unique dates across models
-    const dateSet = new Set();
-    Object.values(models).forEach(series => series.forEach(pt => dateSet.add(pt.date)));
-    const allDates = Array.from(dateSet).sort();
+    // Category header
+    html += `<div style="padding:7px 12px 5px;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.07em;background:rgba(255,255,255,0.03);border-bottom:1px solid rgba(255,255,255,0.05)${catIdx > 0 ? ';border-top:1px solid rgba(255,255,255,0.05)' : ''}">${icon} ${cat}</div>`;
 
-    const colorIdx = { i: 0 };
-    const datasets = Object.entries(models).map(([modelName, series]) => {
-      const color = MODEL_COLORS[colorIdx.i % MODEL_COLORS.length];
-      colorIdx.i++;
-      const byDate = {};
-      series.forEach(pt => { byDate[pt.date] = pt.avg_price; });
-      return {
-        label: modelName,
-        data: allDates.map(d => byDate[d] ?? null),
-        borderColor: color,
-        backgroundColor: color + '22',
-        borderWidth: 2,
-        pointRadius: allDates.length <= 14 ? 3 : 1,
-        tension: 0.3,
-        spanGaps: true,
-        fill: false,
-      };
-    });
+    models.forEach(([modelName, series]) => {
+      if (!series || series.length === 0) return;
+      const latestPrice = series[series.length - 1].avg_price;
+      const firstPrice  = series[0].avg_price;
+      const changePct   = firstPrice > 0 ? (latestPrice - firstPrice) / firstPrice * 100 : 0;
+      const compCount   = (catCov[modelName] || []).length;
+      const changeColor = changePct > 2 ? '#f87171' : changePct < -2 ? '#4ade80' : '#9ca3af';
+      const changeSign  = changePct > 0 ? '+' : '';
+      const changeLabel = Math.abs(changePct) < 0.5 ? '—' : `${changeSign}${changePct.toFixed(1)}%`;
+      const isSelected  = state.historyFocusModel === modelName;
 
-    // Card wrapper
-    const card = document.createElement('div');
-    card.className = 'history-category-card';
+      allModelsForMovers.push({ modelName, cat, changePct, latestPrice, compCount });
 
-    const icon = CATEGORY_ICONS[cat] || '🚗';
-    const totalModels = Object.keys(allModels).length;
-    const shownModels = Object.keys(models).length;
-    const countLabel = shownModels < totalModels
-      ? `${shownModels} of ${totalModels} models`
-      : `${totalModels} models`;
-
-    // Build coverage grid HTML (model × competitor)
-    const coverageCat   = state.historyCoverage?.[cat] || {};
-    const covModelNames = Object.keys(models); // respect current model search
-    const allComps = [...new Set(Object.values(coverageCat).flat())].sort();
-    let coverageHtml = '';
-    if (allComps.length > 0 && covModelNames.length > 0) {
-      const headerCells = allComps
-        .map(c => `<th style="font-size:10px;font-weight:600;color:#9ca3af;padding:4px 8px;white-space:nowrap;text-align:center">${c}</th>`)
-        .join('');
-      const rows = covModelNames.map(m => {
-        const compSet = new Set(coverageCat[m] || []);
-        const cells = allComps.map(c =>
-          `<td style="text-align:center;padding:3px 8px">${
-            compSet.has(c)
-              ? '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#22c55e" title="' + c + '"></span>'
-              : '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:rgba(255,255,255,0.1)"></span>'
-          }</td>`
-        ).join('');
-        return `<tr><td style="font-size:11px;color:#d1d5db;padding:3px 8px;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis" title="${m}">${m}</td>${cells}</tr>`;
-      }).join('');
-      coverageHtml = `
-        <div id="coverage-${cat}" style="display:none;margin-top:16px;overflow-x:auto">
-          <table style="width:100%;border-collapse:collapse;font-size:12px">
-            <thead>
-              <tr style="border-bottom:1px solid rgba(255,255,255,0.08)">
-                <th style="font-size:10px;font-weight:600;color:#9ca3af;padding:4px 8px;text-align:left">Model</th>
-                ${headerCells}
-              </tr>
-            </thead>
-            <tbody>${rows}</tbody>
-          </table>
-        </div>`;
-    }
-
-    const toggleId = `coverage-${CSS.escape(cat)}`;
-    card.innerHTML = `
-      <div class="card-header" style="margin-bottom:12px">
-        <div>
-          <div class="card-title">${icon} ${cat}</div>
-          <div class="card-subtitle" style="font-size:12px">${countLabel}</div>
+      html += `<div class="history-model-row${isSelected ? ' selected' : ''}"
+          data-model="${escHtml(modelName)}" data-cat="${escHtml(cat)}"
+          onclick="focusHistoryModel(this.dataset.model, this.dataset.cat)"
+          style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.04);gap:8px;transition:background .12s;${isSelected ? 'background:rgba(59,130,246,0.15);border-left:3px solid #3b82f6;' : ''}"
+          onmouseover="if(!this.classList.contains('selected'))this.style.background='rgba(255,255,255,0.04)'"
+          onmouseout="if(!this.classList.contains('selected'))this.style.background=''">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:500;color:#e5e7eb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${modelName}">${modelName}</div>
+          <div style="font-size:11px;color:#6b7280;margin-top:1px">${compCount} competitor${compCount !== 1 ? 's' : ''}</div>
         </div>
-        ${allComps.length > 0 ? `<button class="btn btn-secondary btn-sm" onclick="toggleCoverageGrid('${cat}', this)" style="font-size:11px;padding:3px 10px">🏢 Show coverage</button>` : ''}
-      </div>
-      <div class="history-chart-wrap"><canvas id="hchart-${cat}"></canvas></div>
-      ${coverageHtml}
-    `;
-    container.appendChild(card);
-
-    const ctx = document.getElementById(`hchart-${cat}`).getContext('2d');
-    state.historyCharts[cat] = new Chart(ctx, {
-      type: 'line',
-      data: { labels: allDates, datasets },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        interaction: { mode: 'index', intersect: false },
-        plugins: {
-          legend: {
-            position: 'bottom',
-            labels: { color: '#d1d5db', boxWidth: 12, padding: 10, font: { size: 11 } },
-          },
-          tooltip: {
-            callbacks: {
-              label: ctx => ` ${ctx.dataset.label}: ${(ctx.parsed.y / 1000).toFixed(1)}k ISK`,
-            },
-          },
-        },
-        scales: {
-          x: {
-            ticks: { color: '#9ca3af', maxTicksLimit: 10, font: { size: 11 } },
-            grid: { color: 'rgba(255,255,255,0.05)' },
-          },
-          y: {
-            ticks: {
-              color: '#9ca3af',
-              font: { size: 11 },
-              callback: v => (v / 1000).toFixed(0) + 'k',
-            },
-            grid: { color: 'rgba(255,255,255,0.07)' },
-          },
-        },
-      },
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-size:12px;font-weight:600;color:#d1d5db">${(latestPrice / 1000).toFixed(1)}k</div>
+          <div style="font-size:11px;color:${changeColor}">${changeLabel}</div>
+        </div>
+      </div>`;
     });
   });
 
-  // If every category was skipped (model search matched nothing), show hint
-  if (container.children.length === 0) {
-    container.innerHTML = `
-      <p style="padding:40px;text-align:center;color:#6b7280">
-        No models match <strong style="color:#d1d5db">"${modelSearch}"</strong>.
-        <a href="#" style="color:#60a5fa;margin-left:6px" onclick="document.getElementById('history-model-search').value='';filterHistoryModels('');return false">Clear filter</a>
-      </p>`;
+  container.innerHTML = html || `<div style="padding:20px;text-align:center;color:#6b7280;font-size:13px">No models match "<strong>${modelSearch}</strong>".</div>`;
+  renderTopMovers(allModelsForMovers);
+}
+
+function renderTopMovers(models) {
+  const el = document.getElementById('history-top-movers');
+  if (!el) return;
+  if (!models || models.length === 0) { el.innerHTML = ''; return; }
+
+  const sorted = [...models].sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct));
+  const top = sorted.slice(0, 5).filter(m => Math.abs(m.changePct) >= 0.5);
+  if (top.length === 0) { el.innerHTML = ''; return; }
+
+  const rows = top.map(m => {
+    const sign  = m.changePct > 0 ? '+' : '';
+    const color = m.changePct > 2 ? '#f87171' : m.changePct < -2 ? '#4ade80' : '#9ca3af';
+    return `<div data-model="${escHtml(m.modelName)}" data-cat="${escHtml(m.cat)}"
+      onclick="focusHistoryModel(this.dataset.model, this.dataset.cat)"
+      style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;cursor:pointer;border-radius:6px;background:rgba(255,255,255,0.04);transition:background .12s"
+      onmouseover="this.style.background='rgba(59,130,246,0.1)'" onmouseout="this.style.background='rgba(255,255,255,0.04)'">
+      <span style="font-size:12px;color:#d1d5db">${m.modelName}</span>
+      <span style="font-size:12px;font-weight:600;color:${color}">${sign}${m.changePct.toFixed(1)}%</span>
+    </div>`;
+  }).join('');
+
+  el.innerHTML = `<div style="text-align:left;border-top:1px solid rgba(255,255,255,0.07);padding-top:12px;margin-top:4px">
+    <div style="font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Top movers this period</div>
+    <div style="display:flex;flex-direction:column;gap:4px">${rows}</div>
+  </div>`;
+}
+
+// ── FOCUS CHART ────────────────────────────────────────────────────────────
+async function focusHistoryModel(modelName, cat) {
+  state.historyFocusModel = modelName;
+
+  // Highlight the selected row in the navigator
+  document.querySelectorAll('.history-model-row').forEach(row => {
+    const nameEl  = row.querySelector('[title]');
+    const isThis  = nameEl && nameEl.getAttribute('title') === modelName;
+    row.classList.toggle('selected', isThis);
+    row.style.background = isThis ? 'rgba(59,130,246,0.15)' : '';
+    row.style.borderLeft = isThis ? '3px solid #3b82f6' : '';
+  });
+
+  // Show active focus panel
+  const emptyEl  = document.getElementById('history-focus-empty');
+  const activeEl = document.getElementById('history-focus-active');
+  if (emptyEl)  emptyEl.style.display  = 'none';
+  if (activeEl) activeEl.style.display = 'block';
+
+  // Header
+  const days = document.getElementById('history-days').value;
+  const nameEl = document.getElementById('focus-model-name');
+  const metaEl = document.getElementById('focus-model-meta');
+  if (nameEl) nameEl.textContent = modelName;
+  if (metaEl) metaEl.textContent = `${CATEGORY_ICONS[cat] || ''} ${cat} · Last ${days} days`;
+
+  // Coverage chips (from cached coverage data)
+  const coverageList = (state.historyCoverage?.[cat] || {})[modelName] || [];
+  const covEl = document.getElementById('focus-coverage');
+  if (covEl) {
+    if (coverageList.length > 0) {
+      covEl.innerHTML = coverageList.map(c => {
+        const color = COMPETITOR_COLORS[c] || COMPETITOR_COLORS_DEFAULT;
+        return `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:500;background:${color}22;border:1px solid ${color}55;color:${color}">
+          <span style="width:6px;height:6px;border-radius:50%;background:${color};flex-shrink:0"></span>${c}
+        </span>`;
+      }).join('');
+    } else {
+      covEl.innerHTML = '<span style="color:#6b7280;font-size:12px">Coverage data unavailable</span>';
+    }
   }
+
+  // Fetch per-competitor price detail
+  const location = document.getElementById('filter-location').value;
+  const params   = new URLSearchParams({ model: modelName, days });
+  if (location) params.set('location', location);
+
+  try {
+    const result = await apiFetch(`/api/rates/history/model-detail?${params}`);
+    renderFocusChart(result.data || {});
+  } catch (e) {
+    showToast(`Could not load detail for ${modelName}: ${e.message}`, 'error');
+  }
+}
+
+function renderFocusChart(competitorData) {
+  if (state.historyFocusChart) {
+    state.historyFocusChart.destroy();
+    state.historyFocusChart = null;
+  }
+  const canvas = document.getElementById('history-focus-chart');
+  if (!canvas) return;
+
+  // Collect all unique dates across all competitors
+  const dateSet = new Set();
+  Object.values(competitorData).forEach(series => series.forEach(pt => dateSet.add(pt.date)));
+  const allDates = Array.from(dateSet).sort();
+
+  const datasets = Object.entries(competitorData).map(([comp, series]) => {
+    const color  = COMPETITOR_COLORS[comp] || COMPETITOR_COLORS_DEFAULT;
+    const byDate = Object.fromEntries(series.map(pt => [pt.date, pt.avg_price]));
+    return {
+      label:           comp,
+      data:            allDates.map(d => byDate[d] ?? null),
+      borderColor:     color,
+      backgroundColor: color + '18',
+      borderWidth:     2.5,
+      pointRadius:     allDates.length <= 14 ? 4 : 2,
+      pointHoverRadius: 6,
+      tension:         0.3,
+      spanGaps:        true,
+      fill:            false,
+    };
+  });
+
+  state.historyFocusChart = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: { labels: allDates, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { color: '#d1d5db', boxWidth: 12, padding: 10, font: { size: 11 } },
+        },
+        tooltip: {
+          callbacks: {
+            label: ctx => ` ${ctx.dataset.label}: ${(ctx.parsed.y / 1000).toFixed(1)}k ISK`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { color: '#9ca3af', maxTicksLimit: 10, font: { size: 11 } },
+          grid:  { color: 'rgba(255,255,255,0.05)' },
+        },
+        y: {
+          ticks: {
+            color: '#9ca3af',
+            font:  { size: 11 },
+            callback: v => (v / 1000).toFixed(0) + 'k',
+          },
+          grid: { color: 'rgba(255,255,255,0.07)' },
+        },
+      },
+    },
+  });
 }
 
 // ── SEASONAL ANALYSIS ──────────────────────────────────────────────────────
@@ -815,7 +883,7 @@ const BRAND_COLORS = {
   'Avis Iceland':    '#ef4444',   // Avis red
   'Blue Car Rental': '#2563eb',   // Blue blue
   'Go Car Rental':   '#f97316',   // Go orange
-  'Go Iceland':      '#4ade80',   // Go Iceland light green
+  'Go Iceland':      '#15803d',   // Go Iceland dark green
   'Hertz Iceland':   '#eab308',   // Hertz yellow
   'Holdur':          '#22c55e',   // Holdur green
   'Lava Car Rental': '#a855f7',   // Lava purple
@@ -3494,21 +3562,30 @@ function gapCellStyle(pct) {
   if (pct === null || pct === undefined) {
     return { bg: 'var(--bg-alt)', text: 'var(--text-muted)', label: '—' };
   }
-  const abs = Math.abs(pct);
+  const abs   = Math.abs(pct);
   const label = (pct >= 0 ? '+' : '') + pct + '%';
-  if (abs <= 3) return { bg: 'var(--bg-alt)', text: 'var(--text)', label };
-  if (pct > 0) {
-    // Blue more expensive than market — green gradient
-    const intensity = Math.min(abs / 40, 1);
-    const g = Math.round(180 + intensity * 40);
-    const r = Math.round(220 - intensity * 100);
-    const text = isDark ? (intensity > 0.4 ? '#bbf7d0' : '#86efac') : '#14532d';
-    return { bg: `rgba(${r},${g},100,${0.15 + intensity * 0.5})`, text, label };
+
+  // Neutral band — no strong colour signal
+  if (abs <= 3) {
+    return {
+      bg:   isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+      text: isDark ? '#9ca3af' : '#6b7280',
+      label,
+    };
   }
-  // Blue cheaper than market — red gradient
-  const intensity = Math.min(abs / 40, 1);
-  const text = isDark ? (intensity > 0.4 ? '#fecaca' : '#fca5a5') : '#7f1d1d';
-  return { bg: `rgba(220,50,50,${0.12 + intensity * 0.45})`, text, label };
+
+  // Discrete tiers — avoids muddy RGBA arithmetic
+  if (pct > 0) {
+    // Blue more expensive → green tint (good for Blue)
+    if (abs < 10)  return { bg: isDark ? 'rgba(34,197,94,0.18)'  : 'rgba(22,163,74,0.12)', text: isDark ? '#86efac' : '#166534', label };
+    if (abs < 20)  return { bg: isDark ? 'rgba(34,197,94,0.30)'  : 'rgba(22,163,74,0.22)', text: isDark ? '#4ade80' : '#15803d', label };
+    return          { bg: isDark ? 'rgba(34,197,94,0.44)'  : 'rgba(22,163,74,0.32)', text: isDark ? '#bbf7d0' : '#14532d', label };
+  }
+
+  // Blue cheaper → red tint (competitor undercuts us)
+  if (abs < 10)  return { bg: isDark ? 'rgba(239,68,68,0.18)'  : 'rgba(220,38,38,0.10)', text: isDark ? '#fca5a5' : '#991b1b', label };
+  if (abs < 20)  return { bg: isDark ? 'rgba(239,68,68,0.30)'  : 'rgba(220,38,38,0.20)', text: isDark ? '#f87171' : '#b91c1c', label };
+  return          { bg: isDark ? 'rgba(239,68,68,0.45)'  : 'rgba(220,38,38,0.32)', text: isDark ? '#fecaca' : '#7f1d1d', label };
 }
 
 /**
@@ -3630,16 +3707,17 @@ function renderGapByModel() {
     }
 
     compsForModel.forEach((comp, compIdx) => {
-      const isFirstRow = compIdx === 0;
-      const rowBorder  = isFirstRow ? 'border-top:2px solid var(--border)' : '';
-      const compColor  = compIdx % 2 === 0 ? 'var(--bg-alt)' : 'transparent';
-      const modelCell  = isFirstRow
+      const isFirstRow  = compIdx === 0;
+      const rowBorder   = isFirstRow ? 'border-top:2px solid var(--border)' : '';
+      const rowBg       = compIdx % 2 === 1 ? 'background:rgba(255,255,255,0.025)' : '';
+      const accentColor = COMPETITOR_COLORS[comp] || COMPETITOR_COLORS_DEFAULT;
+      const modelCell   = isFirstRow
         ? `<td rowspan="${compsForModel.length}" style="padding:7px 12px 7px 0;font-weight:700;white-space:nowrap;color:var(--text);font-size:13px;vertical-align:top;${rowBorder}">${escHtml(canonical_name)}</td>`
         : '';
 
-      html += `<tr style="${rowBorder}">
+      html += `<tr style="${rowBorder};${rowBg}">
         ${modelCell}
-        <td style="padding:5px 8px 5px 0;white-space:nowrap;font-size:11px;font-weight:600;color:var(--text-muted)">${escHtml(comp)}</td>
+        <td style="padding:5px 8px 5px 4px;white-space:nowrap;font-size:11px;font-weight:600;color:${accentColor};border-left:2px solid ${accentColor}44">${escHtml(comp)}</td>
         ${gaps.map(g => {
           if (!g) {
             return `<td style="text-align:center;padding:4px 3px"><div style="background:var(--bg-alt);color:var(--text-muted);border-radius:5px;padding:5px 3px;font-size:11px">—</div></td>`;
@@ -3653,9 +3731,18 @@ function renderGapByModel() {
             return `<td style="text-align:center;padding:4px 3px" title="${tip}"><div style="background:var(--bg-alt);color:var(--text-muted);border-radius:5px;padding:5px 3px;font-size:11px;font-style:italic">n/a</div></td>`;
           }
           const { bg, text, label } = gapCellStyle(compData.gap_pct);
-          const tip = `Blue ${formatISK(g.blue_price)}/day · ${escHtml(comp)} ${formatISK(compData.price)}/day · ${label}`;
+          const iskDiff  = Math.round(g.blue_price - compData.price);
+          const iskSign  = iskDiff >= 0 ? '+' : '−';
+          const iskAbs   = Math.abs(iskDiff);
+          const iskShort = iskAbs >= 1000
+            ? iskSign + (iskAbs / 1000).toFixed(1).replace(/\.0$/, '') + 'k'
+            : iskSign + iskAbs;
+          const tip = `Blue ${formatISK(g.blue_price)}/day · ${escHtml(comp)} ${formatISK(compData.price)}/day · ${label} (${iskSign}${formatISK(iskAbs)}/day)`;
           return `<td style="text-align:center;padding:4px 3px" title="${escHtml(tip)}">
-            <div style="background:${bg};color:${text};border-radius:5px;padding:5px 3px;font-weight:700;font-size:12px;min-width:48px">${label}</div>
+            <div style="background:${bg};color:${text};border-radius:5px;padding:5px 4px;min-width:56px;line-height:1.3">
+              <div style="font-weight:700;font-size:12px">${label}</div>
+              <div style="font-size:10px;opacity:.85;font-weight:500">${iskShort}/d</div>
+            </div>
           </td>`;
         }).join('')}
       </tr>`;
@@ -3665,14 +3752,12 @@ function renderGapByModel() {
   html += `</tbody></table>`;
 
   const isDark = document.body.classList.contains('dark-mode');
-  const legendGreen = isDark ? '#86efac' : '#14532d';
-  const legendRed   = isDark ? '#fca5a5' : '#7f1d1d';
-  html += `<div style="margin-top:14px;display:flex;gap:20px;font-size:11px;color:var(--text-muted);flex-wrap:wrap">
-    <span><strong style="color:${legendRed}">+%</strong> = Blue is more expensive than this competitor</span>
-    <span><strong style="color:${legendGreen}">−%</strong> = Blue is cheaper than this competitor</span>
-    <span><strong style="color:var(--text-muted)">n/a</strong> = no Blue price for this model</span>
-    <span><strong style="color:var(--text-muted)">—</strong> = competitor doesn't carry this model that month</span>
-    <span style="opacity:.7">Hover a cell for exact prices</span>
+  const legendGreen = isDark ? '#4ade80' : '#15803d';
+  const legendRed   = isDark ? '#f87171' : '#b91c1c';
+  html += `<div style="margin-top:14px;display:flex;gap:16px;font-size:11px;color:var(--text-muted);flex-wrap:wrap;align-items:center">
+    <span style="display:inline-flex;align-items:center;gap:4px"><span style="display:inline-block;width:28px;height:14px;border-radius:3px;background:${isDark ? 'rgba(34,197,94,0.30)' : 'rgba(22,163,74,0.22)'}"></span><strong style="color:${legendGreen}">+%</strong> Blue pricier than competitor</span>
+    <span style="display:inline-flex;align-items:center;gap:4px"><span style="display:inline-block;width:28px;height:14px;border-radius:3px;background:${isDark ? 'rgba(239,68,68,0.30)' : 'rgba(220,38,38,0.20)'}"></span><strong style="color:${legendRed}">−%</strong> Competitor undercuts Blue</span>
+    <span style="opacity:.6">Neutral ≤ 3% · Hover cells for exact prices</span>
   </div>`;
 
   grid.innerHTML = html;
@@ -3746,13 +3831,12 @@ function renderPriceGapHeatmap() {
 
   // Legend
   const isDark = document.body.classList.contains('dark-mode');
-  const legendGreen = isDark ? '#86efac' : '#14532d';
-  const legendRed   = isDark ? '#fca5a5' : '#7f1d1d';
-  html += `<div style="margin-top:14px;display:flex;gap:20px;font-size:11px;color:var(--text-muted);flex-wrap:wrap">
-    <span><strong style="color:${legendGreen}">+%</strong> = Blue is more expensive than market average</span>
-    <span><strong style="color:${legendRed}">−%</strong> = Blue is cheaper than market average</span>
-    <span><strong style="color:var(--text-muted)">±3%</strong> = at market (neutral)</span>
-    <span style="opacity:.7">Hover a cell for exact prices</span>
+  const legendGreen = isDark ? '#4ade80' : '#15803d';
+  const legendRed   = isDark ? '#f87171' : '#b91c1c';
+  html += `<div style="margin-top:14px;display:flex;gap:16px;font-size:11px;color:var(--text-muted);flex-wrap:wrap;align-items:center">
+    <span style="display:inline-flex;align-items:center;gap:4px"><span style="display:inline-block;width:28px;height:14px;border-radius:3px;background:${isDark ? 'rgba(34,197,94,0.30)' : 'rgba(22,163,74,0.22)'}"></span><strong style="color:${legendGreen}">+%</strong> Blue pricier than market</span>
+    <span style="display:inline-flex;align-items:center;gap:4px"><span style="display:inline-block;width:28px;height:14px;border-radius:3px;background:${isDark ? 'rgba(239,68,68,0.30)' : 'rgba(220,38,38,0.20)'}"></span><strong style="color:${legendRed}">−%</strong> Blue cheaper than market</span>
+    <span style="opacity:.6">Neutral ≤ 3% · Hover cells for exact prices</span>
   </div>`;
 
   grid.innerHTML = html;

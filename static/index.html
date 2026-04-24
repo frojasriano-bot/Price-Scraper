@@ -371,16 +371,14 @@
 
         <!-- HISTORY VIEW -->
         <div id="view-history" style="display:none">
+          <!-- Controls bar -->
           <div class="card" style="margin-bottom:16px">
             <div class="card-header" style="flex-wrap:wrap;gap:10px">
               <div>
-                <div class="card-title">Price History by Car Model</div>
-                <div class="card-subtitle">Average daily price per model — grouped by category</div>
+                <div class="card-title">Price History Explorer</div>
+                <div class="card-subtitle">Browse models and drill into per-competitor trends</div>
               </div>
               <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-                <select id="history-competitor" class="form-select" onchange="loadHistory()" style="min-width:160px">
-                  <option value="">All Competitors</option>
-                </select>
                 <select id="history-days" class="form-select" onchange="loadHistory()">
                   <option value="7">Last 7 days</option>
                   <option value="14">Last 14 days</option>
@@ -390,26 +388,67 @@
                 <span id="history-source-badge" class="badge badge-gray">Mock Data</span>
               </div>
             </div>
-            <!-- Filter row -->
-            <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding-top:12px;border-top:1px solid rgba(255,255,255,0.07);margin-top:4px">
-              <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
-                <span style="font-size:12px;color:#9ca3af;margin-right:2px">Category:</span>
-                <button class="btn btn-secondary btn-sm active" id="hcat-btn-" onclick="setHistoryCategory('')">All</button>
-                <button class="btn btn-secondary btn-sm" id="hcat-btn-Economy"  onclick="setHistoryCategory('Economy')">🚗 Economy</button>
-                <button class="btn btn-secondary btn-sm" id="hcat-btn-Compact"  onclick="setHistoryCategory('Compact')">🚙 Compact</button>
-                <button class="btn btn-secondary btn-sm" id="hcat-btn-SUV"      onclick="setHistoryCategory('SUV')">🛻 SUV</button>
-                <button class="btn btn-secondary btn-sm" id="hcat-btn-4x4"      onclick="setHistoryCategory('4x4')">🏔️ 4x4</button>
-                <button class="btn btn-secondary btn-sm" id="hcat-btn-Minivan"  onclick="setHistoryCategory('Minivan')">🚐 Minivan</button>
-              </div>
-              <div style="position:relative;flex:1;min-width:180px;max-width:280px">
-                <svg style="position:absolute;left:8px;top:50%;transform:translateY(-50%);width:14px;height:14px;color:#9ca3af;pointer-events:none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                <input id="history-model-search" type="text" class="form-select" placeholder="Filter models…"
+          </div>
+
+          <!-- Two-panel layout -->
+          <div style="display:flex;gap:16px;align-items:flex-start">
+
+            <!-- LEFT: Model Navigator -->
+            <div style="width:290px;flex-shrink:0;display:flex;flex-direction:column;gap:10px">
+              <!-- Search -->
+              <div style="position:relative">
+                <svg style="position:absolute;left:9px;top:50%;transform:translateY(-50%);width:14px;height:14px;color:#6b7280;pointer-events:none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input id="history-model-search" type="text" class="form-select" placeholder="Search models…"
                   oninput="filterHistoryModels(this.value)"
-                  style="padding-left:28px;height:32px;font-size:13px" />
+                  style="padding-left:30px;height:34px;font-size:13px;width:100%;box-sizing:border-box" />
+              </div>
+              <!-- Category pills -->
+              <div style="display:flex;gap:4px;flex-wrap:wrap">
+                <button class="btn btn-secondary btn-sm active" id="hcat-btn-"        onclick="setHistoryCategory('')">All</button>
+                <button class="btn btn-secondary btn-sm"        id="hcat-btn-Economy" onclick="setHistoryCategory('Economy')">🚗</button>
+                <button class="btn btn-secondary btn-sm"        id="hcat-btn-Compact" onclick="setHistoryCategory('Compact')">🚙</button>
+                <button class="btn btn-secondary btn-sm"        id="hcat-btn-SUV"     onclick="setHistoryCategory('SUV')">🛻</button>
+                <button class="btn btn-secondary btn-sm"        id="hcat-btn-4x4"     onclick="setHistoryCategory('4x4')">🏔️</button>
+                <button class="btn btn-secondary btn-sm"        id="hcat-btn-Minivan" onclick="setHistoryCategory('Minivan')">🚐</button>
+              </div>
+              <!-- Model list -->
+              <div id="history-model-list" class="card" style="padding:0;overflow:hidden;max-height:620px;overflow-y:auto"></div>
+            </div>
+
+            <!-- RIGHT: Focus panel -->
+            <div style="flex:1;min-width:0">
+              <!-- Empty / default state -->
+              <div id="history-focus-empty" class="card" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:320px;text-align:center;gap:12px">
+                <div style="font-size:36px">📈</div>
+                <div style="font-size:15px;font-weight:600;color:#d1d5db">Select a model to explore</div>
+                <div style="font-size:13px;color:#6b7280;max-width:300px">Click any model on the left to see how each competitor has priced it over time.</div>
+                <div id="history-top-movers" style="width:100%;max-width:520px;margin-top:8px"></div>
+              </div>
+              <!-- Active focus panel (hidden until model selected) -->
+              <div id="history-focus-active" style="display:none">
+                <div class="card">
+                  <!-- Focus header -->
+                  <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+                    <div>
+                      <div style="font-size:16px;font-weight:700;color:#f9fafb" id="focus-model-name"></div>
+                      <div style="font-size:12px;color:#9ca3af;margin-top:2px" id="focus-model-meta"></div>
+                    </div>
+                    <button class="btn btn-secondary btn-sm" onclick="closeFocusPanel()" style="font-size:11px">✕ Close</button>
+                  </div>
+                  <!-- Chart -->
+                  <div style="position:relative;height:280px;margin-bottom:16px">
+                    <canvas id="history-focus-chart"></canvas>
+                  </div>
+                  <!-- Coverage row -->
+                  <div style="border-top:1px solid rgba(255,255,255,0.07);padding-top:12px">
+                    <div style="font-size:11px;font-weight:600;color:#6b7280;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Carried by</div>
+                    <div id="focus-coverage" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-          <div id="history-charts"></div>
+
+          </div><!-- /two-panel -->
         </div><!-- /view-history -->
 
         <!-- SEASONAL VIEW -->

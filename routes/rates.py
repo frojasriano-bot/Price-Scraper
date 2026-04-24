@@ -28,6 +28,7 @@ from database import (
     clear_seasonal_cache,
     get_seasonal_anchor_history,
     get_model_competitor_coverage,
+    get_model_price_by_competitor,
     get_per_competitor_price_changes,
     get_horizon_rates,
     get_model_horizon,
@@ -312,6 +313,48 @@ async def get_history_coverage(
             k = rng.randint(1, len(_COMPETITOR_NAMES))
             mock_coverage[cat][model] = sorted(rng.sample(_COMPETITOR_NAMES, k))
     return {"coverage": mock_coverage, "source": "mock"}
+
+
+@router.get("/history/model-detail")
+async def get_model_detail(
+    model: str = Query(..., description="Canonical model name"),
+    days: int = Query(30, ge=7, le=365),
+    location: Optional[str] = Query(None),
+):
+    """
+    Return per-competitor daily average price for a specific canonical model.
+    Used by the Price History focus chart.
+    """
+    data = await get_model_price_by_competitor(model=model, days=days, location=location)
+    if data:
+        return {"data": data, "model": model, "days": days, "source": "database"}
+
+    # ── Mock fallback ─────────────────────────────────────────────────────────
+    rng = random.Random(abs(hash(model)) % 9999)
+    today = date.today()
+    points = min(days, 14)
+
+    # Determine base price from mock category map
+    base_price = 15000
+    for cat, models in _MOCK_MODELS.items():
+        if model in models:
+            base_price = _BASE_PRICES.get(cat, 15000)
+            break
+
+    num_comps = rng.randint(3, min(5, len(_COMPETITOR_NAMES)))
+    comps = rng.sample(_COMPETITOR_NAMES, num_comps)
+
+    mock_data: dict = {}
+    for comp in comps:
+        series = []
+        price = base_price + rng.randint(-2000, 2000)
+        for j in range(points):
+            day = today - timedelta(days=points - 1 - j)
+            price = max(5000, price + rng.randint(-350, 350))
+            series.append({"date": day.isoformat(), "avg_price": price})
+        mock_data[comp] = series
+
+    return {"data": mock_data, "model": model, "days": days, "source": "mock"}
 
 
 @router.get("/matrix")

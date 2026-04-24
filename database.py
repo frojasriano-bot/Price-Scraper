@@ -1032,6 +1032,58 @@ async def get_model_competitor_coverage(
     return result
 
 
+async def get_model_price_by_competitor(
+    model: str,
+    days: int = 30,
+    location: str = None,
+) -> dict:
+    """
+    Return per-competitor daily average price for a specific canonical model.
+
+    Returns:
+        {
+          "Lotus Car Rental": [{"date": "2026-04-01", "avg_price": 15000}],
+          "Go Car Rental":    [...],
+          ...
+        }
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+
+        conditions = [
+            "scraped_at >= datetime('now', ?)",
+            "COALESCE(canonical_name, car_model) = ?",
+        ]
+        params: list = [f"-{days} days", model]
+
+        if location:
+            conditions.append("location = ?")
+            params.append(location)
+
+        where = "WHERE " + " AND ".join(conditions)
+        query = f"""
+            SELECT
+                competitor,
+                DATE(scraped_at)       AS date,
+                ROUND(AVG(price_isk))  AS avg_price
+            FROM rates
+            {where}
+            GROUP BY competitor, DATE(scraped_at)
+            ORDER BY competitor, date ASC
+        """
+        async with db.execute(query, params) as cursor:
+            rows = await cursor.fetchall()
+
+    result: dict = {}
+    for row in rows:
+        comp = row["competitor"]
+        result.setdefault(comp, []).append({
+            "date":      row["date"],
+            "avg_price": int(row["avg_price"]),
+        })
+    return result
+
+
 async def get_latest_rankings(keyword: str = None, location: str = None) -> list[dict]:
     """Return the most recent ranking per (keyword, location)."""
     async with aiosqlite.connect(DB_PATH) as db:

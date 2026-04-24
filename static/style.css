@@ -613,11 +613,7 @@ tbody td {
 }
 
 /* ── Price History view ──────────────────────────── */
-#history-charts {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(560px, 1fr));
-  gap: 16px;
-}
+/* #history-charts grid replaced by two-panel navigator+focus layout */
 
 .history-category-card {
   background: var(--blue-800);
@@ -629,6 +625,22 @@ tbody td {
 .history-chart-wrap {
   position: relative;
   height: 320px;
+}
+
+/* History Explorer — model navigator rows */
+.history-model-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  transition: background 0.12s;
+}
+.history-model-row:hover { background: rgba(255,255,255,0.04); }
+.history-model-row.selected {
+  background: rgba(59,130,246,0.15) !important;
+  border-left: 3px solid #3b82f6;
 }
 
 /* ── Price delta indicators ──────────────────────── */
