@@ -273,8 +273,8 @@ class BaseScraper(ABC):
             try:
                 rates = await self.scrape_rates(loc, pickup_date, return_date)
                 all_rates.extend(rates)
-            except Exception:
-                # Scraping failed — use mock data so the dashboard always works
+            except Exception as exc:
+                logger.warning("%s scrape failed for %s: %s — falling back to mock data", self.competitor_name, loc, exc)
                 all_rates.extend(self.get_mock_rates(loc, pickup_date, return_date))
 
         return all_rates

@@ -125,7 +125,7 @@ class GoCarRentalScraper(BaseScraper):
             brand = item.get("brand") or ""
             model = item.get("model") or ""
             name = f"{brand} {model}".strip()
-            if not id_ or not name:
+            if id_ is None or not name:
                 continue
             sanity_cat = item.get("category") or ""
             # Derive category — use keyword inference for "Large SUV" (could be SUV or 4x4)

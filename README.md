@@ -608,7 +608,7 @@ GET  /api/rates/scraper-status
 GET  /api/rates/car-catalog
 GET  /api/rates/car-mappings
 POST /api/rates/car-mappings
-DELETE /api/rates/car-mappings/{id}
+DELETE /api/rates/car-mappings/{id}    Returns 404 if mapping ID not found
 ```
 
 ### Settings & Category Audit
@@ -704,3 +704,23 @@ Toggle via moon/sun icon in the top bar. Persisted to `localStorage`. Implemente
 - `blue_rental.db` and `.env` excluded via `.gitignore`
 - Secrets (SerpAPI key, Slack webhook URL) stored in `config` DB table at runtime
 - Python 3.9+ compatible (`from __future__ import annotations` used throughout)
+
+---
+
+## Known Exclusions
+
+**MyCar Iceland (`mycar_is.py`)** — a scraper class exists for MyCar but is intentionally not registered in `ALL_SCRAPERS`. MyCar actively blocks automated requests, so including it would cause every scrape run to generate a failed request with no useful fallback data.
+
+---
+
+## Changelog
+
+### April 2026
+
+- **XSS protection** — `escHtml()` helper defined in `app.js` and applied to all innerHTML interpolation (car model names, competitor names, keywords, URLs, etc.)
+- **API correctness** — `DELETE /api/rates/car-mappings/{id}` now returns HTTP 404 if the mapping ID does not exist (previously always returned 200)
+- **Fetch timeout** — `apiFetch()` now uses `AbortController` with a 30-second default timeout; hanging requests no longer block the UI indefinitely
+- **Scraper failure logging** — `BaseScraper.run()` now logs a WARNING (competitor name, location, exception) before falling back to mock data, making silent scrape failures visible in the server log
+- **Go Car Rental scraper** — `_get_class_info()` now uses `id_ is None` instead of `not id_` so a hypothetical class ID of 0 is no longer silently dropped
+- **Database index** — added `idx_scrape_log_trigger ON scrape_log(trigger)` for faster scrape log filtering by trigger type
+- **Design system** — `--font` and `--mono` CSS custom properties added to `:root`; `html, body` now uses `var(--font)` instead of a hardcoded font stack

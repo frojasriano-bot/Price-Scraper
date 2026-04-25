@@ -1202,7 +1202,9 @@ async def create_mapping(body: MappingCreate):
 
 @router.delete("/car-mappings/{mapping_id}")
 async def remove_mapping(mapping_id: int):
-    await delete_car_mapping(mapping_id)
+    deleted = await delete_car_mapping(mapping_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Mapping not found.")
     return {"message": "Mapping deleted."}
 
 

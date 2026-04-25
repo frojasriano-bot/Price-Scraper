@@ -6,6 +6,12 @@
 'use strict';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
+/** Escape special HTML characters to prevent XSS when interpolating into innerHTML. */
+function escHtml(str) {
+  if (str == null) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
 /** Update every element sharing a given ID (the HTML has duplicates in top-bar + tab). */
 function setSourceBadge(id, source) {
   const isLive = source === 'live' || source === 'database' || source === 'cached';
@@ -96,16 +102,26 @@ const state = {
 // ── API helpers ────────────────────────────────────────────────────────────
 const API_BASE = '';
 
-async function apiFetch(path, options = {}) {
-  const res = await fetch(API_BASE + path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail || 'Request failed');
+async function apiFetch(path, options = {}, timeoutMs = 30000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(API_BASE + path, {
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      ...options,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || 'Request failed');
+    }
+    return res.json();
+  } catch (err) {
+    if (err.name === 'AbortError') throw new Error('Request timed out');
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
-  return res.json();
 }
 
 // ── Toast notifications ────────────────────────────────────────────────────

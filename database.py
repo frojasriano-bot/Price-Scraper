@@ -325,6 +325,10 @@ async def init_db():
             "CREATE INDEX IF NOT EXISTS idx_rates_model_key "
             "ON rates(competitor, location, car_model, car_category, scraped_at DESC)"
         )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_scrape_log_trigger "
+            "ON scrape_log(trigger)"
+        )
 
         await db.commit()
 
@@ -802,10 +806,11 @@ async def add_car_mapping(competitor: str, competitor_model: str, canonical_name
         await db.commit()
 
 
-async def delete_car_mapping(mapping_id: int):
+async def delete_car_mapping(mapping_id: int) -> bool:
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("DELETE FROM car_mappings WHERE id = ?", (mapping_id,))
+        cursor = await db.execute("DELETE FROM car_mappings WHERE id = ?", (mapping_id,))
         await db.commit()
+        return cursor.rowcount > 0
 
 
 async def get_rates_history(location: str = None, car_category: str = None,
