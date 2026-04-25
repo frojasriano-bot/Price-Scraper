@@ -5091,10 +5091,26 @@ let _wlData       = null;  // full API response
 let _wlDrillComp  = null;  // currently drilled competitor
 let _wlDrillCat   = null;  // currently drilled category (null = all)
 
-async function loadWinLoss() {
+let _wlCachedLoc  = null;  // location used for last successful fetch
+
+async function loadWinLoss(forceRefresh = false) {
   const loadingBar = document.getElementById('wl-loading-bar');
   const pabContent = document.getElementById('pab-content');
   const emptyEl    = document.getElementById('wl-empty');
+
+  const loc = document.getElementById('filter-location')?.value || '';
+
+  // Return cached data immediately if location unchanged and not forced
+  if (!forceRefresh && _wlData && _wlCachedLoc === loc) {
+    if (_wlData.models && _wlData.models.length > 0) {
+      if (pabContent) pabContent.style.display = '';
+      // Re-render scatter in case dark mode changed
+      renderWLScatter();
+    } else {
+      emptyEl.style.display = '';
+    }
+    return;
+  }
 
   loadingBar.style.display = '';
   if (pabContent) pabContent.style.display = 'none';
@@ -5102,19 +5118,20 @@ async function loadWinLoss() {
   closeWLDrill();
 
   try {
-    const loc = document.getElementById('filter-location')?.value || '';
     const qs  = loc ? `?location=${encodeURIComponent(loc)}` : '';
-    _wlData = await apiFetch(`/api/rates/win-loss${qs}`);
+    _wlData      = await apiFetch(`/api/rates/win-loss${qs}`);
+    _wlCachedLoc = loc;
 
     if (!_wlData.models || _wlData.models.length === 0) {
       emptyEl.style.display = '';
     } else {
+      // Show container BEFORE rendering charts so canvas has real dimensions
+      if (pabContent) pabContent.style.display = '';
       renderPABSummary();
       renderPABRisks();
       renderPABOpportunities();
       renderPABCategoryStrip();
       renderWLScatter();
-      if (pabContent) pabContent.style.display = '';
     }
   } catch (e) {
     showToast('Failed to load Pricing Actions: ' + e.message, 'error');

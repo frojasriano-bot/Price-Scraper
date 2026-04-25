@@ -320,6 +320,11 @@ async def init_db():
             "CREATE INDEX IF NOT EXISTS idx_rates_latest "
             "ON rates(competitor, location, scraped_at DESC)"
         )
+        # Speeds up the get_latest_rates inner GROUP BY (model_key = COALESCE(car_model, car_category))
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_rates_model_key "
+            "ON rates(competitor, location, car_model, car_category, scraped_at DESC)"
+        )
 
         await db.commit()
 
