@@ -236,6 +236,11 @@ body.dark-mode {
   line-height: 1 !important;
   box-shadow: 0 4px 14px -6px rgba(43,88,255,0.45);
 }
+/* Logo SVG has its own solid-blue background rect — no gradient override needed */
+.sidebar-logo svg {
+  background: none;
+  overflow: visible;
+}
 
 .sidebar-logo-text {
   display: flex;
