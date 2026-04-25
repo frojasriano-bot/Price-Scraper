@@ -217,6 +217,7 @@ SQLite via `aiosqlite`. Schema initialised automatically on startup by `init_db(
 | `rankings` | SEO keyword rankings from SerpAPI |
 | `config` | Key-value store: SerpAPI key, schedule, webhook URL, locations, SEO keywords |
 | `seasonal_cache` | 30-minute response cache for the seasonal analysis endpoint |
+| `fleet_pressure` | Time-series of fleet availability: competitor × location × window (1w/2w/4w) with `available_classes`, `total_classes`, and `availability_pct`. Feeds the pressure history chart |
 | `scrape_log` | History of every manual, scheduled, seasonal, and horizon scrape run (rates, duration, errors) |
 | `insurance_reviews` | Timestamped log of manual insurance data verifications |
 | `insurance_price_overrides` | Per-company/category zero-excess price overrides (editable via Insurance tab) |
@@ -518,17 +519,17 @@ Platinum uniquely includes river crossing protection and F-road insurance.
 
 ## SEO Rank Tracker
 
-Tracks Google ranking for `bluecarrental.is` across 10 pre-seeded Iceland car rental keywords:
+Tracks Google ranking for `bluecarrental.is` across configurable Iceland car rental keywords. Five keywords are pre-loaded by default:
 
-- car rental reykjavik / car rental iceland
-- rent a car keflavik airport / keflavik airport car rental
-- cheap car hire iceland / best car rental iceland
-- iceland car hire comparison / 4x4 rental iceland
-- bílaleiga reykjavík / leigubíll ísland
+- car rental reykjavik
+- rent a car keflavik airport
+- cheap car hire iceland
+- bílaleiga reykjavík
+- leigubíll ísland
+
+Keywords are stored in the `config` DB table and persist across restarts. Add or remove keywords via Settings → Keywords or the API. There is no hard limit on keyword count.
 
 Previous rank and change (▲/▼) are tracked per keyword independently using `ROW_NUMBER() OVER (PARTITION BY keyword)`.
-
-Keywords are managed via Settings → Keywords or `POST /api/seo/keywords?keyword=...`.
 
 Requires `SERPAPI_KEY` set in Settings or `.env`. Without a key, mock rankings are shown.
 
@@ -623,7 +624,7 @@ GET  /api/settings/category-audit   Per-model category status (mapped / unmapped
 
 ```
 GET  /api/insurance                  Full data + category pricing (with DB overrides)
-GET  /api/insurance/category-pricing Base category pricing without overrides
+GET  /api/insurance/category-pricing Zero-excess category pricing with DB overrides applied
 POST /api/insurance/prices           Save a price override {company, category, price_isk, note}
 GET  /api/insurance/review-log       Verification history
 POST /api/insurance/mark-reviewed    Log a manual review event
