@@ -190,6 +190,12 @@ function formatISK(amount) {
   }).format(amount);
 }
 
+function shortName(c) {
+  if (c === 'Go Car Rental') return 'Go Car';
+  if (c === 'Go Iceland')    return 'Go Iceland';
+  return c.replace(' Car Rental', '').replace(' Iceland', '');
+}
+
 function formatDate(isoStr) {
   if (!isoStr) return '—';
   const d = new Date(isoStr.includes('T') ? isoStr : isoStr + 'T00:00:00');
@@ -1734,11 +1740,6 @@ function renderMatrix() {
     return;
   }
 
-  const shortName = c => {
-    if (c === 'Go Car Rental') return 'Go Car';
-    if (c === 'Go Iceland')    return 'Go Iceland';
-    return c.replace(' Car Rental', '').replace(' Iceland', '');
-  };
   const BLUE = 'Blue Car Rental';
 
   // Reorder: Blue first, then others alphabetically
@@ -2866,11 +2867,6 @@ function exportMatrixCSV() {
     return showToast('No matrix data to export. Scrape first.', 'error');
   }
   const { cars, competitors } = data;
-  const shortName = c => {
-    if (c === 'Go Car Rental') return 'Go Car';
-    if (c === 'Go Iceland')    return 'Go Iceland';
-    return c.replace(' Car Rental', '').replace(' Iceland', '');
-  };
   // Derive date window from the first rate that has dates
   let pickupDate = '', returnDate = '';
   for (const car of cars) {
