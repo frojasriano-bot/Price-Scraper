@@ -5093,17 +5093,12 @@ let _wlDrillCat   = null;  // currently drilled category (null = all)
 
 async function loadWinLoss() {
   const loadingBar = document.getElementById('wl-loading-bar');
-  const gridCard   = document.getElementById('wl-grid-card');
+  const pabContent = document.getElementById('pab-content');
   const emptyEl    = document.getElementById('wl-empty');
-  const summaryEl  = document.getElementById('wl-summary-cards');
 
   loadingBar.style.display = '';
-  gridCard.style.display   = 'none';
+  if (pabContent) pabContent.style.display = 'none';
   emptyEl.style.display    = 'none';
-  summaryEl.innerHTML      = '';
-  document.getElementById('wl-easy-wins').style.display  = 'none';
-  document.getElementById('wl-attention').style.display  = 'none';
-  document.getElementById('wl-scatter-card').style.display = 'none';
   closeWLDrill();
 
   try {
@@ -5114,107 +5109,183 @@ async function loadWinLoss() {
     if (!_wlData.models || _wlData.models.length === 0) {
       emptyEl.style.display = '';
     } else {
-      renderWLSummary();
-      renderWLEasyWins();
-      renderWLAttention();
-      renderWLCategoryGrid();
+      renderPABSummary();
+      renderPABRisks();
+      renderPABOpportunities();
+      renderPABCategoryStrip();
       renderWLScatter();
-      gridCard.style.display = '';
+      if (pabContent) pabContent.style.display = '';
     }
   } catch (e) {
-    showToast('Failed to load Win/Loss data: ' + e.message, 'error');
+    showToast('Failed to load Pricing Actions: ' + e.message, 'error');
     emptyEl.style.display = '';
   } finally {
     loadingBar.style.display = 'none';
   }
 }
 
-// ── Easy Wins panel ─────────────────────────────────────────────────────────
-function renderWLEasyWins() {
-  const card = document.getElementById('wl-easy-wins');
-  const list = document.getElementById('wl-easy-wins-list');
-  if (!_wlData || !_wlData.models.length) { card.style.display = 'none'; return; }
+// ── Pricing Action Board ─────────────────────────────────────────────────────
+
+function renderPABSummary() {
+  const strip = document.getElementById('pab-summary-strip');
+  if (!_wlData || !strip) return;
 
   const CAT_EMOJI = { Economy:'🚗', Compact:'🚙', SUV:'🛻', '4x4':'🏔️', Minivan:'🚐' };
+  let riskCount = 0, oppCount = 0, neutralCount = 0;
 
-  // Score each model: more competitor wins + bigger avg win margin = higher score
-  const scored = _wlData.models.map(m => {
-    const comps  = Object.values(m.vs);
-    const wins   = comps.filter(v => v.outcome === 'win');
-    const losses = comps.filter(v => v.outcome === 'loss');
-    if (!wins.length) return null;
-    const avgWinMargin = wins.reduce((s, v) => s + Math.abs(v.margin_pct), 0) / wins.length;
-    // Score rewards breadth (wins vs many competitors) and depth (large margin), penalises losses
-    const score = wins.length * avgWinMargin - losses.length * 5;
-    return { model: m, wins: wins.length, losses: losses.length, avgMargin: avgWinMargin.toFixed(1), total: comps.length, score };
-  }).filter(Boolean);
+  _wlData.models.forEach(m => {
+    const entries  = Object.values(m.vs);
+    const losses   = entries.filter(v => v.outcome === 'loss').length;
+    const wins     = entries.filter(v => v.outcome === 'win').length;
+    if (losses >= 1) {
+      riskCount++;
+    } else if (wins === entries.length && entries.length > 0) {
+      const compPrices = Object.values(m.vs).map(v => v.price_isk).filter(Boolean);
+      const headroomPct = compPrices.length
+        ? Math.round((Math.min(...compPrices) - m.blue_price_isk) / m.blue_price_isk * 100)
+        : 0;
+      if (headroomPct >= 5) oppCount++; else neutralCount++;
+    } else {
+      neutralCount++;
+    }
+  });
 
-  scored.sort((a, b) => b.score - a.score);
-  const top = scored.slice(0, 5);
+  const tile = (icon, label, count, color, borderColor) => `
+    <div class="card" style="padding:18px 16px;text-align:center;border-top:3px solid ${borderColor}">
+      <div style="font-size:32px;font-weight:800;color:${color};line-height:1">${count}</div>
+      <div style="font-size:13px;font-weight:600;color:var(--text);margin-top:5px">${icon} ${label}</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${count === 1 ? 'model' : 'models'}</div>
+    </div>`;
 
-  if (!top.length) { card.style.display = 'none'; return; }
-
-  list.innerHTML = top.map((s, i) => `
-    <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;${i < top.length - 1 ? 'border-bottom:1px solid var(--border)' : ''}">
-      <div style="font-size:16px;font-weight:800;color:var(--text-muted);min-width:20px;text-align:center">${i + 1}</div>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(s.model.canonical_name)}</div>
-        <div style="font-size:11px;color:var(--text-muted)">${CAT_EMOJI[s.model.category] || ''} ${s.model.category}</div>
-      </div>
-      <div style="text-align:right;flex-shrink:0">
-        <div style="font-size:13px;font-weight:700;color:#15803d">${s.wins}/${s.total} wins</div>
-        <div style="font-size:11px;color:var(--text-muted)">avg ${s.avgMargin}% cheaper</div>
-      </div>
-    </div>
-  `).join('');
-
-  card.style.display = '';
+  strip.innerHTML =
+    tile('🔴', 'Risk Alerts',        riskCount,    '#dc2626', '#dc2626') +
+    tile('⚪', 'At Market',           neutralCount, '#6b7280', '#4b5563') +
+    tile('🟢', 'Raise Opportunities', oppCount,     '#16a34a', '#16a34a');
 }
 
-// ── Needs Attention panel ────────────────────────────────────────────────────
-function renderWLAttention() {
-  const card = document.getElementById('wl-attention');
-  const list = document.getElementById('wl-attention-list');
-  if (!_wlData || !_wlData.models.length) { card.style.display = 'none'; return; }
+function renderPABRisks() {
+  const list = document.getElementById('pab-risks-list');
+  if (!_wlData || !list) return;
 
   const CAT_EMOJI = { Economy:'🚗', Compact:'🚙', SUV:'🛻', '4x4':'🏔️', Minivan:'🚐' };
 
-  // Flag models where Blue loses to 2+ competitors
-  const flagged = _wlData.models.map(m => {
+  const risks = _wlData.models.map(m => {
     const lossEntries = Object.entries(m.vs).filter(([, v]) => v.outcome === 'loss');
-    if (lossEntries.length < 2) return null;
-    const avgMargin = lossEntries.reduce((s, [, v]) => s + v.margin_pct, 0) / lossEntries.length;
-    return { model: m, lossCount: lossEntries.length, avgMargin: avgMargin.toFixed(1) };
-  }).filter(Boolean);
+    if (!lossEntries.length) return null;
+    const sorted    = [...lossEntries].sort((a, b) => a[1].price_isk - b[1].price_isk);
+    const [, cheapData] = sorted[0];
+    const iskGap    = m.blue_price_isk - cheapData.price_isk;
+    const avgUnder  = lossEntries.reduce((s, [, v]) => s + Math.abs(v.margin_pct), 0) / lossEntries.length;
+    return { model: m, lossCount: lossEntries.length, cheapPrice: cheapData.price_isk, iskGap, avgUnder, lossEntries };
+  }).filter(Boolean).sort((a, b) => b.lossCount - a.lossCount || b.avgUnder - a.avgUnder);
 
-  flagged.sort((a, b) => b.lossCount - a.lossCount || parseFloat(b.avgMargin) - parseFloat(a.avgMargin));
-
-  if (!flagged.length) {
-    list.innerHTML = `<div style="padding:16px 14px;font-size:13px;color:#15803d;display:flex;align-items:center;gap:8px">
-      <span style="font-size:16px">✓</span> No models currently undercut by 2+ competitors
+  if (!risks.length) {
+    list.innerHTML = `<div style="padding:16px 14px;font-size:13px;color:#16a34a;display:flex;align-items:center;gap:8px">
+      <span style="font-size:16px">✓</span> No models currently undercut by competitors
     </div>`;
-    card.style.display = '';
     return;
   }
 
-  list.innerHTML = flagged.map((f, i) => {
-    const m = f.model;
+  list.innerHTML = risks.map((r, i) => {
+    const m          = r.model;
+    const matchPct   = Math.round(r.iskGap / m.blue_price_isk * 100);
+    const iskStr     = r.iskGap >= 1000
+      ? (r.iskGap / 1000).toFixed(1).replace(/\.0$/, '') + 'k'
+      : String(r.iskGap);
+    const badges     = r.lossEntries.map(([comp, v]) => {
+      const col = COMPETITOR_COLORS[comp] || COMPETITOR_COLORS_DEFAULT;
+      return `<span style="font-size:10px;padding:2px 7px;border-radius:4px;background:${col}22;border:1px solid ${col}44;color:${col};white-space:nowrap">${shortName(comp)} ${v.margin_pct > 0 ? '+' : ''}${v.margin_pct}%</span>`;
+    }).join('');
     return `
-      <div style="padding:10px 14px;${i < flagged.length - 1 ? 'border-bottom:1px solid var(--border)' : ''}">
-        <div style="display:flex;align-items:center;gap:8px">
-          <div style="width:8px;height:8px;border-radius:50%;background:#dc2626;flex-shrink:0"></div>
-          <div style="font-size:13px;font-weight:600;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(m.canonical_name)}</div>
-          <div style="font-size:12px;color:#b91c1c;font-weight:700;flex-shrink:0">${f.lossCount} cheaper</div>
+      <div style="padding:11px 14px;${i < risks.length - 1 ? 'border-bottom:1px solid var(--border)' : ''}">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+          <div style="width:7px;height:7px;border-radius:50%;background:#dc2626;flex-shrink:0"></div>
+          <div style="font-size:13px;font-weight:600;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escHtml(m.canonical_name)}">${escHtml(m.canonical_name)}</div>
+          <span style="font-size:11px;font-weight:700;color:#dc2626;flex-shrink:0">${r.lossCount} cheaper</span>
         </div>
-        <div style="font-size:11px;color:var(--text-muted);padding-left:16px;margin-top:2px">
-          ${CAT_EMOJI[m.category] || ''} ${m.category} · avg +${f.avgMargin}% pricier · ${m.blue_price_isk.toLocaleString()} ISK
-        </div>
-      </div>
-    `;
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:5px">${badges}</div>
+        <div style="font-size:11px;color:var(--text-muted)">${CAT_EMOJI[m.category] || ''} ${m.category} · Blue: ${formatISK(m.blue_price_isk)} · Cheapest: ${formatISK(r.cheapPrice)}</div>
+        <div style="font-size:11px;margin-top:3px;color:#b91c1c;font-weight:600">→ Match cheapest: −${matchPct}% (−${iskStr} ISK/trip)</div>
+      </div>`;
   }).join('');
-
-  card.style.display = '';
 }
+
+function renderPABOpportunities() {
+  const list = document.getElementById('pab-opps-list');
+  if (!_wlData || !list) return;
+
+  const CAT_EMOJI = { Economy:'🚗', Compact:'🚙', SUV:'🛻', '4x4':'🏔️', Minivan:'🚐' };
+
+  const opps = _wlData.models.map(m => {
+    const entries = Object.entries(m.vs);
+    if (!entries.length) return null;
+    if (entries.some(([, v]) => v.outcome === 'loss')) return null;
+    const wins = entries.filter(([, v]) => v.outcome === 'win');
+    if (!wins.length) return null;
+    const compPrices   = entries.map(([, v]) => v.price_isk).filter(Boolean);
+    if (!compPrices.length) return null;
+    const nextPrice    = Math.min(...compPrices);
+    const headroomIsk  = nextPrice - m.blue_price_isk;
+    const headroomPct  = Math.round(headroomIsk / m.blue_price_isk * 100);
+    if (headroomPct < 5) return null;
+    const avgMargin    = wins.reduce((s, [, v]) => s + Math.abs(v.margin_pct), 0) / wins.length;
+    return { model: m, winsCount: wins.length, total: entries.length, headroomIsk, headroomPct, avgMargin, nextPrice };
+  }).filter(Boolean).sort((a, b) => b.headroomPct - a.headroomPct);
+
+  if (!opps.length) {
+    list.innerHTML = `<div style="padding:16px 14px;font-size:13px;color:var(--text-muted)">No models with significant raise headroom right now.</div>`;
+    return;
+  }
+
+  list.innerHTML = opps.map((o, i) => {
+    const m      = o.model;
+    const iskStr = o.headroomIsk >= 1000
+      ? (o.headroomIsk / 1000).toFixed(1).replace(/\.0$/, '') + 'k'
+      : String(o.headroomIsk);
+    return `
+      <div style="padding:11px 14px;${i < opps.length - 1 ? 'border-bottom:1px solid var(--border)' : ''}">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+          <div style="width:7px;height:7px;border-radius:50%;background:#16a34a;flex-shrink:0"></div>
+          <div style="font-size:13px;font-weight:600;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escHtml(m.canonical_name)}">${escHtml(m.canonical_name)}</div>
+          <span style="font-size:11px;font-weight:700;color:#16a34a;flex-shrink:0">+${o.headroomPct}% room</span>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:3px">${CAT_EMOJI[m.category] || ''} ${m.category} · Blue cheapest of ${o.total + 1} · avg ${o.avgMargin.toFixed(1)}% advantage</div>
+        <div style="font-size:11px;color:var(--text-muted)">Next competitor: ${formatISK(o.nextPrice)} — Blue: ${formatISK(m.blue_price_isk)}</div>
+        <div style="font-size:11px;margin-top:3px;color:#15803d;font-weight:600">→ Headroom: +${iskStr} ISK/trip before losing position</div>
+      </div>`;
+  }).join('');
+}
+
+function renderPABCategoryStrip() {
+  const cells = document.getElementById('pab-cat-cells');
+  if (!_wlData || !cells) return;
+
+  const CAT_ORDER = ['Economy', 'Compact', 'SUV', '4x4', 'Minivan'];
+  const CAT_EMOJI = { Economy:'🚗', Compact:'🚙', SUV:'🛻', '4x4':'🏔️', Minivan:'🚐' };
+
+  const catKeys = CAT_ORDER.filter(c => _wlData.by_category?.[c]);
+  if (!catKeys.length) { cells.parentElement?.style && (cells.closest('.card').style.display = 'none'); return; }
+
+  cells.innerHTML = catKeys.map(cat => {
+    const catData = _wlData.by_category[cat] || {};
+    let wins = 0, losses = 0, ties = 0;
+    Object.values(catData).forEach(c => { wins += c.wins || 0; losses += c.losses || 0; ties += c.ties || 0; });
+    const total   = wins + losses + ties;
+    const wr      = total > 0 ? Math.round(wins / total * 100) : null;
+    const pos     = wr == null ? 'No data'      : wr >= 60 ? 'Competitive' : wr >= 40 ? 'Neutral' : 'At Risk';
+    const col     = wr == null ? '#6b7280'       : wr >= 60 ? '#15803d'    : wr >= 40 ? '#854d0e' : '#b91c1c';
+    const bg      = wr == null ? 'rgba(255,255,255,0.05)' : wr >= 60 ? 'rgba(22,163,74,0.1)' : wr >= 40 ? 'rgba(202,138,4,0.1)' : 'rgba(220,38,38,0.1)';
+    const border  = wr == null ? 'rgba(255,255,255,0.1)'  : wr >= 60 ? 'rgba(22,163,74,0.25)' : wr >= 40 ? 'rgba(202,138,4,0.25)' : 'rgba(220,38,38,0.25)';
+    return `
+      <div onclick="drillWL(null,'${cat}')" style="flex:1;min-width:130px;padding:14px 16px;background:${bg};border:1px solid ${border};border-radius:8px;text-align:center;cursor:pointer;transition:opacity .15s" onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='1'">
+        <div style="font-size:22px;margin-bottom:4px">${CAT_EMOJI[cat] || ''}</div>
+        <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:2px">${cat}</div>
+        <div style="font-size:14px;font-weight:800;color:${col};margin-bottom:5px">${pos}</div>
+        <div style="font-size:10px;color:var(--text-muted)">${wins}W · ${ties}T · ${losses}L</div>
+      </div>`;
+  }).join('');
+}
+
 
 // ── Price Scatter chart ──────────────────────────────────────────────────────
 let _wlScatterChart = null;
@@ -5333,216 +5404,6 @@ function renderWLScatter() {
   card.style.display = '';
 }
 
-function renderWLSummary() {
-  const container = document.getElementById('wl-summary-cards');
-  if (!_wlData) return;
-
-  // Compute grand totals for context
-  const comps = _wlData.competitors;
-  container.innerHTML = comps.map(comp => {
-    const s = _wlData.summary[comp];
-    if (!s || s.total_compared === 0) return '';
-
-    const pct      = s.win_rate_pct;
-    const barColor = pct >= 60 ? '#16a34a' : pct >= 40 ? '#ca8a04' : '#dc2626';
-
-    const winMarginLine = s.avg_win_margin_pct !== null
-      ? `<div style="margin-top:6px;font-size:11px;color:var(--text-muted)">Avg win: <b style="color:#15803d">${s.avg_win_margin_pct}%</b> cheaper</div>`
-      : '';
-    const lossMarginLine = s.avg_loss_margin_pct !== null
-      ? `<div style="font-size:11px;color:var(--text-muted)">Avg loss: <b style="color:#b91c1c">${s.avg_loss_margin_pct}%</b> pricier</div>`
-      : '';
-
-    return `
-      <div class="card" style="padding:14px 16px">
-        <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escHtml(comp)}">${escHtml(comp)}</div>
-        <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:6px">
-          <span style="font-size:30px;font-weight:800;line-height:1;color:${barColor}">${pct}%</span>
-          <span style="font-size:11px;color:var(--text-muted)">win rate</span>
-        </div>
-        <div style="height:5px;border-radius:3px;background:var(--border);margin-bottom:12px;overflow:hidden">
-          <div style="height:100%;background:${barColor};width:${pct}%;border-radius:3px;transition:width .5s ease"></div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;text-align:center;margin-bottom:8px">
-          <div style="background:rgba(22,163,74,.1);border:1px solid rgba(22,163,74,.2);border-radius:6px;padding:6px 2px">
-            <div style="font-size:18px;font-weight:700;color:#16a34a">${s.wins}</div>
-            <div style="font-size:10px;color:#15803d;font-weight:600">WINS</div>
-          </div>
-          <div style="background:rgba(202,138,4,.1);border:1px solid rgba(202,138,4,.2);border-radius:6px;padding:6px 2px">
-            <div style="font-size:18px;font-weight:700;color:#854d0e">${s.ties}</div>
-            <div style="font-size:10px;color:#854d0e;font-weight:600">TIES</div>
-          </div>
-          <div style="background:rgba(220,38,38,.1);border:1px solid rgba(220,38,38,.2);border-radius:6px;padding:6px 2px">
-            <div style="font-size:18px;font-weight:700;color:#dc2626">${s.losses}</div>
-            <div style="font-size:10px;color:#b91c1c;font-weight:600">LOSSES</div>
-          </div>
-        </div>
-        ${winMarginLine}${lossMarginLine}
-        <div style="margin-top:4px;font-size:11px;color:var(--text-muted)">${s.total_compared} models compared</div>
-      </div>
-    `;
-  }).join('');
-}
-
-function renderWLCategoryGrid() {
-  const container = document.getElementById('wl-cat-grid');
-  const subtitleEl = document.getElementById('wl-grid-subtitle');
-  if (!_wlData) return;
-
-  // Only show categories with actual data
-  const CAT_ORDER = ['Economy', 'Compact', 'SUV', '4x4', 'Minivan'];
-  const categories = CAT_ORDER.filter(c => _wlData.by_category[c]);
-  const comps = _wlData.competitors.filter(
-    c => _wlData.summary[c] && _wlData.summary[c].total_compared > 0
-  );
-
-  if (!categories.length || !comps.length) {
-    container.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">No category data available</div>';
-    return;
-  }
-
-  const threshold = _wlData.threshold_pct || 5;
-  subtitleEl.textContent = `% of comparable models where Blue is cheaper (threshold ±${threshold}%) · click any cell to drill down`;
-
-  // Build header
-  let html = `<table class="rate-table" style="width:100%;border-collapse:collapse">
-    <thead>
-      <tr>
-        <th style="text-align:left;padding:10px 14px;font-size:12px">Competitor</th>
-        ${categories.map(c => `<th style="text-align:center;padding:10px 8px;font-size:12px">${c}</th>`).join('')}
-        <th style="text-align:center;padding:10px 8px;font-size:12px;border-left:2px solid var(--border)">Overall</th>
-      </tr>
-    </thead>
-    <tbody>`;
-
-  for (const comp of comps) {
-    const overall = _wlData.summary[comp];
-    html += `<tr>`;
-    html += `<td style="padding:10px 14px;font-weight:600;font-size:13px">${escHtml(comp)}</td>`;
-
-    for (const cat of categories) {
-      const cell = _wlData.by_category[cat] && _wlData.by_category[cat][comp];
-      if (!cell || cell.total === 0) {
-        html += `<td style="text-align:center;padding:10px 8px;color:var(--text-muted);font-size:12px">—</td>`;
-        continue;
-      }
-      const pct = cell.win_rate_pct;
-      const bg  = pct >= 60 ? 'rgba(22,163,74,.15)'  : pct >= 40 ? 'rgba(202,138,4,.15)'  : 'rgba(220,38,38,.15)';
-      const col = pct >= 60 ? '#15803d'               : pct >= 40 ? '#854d0e'               : '#b91c1c';
-      html += `
-        <td style="text-align:center;padding:8px 6px;cursor:pointer"
-            onclick="drillWL('${escHtml(comp)}', '${cat}')"
-            title="${cat}: ${cell.wins}W / ${cell.ties}T / ${cell.losses}L — click to see models">
-          <div style="display:inline-flex;flex-direction:column;align-items:center;min-width:66px;padding:5px 8px;border-radius:7px;background:${bg};color:${col}">
-            <span style="font-size:15px;font-weight:800">${pct}%</span>
-            <span style="font-size:10px;opacity:.8">${cell.wins}W · ${cell.ties}T · ${cell.losses}L</span>
-          </div>
-        </td>`;
-    }
-
-    // Overall column
-    const oPct = overall.win_rate_pct;
-    const oBg  = oPct >= 60 ? 'rgba(22,163,74,.2)'  : oPct >= 40 ? 'rgba(202,138,4,.2)'  : 'rgba(220,38,38,.2)';
-    const oCol = oPct >= 60 ? '#15803d'              : oPct >= 40 ? '#854d0e'              : '#b91c1c';
-    html += `
-      <td style="text-align:center;padding:8px 6px;border-left:2px solid var(--border);cursor:pointer"
-          onclick="drillWL('${escHtml(comp)}', null)"
-          title="All categories — click to see all models">
-        <div style="display:inline-flex;flex-direction:column;align-items:center;min-width:66px;padding:5px 8px;border-radius:7px;background:${oBg};color:${oCol}">
-          <span style="font-size:16px;font-weight:800">${oPct}%</span>
-          <span style="font-size:10px;opacity:.8">${overall.wins}W · ${overall.ties}T · ${overall.losses}L</span>
-        </div>
-      </td>
-    `;
-    html += `</tr>`;
-  }
-
-  html += `</tbody></table>`;
-  container.innerHTML = html;
-}
-
-function drillWL(comp, cat) {
-  _wlDrillComp = comp;
-  _wlDrillCat  = cat || null;
-  renderWLDrill();
-}
-
-function closeWLDrill() {
-  _wlDrillComp = null;
-  _wlDrillCat  = null;
-  const card = document.getElementById('wl-drill-card');
-  if (card) card.style.display = 'none';
-}
-
-function renderWLDrill() {
-  const card      = document.getElementById('wl-drill-card');
-  const titleEl   = document.getElementById('wl-drill-title');
-  const subtitleEl = document.getElementById('wl-drill-subtitle');
-  const tableEl   = document.getElementById('wl-drill-table');
-
-  if (!_wlData || !_wlDrillComp) { card.style.display = 'none'; return; }
-
-  // Filter to models that have a price for the drilled competitor
-  const models = _wlData.models.filter(m => {
-    if (!m.vs[_wlDrillComp]) return false;
-    if (_wlDrillCat && m.category !== _wlDrillCat) return false;
-    return true;
-  });
-
-  // Sort: wins first, then ties, then losses; within wins biggest margin first
-  const OUTCOME_ORDER = { win: 0, tie: 1, loss: 2 };
-  models.sort((a, b) => {
-    const av = a.vs[_wlDrillComp], bv = b.vs[_wlDrillComp];
-    const orderDiff = OUTCOME_ORDER[av.outcome] - OUTCOME_ORDER[bv.outcome];
-    if (orderDiff !== 0) return orderDiff;
-    // Within wins: more negative margin (Blue cheaper) = bigger win → first
-    return av.margin_pct - bv.margin_pct;
-  });
-
-  const catLabel = _wlDrillCat ? ` — ${_wlDrillCat}` : ' — All Categories';
-  titleEl.textContent   = `Blue vs ${_wlDrillComp}${catLabel}`;
-  subtitleEl.textContent = `${models.length} comparable model${models.length !== 1 ? 's' : ''} · negative margin = Blue is cheaper (a win)`;
-
-  let html = `<table class="rate-table" style="width:100%;border-collapse:collapse">
-    <thead>
-      <tr>
-        <th style="text-align:left;padding:10px 14px;font-size:12px">Model</th>
-        <th style="text-align:left;padding:10px 8px;font-size:12px">Category</th>
-        <th style="text-align:right;padding:10px 12px;font-size:12px">Blue Price</th>
-        <th style="text-align:right;padding:10px 12px;font-size:12px">${escHtml(_wlDrillComp)}</th>
-        <th style="text-align:center;padding:10px 8px;font-size:12px">Outcome</th>
-        <th style="text-align:right;padding:10px 12px;font-size:12px">Margin</th>
-      </tr>
-    </thead>
-    <tbody>`;
-
-  for (const m of models) {
-    const v = m.vs[_wlDrillComp];
-    const outBg    = v.outcome === 'win'  ? 'rgba(22,163,74,.15)'  : v.outcome === 'loss' ? 'rgba(220,38,38,.15)' : 'rgba(202,138,4,.15)';
-    const outCol   = v.outcome === 'win'  ? '#15803d'               : v.outcome === 'loss' ? '#b91c1c'             : '#854d0e';
-    const outLabel = v.outcome === 'win'  ? '✓ Win'                 : v.outcome === 'loss' ? '✗ Loss'              : '≈ Tie';
-    const mColor   = v.margin_pct < 0 ? '#15803d' : v.margin_pct > 0 ? '#b91c1c' : '#6b7280';
-    const mStr     = v.margin_pct === 0 ? '0%' : (v.margin_pct > 0 ? '+' : '') + v.margin_pct + '%';
-
-    html += `
-      <tr>
-        <td style="padding:10px 14px;font-weight:600;font-size:13px">${escHtml(m.canonical_name)}</td>
-        <td style="padding:10px 8px;font-size:12px;color:var(--text-muted)">${escHtml(m.category)}</td>
-        <td style="padding:10px 12px;text-align:right;font-size:13px;font-family:monospace">${m.blue_price_isk.toLocaleString()} ISK</td>
-        <td style="padding:10px 12px;text-align:right;font-size:13px;font-family:monospace">${v.price_isk.toLocaleString()} ISK</td>
-        <td style="padding:10px 8px;text-align:center">
-          <span style="display:inline-block;padding:3px 11px;border-radius:20px;background:${outBg};color:${outCol};font-weight:700;font-size:12px">${outLabel}</span>
-        </td>
-        <td style="padding:10px 12px;text-align:right;font-weight:700;font-size:13px;color:${mColor}">${mStr}</td>
-      </tr>`;
-  }
-
-  html += `</tbody></table>`;
-  tableEl.innerHTML = html;
-  card.style.display = '';
-  // Smooth scroll into view
-  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-}
 
 // ── Fleet Pressure ─────────────────────────────────────────────────────────
 let _fleetChart     = null;
