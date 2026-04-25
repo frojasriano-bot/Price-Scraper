@@ -5093,6 +5093,124 @@ let _wlDrillCat   = null;  // currently drilled category (null = all)
 
 let _wlCachedLoc  = null;  // location used for last successful fetch
 
+// ── Drill helpers ────────────────────────────────────────────────────────────
+
+function closeWLDrill() {
+  _wlDrillComp = null;
+  _wlDrillCat  = null;
+  const card = document.getElementById('wl-drill-card');
+  if (card) card.style.display = 'none';
+}
+
+function drillWL(comp, cat) {
+  _wlDrillComp = comp || null;
+  _wlDrillCat  = cat  || null;
+  renderWLDrill();
+}
+
+function renderWLDrill() {
+  const card     = document.getElementById('wl-drill-card');
+  const titleEl  = document.getElementById('wl-drill-title');
+  const subEl    = document.getElementById('wl-drill-subtitle');
+  const tableEl  = document.getElementById('wl-drill-table');
+  if (!card || !_wlData) return;
+
+  const CAT_EMOJI = { Economy:'🚗', Compact:'🚙', SUV:'🛻', '4x4':'🏔️', Minivan:'🚐' };
+
+  // Filter models by category if set
+  const models = _wlData.models.filter(m => !_wlDrillCat || m.category === _wlDrillCat);
+
+  if (!models.length) { card.style.display = 'none'; return; }
+
+  if (_wlDrillComp) {
+    // Single-competitor drill: model rows vs that competitor
+    titleEl.textContent  = _wlDrillComp;
+    subEl.textContent    = (_wlDrillCat ? `${CAT_EMOJI[_wlDrillCat] || ''} ${_wlDrillCat} · ` : '') + 'model-by-model breakdown';
+
+    const rows = models
+      .map(m => ({ m, v: m.vs[_wlDrillComp] }))
+      .filter(({ v }) => v)
+      .sort((a, b) => b.v.margin_pct - a.v.margin_pct);
+
+    if (!rows.length) { card.style.display = 'none'; return; }
+
+    const outcomeColor = o => o === 'win' ? '#16a34a' : o === 'loss' ? '#dc2626' : '#6b7280';
+    const outcomeLabel = o => o === 'win' ? '✓ Cheaper' : o === 'loss' ? '✗ Pricier' : '≈ Tied';
+
+    tableEl.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;font-size:12.5px">
+        <thead><tr>
+          <th style="text-align:left;padding:9px 12px;border-bottom:1px solid var(--border);color:var(--text-dim);font-size:10.5px;text-transform:uppercase;letter-spacing:.08em">Model</th>
+          <th style="text-align:left;padding:9px 12px;border-bottom:1px solid var(--border);color:var(--text-dim);font-size:10.5px;text-transform:uppercase;letter-spacing:.08em">Category</th>
+          <th style="text-align:right;padding:9px 12px;border-bottom:1px solid var(--border);color:var(--text-dim);font-size:10.5px;text-transform:uppercase;letter-spacing:.08em">Blue</th>
+          <th style="text-align:right;padding:9px 12px;border-bottom:1px solid var(--border);color:var(--text-dim);font-size:10.5px;text-transform:uppercase;letter-spacing:.08em">${escHtml(_wlDrillComp)}</th>
+          <th style="text-align:center;padding:9px 12px;border-bottom:1px solid var(--border);color:var(--text-dim);font-size:10.5px;text-transform:uppercase;letter-spacing:.08em">Gap</th>
+          <th style="text-align:center;padding:9px 12px;border-bottom:1px solid var(--border);color:var(--text-dim);font-size:10.5px;text-transform:uppercase;letter-spacing:.08em">Result</th>
+        </tr></thead>
+        <tbody>
+          ${rows.map(({ m, v }, i) => `
+            <tr style="${i % 2 === 1 ? 'background:rgba(148,179,255,0.03)' : ''}">
+              <td style="padding:9px 12px;font-weight:600">${escHtml(m.canonical_name)}</td>
+              <td style="padding:9px 12px;color:var(--text-muted)">${CAT_EMOJI[m.category] || ''} ${m.category}</td>
+              <td style="padding:9px 12px;text-align:right;font-variant-numeric:tabular-nums">${formatISK(m.blue_price_isk)}</td>
+              <td style="padding:9px 12px;text-align:right;font-variant-numeric:tabular-nums">${formatISK(v.price_isk)}</td>
+              <td style="padding:9px 12px;text-align:center;font-weight:700;color:${outcomeColor(v.outcome)}">${v.margin_pct > 0 ? '+' : ''}${v.margin_pct}%</td>
+              <td style="padding:9px 12px;text-align:center;color:${outcomeColor(v.outcome)};font-weight:600">${outcomeLabel(v.outcome)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>`;
+  } else {
+    // Category drill: all models × all competitors for that category
+    titleEl.textContent = `${CAT_EMOJI[_wlDrillCat] || ''} ${_wlDrillCat || 'All'} — Model Overview`;
+    subEl.textContent   = `${models.length} model${models.length !== 1 ? 's' : ''} · competitive position vs all rivals`;
+
+    const comps = _wlData.competitors || [];
+
+    tableEl.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr>
+          <th style="text-align:left;padding:9px 12px;border-bottom:1px solid var(--border);color:var(--text-dim);font-size:10.5px;text-transform:uppercase;letter-spacing:.08em">Model</th>
+          <th style="text-align:right;padding:9px 12px;border-bottom:1px solid var(--border);color:var(--text-dim);font-size:10.5px;text-transform:uppercase;letter-spacing:.08em">Blue</th>
+          <th style="text-align:center;padding:9px 12px;border-bottom:1px solid var(--border);color:var(--text-dim);font-size:10.5px;text-transform:uppercase;letter-spacing:.08em">✓ Cheaper</th>
+          <th style="text-align:center;padding:9px 12px;border-bottom:1px solid var(--border);color:var(--text-dim);font-size:10.5px;text-transform:uppercase;letter-spacing:.08em">✗ Pricier</th>
+          <th style="text-align:right;padding:9px 12px;border-bottom:1px solid var(--border);color:var(--text-dim);font-size:10.5px;text-transform:uppercase;letter-spacing:.08em">Best Rival</th>
+          <th style="text-align:right;padding:9px 12px;border-bottom:1px solid var(--border);color:var(--text-dim);font-size:10.5px;text-transform:uppercase;letter-spacing:.08em">Gap</th>
+        </tr></thead>
+        <tbody>
+          ${models.map((m, i) => {
+            const entries = Object.entries(m.vs).filter(([, v]) => v && v.price_isk);
+            const wins    = entries.filter(([, v]) => v.outcome === 'win').length;
+            const losses  = entries.filter(([, v]) => v.outcome === 'loss').length;
+            const compPrices = entries.map(([, v]) => v.price_isk);
+            const bestRivalPrice = compPrices.length ? Math.min(...compPrices) : null;
+            const bestRivalName  = bestRivalPrice
+              ? (entries.find(([, v]) => v.price_isk === bestRivalPrice) || [])[0]
+              : null;
+            const gapPct = bestRivalPrice
+              ? ((m.blue_price_isk / bestRivalPrice - 1) * 100).toFixed(1)
+              : null;
+            const gapColor = gapPct == null ? 'var(--text-dim)'
+              : Number(gapPct) > 5  ? '#dc2626'
+              : Number(gapPct) < -5 ? '#16a34a'
+              : '#6b7280';
+            return `
+              <tr style="${i % 2 === 1 ? 'background:rgba(148,179,255,0.03)' : ''}">
+                <td style="padding:9px 12px;font-weight:600">${escHtml(m.canonical_name)}</td>
+                <td style="padding:9px 12px;text-align:right;font-variant-numeric:tabular-nums">${formatISK(m.blue_price_isk)}</td>
+                <td style="padding:9px 12px;text-align:center;color:#16a34a;font-weight:700">${wins || '—'}</td>
+                <td style="padding:9px 12px;text-align:center;color:${losses ? '#dc2626' : 'var(--text-dim)'};font-weight:700">${losses || '—'}</td>
+                <td style="padding:9px 12px;text-align:right;color:var(--text-muted);font-size:11px">${bestRivalName ? escHtml(shortName(bestRivalName)) + ' ' + formatISK(bestRivalPrice) : '—'}</td>
+                <td style="padding:9px 12px;text-align:right;font-weight:700;color:${gapColor}">${gapPct != null ? (Number(gapPct) > 0 ? '+' : '') + gapPct + '%' : '—'}</td>
+              </tr>`;
+          }).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  card.style.display = '';
+  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
 async function loadWinLoss(forceRefresh = false) {
   const loadingBar = document.getElementById('wl-loading-bar');
   const pabContent = document.getElementById('pab-content');
