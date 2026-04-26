@@ -1535,12 +1535,50 @@ function setRateSort(col) {
   renderRatesTable();
 }
 
+function renderFreshnessStrip() {
+  const strip = document.getElementById('rates-freshness-strip');
+  if (!strip || !state.rates.length) { if (strip) strip.style.display = 'none'; return; }
+
+  // Max scraped_at per competitor
+  const compLatest = {};
+  state.rates.forEach(r => {
+    if (!compLatest[r.competitor] || r.scraped_at > compLatest[r.competitor])
+      compLatest[r.competitor] = r.scraped_at;
+  });
+
+  // Blue first, then alphabetical
+  const sorted = Object.keys(compLatest).sort((a, b) => {
+    if (a === 'Blue Car Rental') return -1;
+    if (b === 'Blue Car Rental') return  1;
+    return a.localeCompare(b);
+  });
+
+  const shortN = name => name.replace(' Car Rental', '').replace(' Iceland', '');
+
+  strip.innerHTML = sorted.map(comp => {
+    const color = compColor(comp);
+    const age   = timeAgo(compLatest[comp]);
+    // Colour the age text amber/red if stale (>2h / >12h)
+    const ageMs = Date.now() - new Date(compLatest[comp]).getTime();
+    const ageColor = ageMs > 43200000 ? '#ef4444' : ageMs > 7200000 ? '#f59e0b' : 'var(--text-dim)';
+    return `<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;
+        background:var(--bg-raised,rgba(0,0,0,.04));border:1px solid var(--border);font-size:11px;white-space:nowrap">
+      <span style="width:7px;height:7px;border-radius:50%;background:${color};flex-shrink:0"></span>
+      <span style="font-weight:600;color:var(--text)">${escHtml(shortN(comp))}</span>
+      <span style="color:${ageColor}">${escHtml(age)}</span>
+    </span>`;
+  }).join('');
+  strip.style.display = 'flex';
+}
+
 function renderRatesTable() {
   const tbody = document.getElementById('rates-tbody');
   let rates = [...state.rates];
 
+  renderFreshnessStrip();
+
   if (!rates.length) {
-    tbody.innerHTML = `<tr><td colspan="8" class="empty-state" style="padding:40px;text-align:center;color:#6b7280">No rate data available. Click "Scrape Now" to fetch rates.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="empty-state" style="padding:40px;text-align:center;color:#6b7280">No rate data available. Click "Scrape Now" to fetch rates.</td></tr>`;
     return;
   }
 
@@ -1616,7 +1654,6 @@ function renderRatesTable() {
       <td>${formatISK(r._per_day)}/day</td>
       <td style="text-align:center;font-size:12px;font-weight:600">${deltaHtml}</td>
       <td><span class="badge badge-gray" style="white-space:nowrap">${escHtml(r.location)}</span></td>
-      <td style="color:#6b7280;font-size:12px">${timeAgo(r.scraped_at)}</td>
     </tr>`;
   }).join('');
 }
@@ -2103,8 +2140,56 @@ function renderRateChart() {
       pointBackgroundColor: color,
       pointRadius:      4,
       pointHoverRadius: 6,
+      order:            0,
     };
   });
+
+  // ── Ghost polygons (previous scrape) ──────────────────────────────────────
+  // Build prevCompCatMap from priceChanges which carries prev_price per model.
+  // Models with no price change reuse their current price (identical ghost).
+  // Only rendered when we have a baseline to compare against.
+  const prevCompCatMap = {};
+  if (state.priceChangesAvailable) {
+    rates.forEach(r => {
+      const days  = daysBetween(r.pickup_date, r.return_date);
+      const key   = `${r.competitor}::${r.location}::${r.canonical_name || r.car_model}`;
+      const chg   = state.priceChanges[key];
+      const prevISK   = chg ? chg.prev_price : r.price_isk;
+      const prevPerDay = Math.round(prevISK / days);
+      if (!prevCompCatMap[r.competitor]) prevCompCatMap[r.competitor] = {};
+      if (!prevCompCatMap[r.competitor][r.car_category]) prevCompCatMap[r.competitor][r.car_category] = [];
+      prevCompCatMap[r.competitor][r.car_category].push(prevPerDay);
+    });
+
+    // Check whether the ghost would be any different from the current (skip if identical)
+    const hasAnyDiff = Object.keys(state.priceChanges).length > 0;
+    if (hasAnyDiff) {
+      const ghostDatasets = competitors.map((comp, i) => {
+        const color   = compColor(comp, i);
+        const rawVals = CATEGORIES.map(cat => {
+          const arr = prevCompCatMap[comp]?.[cat];
+          if (!arr || !arr.length) return null;
+          return Math.round(arr.reduce((a, b) => a + b, 0) / arr.length);
+        });
+        return {
+          label:            `${shortLabel(comp)} (prev)`,
+          fullLabel:        `${comp} — previous scrape`,
+          data:             rawVals.map(v => v ?? 0),
+          _rawVals:         rawVals,
+          _isGhost:         true,
+          borderColor:      color + '55',
+          backgroundColor:  'transparent',
+          borderWidth:      1,
+          borderDash:       [5, 4],
+          pointRadius:      0,
+          pointHoverRadius: 0,
+          order:            1,   // render behind solid lines
+        };
+      });
+      // Prepend ghost datasets so they paint first (behind)
+      datasets.unshift(...ghostDatasets);
+    }
+  }
 
   if (state.rateChart) state.rateChart.destroy();
 
@@ -2122,15 +2207,25 @@ function renderRateChart() {
         legend: {
           display: true,
           position: 'right',
-          labels: { boxWidth: 12, font: { size: 11 }, padding: 10, color: labelColor },
+          labels: {
+            boxWidth: 12,
+            font: { size: 11 },
+            padding: 10,
+            color: labelColor,
+            filter: item => !item.text.includes('(prev)'),
+          },
         },
         tooltip: {
           callbacks: {
-            title: items => items[0].dataset.fullLabel,
+            title: items => {
+              const ds = items[0].dataset;
+              return ds._isGhost ? ds.fullLabel : ds.fullLabel;
+            },
             label: ctx => {
               const raw = ctx.dataset._rawVals[ctx.dataIndex];
-              if (raw == null) return `  ${CATEGORIES[ctx.dataIndex]}: no data`;
-              return `  ${CATEGORIES[ctx.dataIndex]}: ${formatISK(raw)}/day`;
+              const prefix = ctx.dataset._isGhost ? '  ↩ prev ' : '  ';
+              if (raw == null) return `${prefix}${CATEGORIES[ctx.dataIndex]}: no data`;
+              return `${prefix}${CATEGORIES[ctx.dataIndex]}: ${formatISK(raw)}/day`;
             },
           },
         },
@@ -2153,11 +2248,11 @@ function renderRateChart() {
     },
   });
 
-  // Render companion table
-  renderRadarTable(compCatMap, competitors, CATEGORIES);
+  // Render companion table (pass prev map for Δ indicators)
+  renderRadarTable(compCatMap, competitors, CATEGORIES, prevCompCatMap);
 }
 
-function renderRadarTable(compCatMap, competitors, CATEGORIES) {
+function renderRadarTable(compCatMap, competitors, CATEGORIES, prevCompCatMap = {}) {
   const container = document.getElementById('radar-table-container');
   if (!container) return;
 
@@ -2218,14 +2313,28 @@ function renderRadarTable(compCatMap, competitors, CATEGORIES) {
         cellStyle += 'color:var(--text);';
       }
       const k = Math.round(val / 1000);
-      html += `<td style="${cellStyle}" title="${formatISK(val)}/day">${k}k${badge}</td>`;
+
+      // Delta vs previous scrape
+      let deltaTag = '';
+      if (prevCompCatMap && prevCompCatMap[comp]?.[cat]?.length) {
+        const prevArr = prevCompCatMap[comp][cat];
+        const prevVal = Math.round(prevArr.reduce((a, b) => a + b, 0) / prevArr.length);
+        const diffPct = Math.round((val - prevVal) / prevVal * 100);
+        if (diffPct > 1) {
+          deltaTag = `<span style="font-size:9px;color:#ef4444;margin-left:2px">↑${diffPct}%</span>`;
+        } else if (diffPct < -1) {
+          deltaTag = `<span style="font-size:9px;color:#16a34a;margin-left:2px">↓${Math.abs(diffPct)}%</span>`;
+        }
+      }
+
+      html += `<td style="${cellStyle}" title="${formatISK(val)}/day">${k}k${badge}${deltaTag}</td>`;
     });
     html += '</tr>';
   });
 
   html += `</tbody>
     <tfoot>
-      <tr><td colspan="${CATEGORIES.length + 1}" style="padding:6px 8px 2px;font-size:10px;color:var(--text-dim)">ISK/day avg · <span style="color:#15803d">▼ cheapest</span> · <span style="color:#b91c1c">▲ priciest</span></td></tr>
+      <tr><td colspan="${CATEGORIES.length + 1}" style="padding:6px 8px 2px;font-size:10px;color:var(--text-dim)">ISK/day avg · <span style="color:#15803d">▼ cheapest</span> · <span style="color:#b91c1c">▲ priciest</span>${state.priceChangesAvailable ? ' · <span style="color:#16a34a">↓</span>/<span style="color:#ef4444">↑</span> vs prev scrape' : ''}</td></tr>
     </tfoot>
   </table>`;
 

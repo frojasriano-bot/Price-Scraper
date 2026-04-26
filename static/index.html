@@ -335,6 +335,8 @@
                 <span id="rates-source-badge" class="badge badge-gray">Mock Data</span>
               </div>
             </div>
+            <!-- Per-competitor data freshness badges -->
+            <div id="rates-freshness-strip" style="display:none;padding:10px 16px 4px;gap:6px;flex-wrap:wrap"></div>
             <div class="table-wrap">
               <table>
                 <thead>
@@ -346,7 +348,6 @@
                     <th class="sortable" onclick="setRateSort('per_day')">Per Day <span class="sort-icon" data-col="per_day"></span></th>
                     <th>Δ vs Prev</th>
                     <th class="sortable" onclick="setRateSort('location')">Location <span class="sort-icon" data-col="location"></span></th>
-                    <th>Last Scraped</th>
                   </tr>
                 </thead>
                 <tbody id="rates-tbody">
