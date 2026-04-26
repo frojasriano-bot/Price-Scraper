@@ -42,6 +42,8 @@ function toggleTheme() {
   const isDark = document.body.classList.toggle('dark-mode');
   document.getElementById('theme-icon').textContent = isDark ? '☀️' : '🌙';
   localStorage.setItem('theme', isDark ? 'dark' : 'light');
+  // Re-render radar chart so grid/label colours update
+  if (state.rates?.length) renderRateChart();
 }
 
 (function applyStoredTheme() {
