@@ -2193,6 +2193,19 @@ function renderRateChart() {
 
   if (state.rateChart) state.rateChart.destroy();
 
+  // Dynamic scale floor — zoom in to where the data actually lives.
+  // Collect all real (non-null, non-zero) values from solid datasets only.
+  const allDataVals = datasets
+    .filter(d => !d._isGhost)
+    .flatMap(d => d._rawVals.filter(v => v != null && v > 0));
+  const dataMin = allDataVals.length ? Math.min(...allDataVals) : 0;
+  const dataMax = allDataVals.length ? Math.max(...allDataVals) : 0;
+  // Floor = 70 % of min, snapped to nearest 1 000 ISK; only lift from 0 when
+  // the range is comfortably above it (avoids weird floors on mock/thin data).
+  const scaleFloor = dataMin > 3000
+    ? Math.floor(dataMin * 0.70 / 1000) * 1000
+    : 0;
+
   const isDark = document.body.classList.contains('dark-mode');
   const gridColor  = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
   const labelColor = isDark ? '#9ca3af' : '#374151';
@@ -2217,10 +2230,7 @@ function renderRateChart() {
         },
         tooltip: {
           callbacks: {
-            title: items => {
-              const ds = items[0].dataset;
-              return ds._isGhost ? ds.fullLabel : ds.fullLabel;
-            },
+            title: items => items[0].dataset.fullLabel,
             label: ctx => {
               const raw = ctx.dataset._rawVals[ctx.dataIndex];
               const prefix = ctx.dataset._isGhost ? '  ↩ prev ' : '  ';
@@ -2232,9 +2242,9 @@ function renderRateChart() {
       },
       scales: {
         r: {
-          suggestedMin: 0,
+          min: scaleFloor,
           ticks: {
-            callback: val => formatISK(val),
+            callback: val => val === scaleFloor ? '' : formatISK(val),
             font: { size: 10 },
             color: labelColor,
             backdropColor: 'transparent',
