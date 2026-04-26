@@ -312,8 +312,11 @@
                 <div class="card-subtitle">Average ISK/day per car category — each polygon is one competitor · larger = pricier on that axis</div>
               </div>
             </div>
-            <div class="chart-container" style="height:380px">
-              <canvas id="rate-chart"></canvas>
+            <div style="display:flex;gap:20px;align-items:flex-start;padding-bottom:8px">
+              <div style="flex:0 0 62%;min-width:0;height:380px;position:relative">
+                <canvas id="rate-chart"></canvas>
+              </div>
+              <div style="flex:1;min-width:0;align-self:center" id="radar-table-container"></div>
             </div>
           </div>
 

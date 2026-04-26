@@ -2152,6 +2152,84 @@ function renderRateChart() {
       },
     },
   });
+
+  // Render companion table
+  renderRadarTable(compCatMap, competitors, CATEGORIES);
+}
+
+function renderRadarTable(compCatMap, competitors, CATEGORIES) {
+  const container = document.getElementById('radar-table-container');
+  if (!container) return;
+
+  // Compute per-category min/max for colour coding
+  const catMin = {}, catMax = {};
+  CATEGORIES.forEach(cat => {
+    const vals = competitors.map(c => {
+      const arr = compCatMap[c]?.[cat];
+      return arr?.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
+    }).filter(v => v != null);
+    catMin[cat] = vals.length ? Math.min(...vals) : null;
+    catMax[cat] = vals.length ? Math.max(...vals) : null;
+  });
+
+  const shortLabel = name => {
+    if (name === 'Go Car Rental') return 'Go Car';
+    if (name === 'Go Iceland')    return 'Go Iceland';
+    return name.replace(' Car Rental', '').replace(' Iceland', '');
+  };
+
+  // Column headers
+  let html = `<table style="border-collapse:collapse;width:100%;font-size:11.5px">
+    <thead>
+      <tr>
+        <th style="text-align:left;padding:5px 8px;border-bottom:2px solid var(--border);white-space:nowrap;color:var(--text-dim);font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.08em">Competitor</th>
+        ${CATEGORIES.map(c => `<th style="text-align:right;padding:5px 6px;border-bottom:2px solid var(--border);color:var(--text-dim);font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.08em;white-space:nowrap">${c}</th>`).join('')}
+      </tr>
+    </thead><tbody>`;
+
+  competitors.forEach((comp, ci) => {
+    const color  = compColor(comp, ci);
+    const isBlue = comp === 'Blue Car Rental';
+    const rowBg  = isBlue ? 'background:rgba(37,99,235,.05)' : '';
+    html += `<tr style="${rowBg}">
+      <td style="padding:5px 8px;border-bottom:1px solid var(--border);white-space:nowrap">
+        <span style="display:inline-flex;align-items:center;gap:5px">
+          <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0"></span>
+          <span style="font-weight:${isBlue ? '700' : '500'};color:var(--text);font-size:11px">${escHtml(shortLabel(comp))}</span>
+        </span>
+      </td>`;
+
+    CATEGORIES.forEach(cat => {
+      const arr = compCatMap[comp]?.[cat];
+      const val = arr?.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
+      let cellStyle = 'text-align:right;padding:5px 6px;border-bottom:1px solid var(--border);font-variant-numeric:tabular-nums;';
+      let badge = '';
+      if (val == null) {
+        html += `<td style="${cellStyle}color:var(--text-dim)">—</td>`;
+        return;
+      }
+      if (val === catMin[cat] && catMin[cat] !== catMax[cat]) {
+        cellStyle += 'color:#15803d;font-weight:700;';
+        badge = ' <span style="font-size:9px;opacity:.7">▼</span>';
+      } else if (val === catMax[cat] && catMin[cat] !== catMax[cat]) {
+        cellStyle += 'color:#b91c1c;font-weight:700;';
+        badge = ' <span style="font-size:9px;opacity:.7">▲</span>';
+      } else {
+        cellStyle += 'color:var(--text);';
+      }
+      const k = Math.round(val / 1000);
+      html += `<td style="${cellStyle}" title="${formatISK(val)}/day">${k}k${badge}</td>`;
+    });
+    html += '</tr>';
+  });
+
+  html += `</tbody>
+    <tfoot>
+      <tr><td colspan="${CATEGORIES.length + 1}" style="padding:6px 8px 2px;font-size:10px;color:var(--text-dim)">ISK/day avg · <span style="color:#15803d">▼ cheapest</span> · <span style="color:#b91c1c">▲ priciest</span></td></tr>
+    </tfoot>
+  </table>`;
+
+  container.innerHTML = html;
 }
 
 async function triggerScrape() {
