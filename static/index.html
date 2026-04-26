@@ -308,11 +308,11 @@
           <div class="card">
             <div class="card-header">
               <div>
-                <div class="card-title">Price Comparison</div>
-                <div class="card-subtitle">Average total rental price across all categories</div>
+                <div class="card-title">Competitive Radar</div>
+                <div class="card-subtitle">Average ISK/day per car category — each polygon is one competitor · larger = pricier on that axis</div>
               </div>
             </div>
-            <div class="chart-container" style="height:260px">
+            <div class="chart-container" style="height:380px">
               <canvas id="rate-chart"></canvas>
             </div>
           </div>
@@ -595,12 +595,16 @@
             <div class="card-header">
               <div>
                 <div class="card-title">Season Price Summary</div>
-                <div class="card-subtitle">Average per-day ISK across all locations and categories</div>
+                <div class="card-subtitle" id="seasonal-summary-subtitle">Average per-day ISK across all locations and categories</div>
               </div>
-              <button class="btn btn-secondary btn-sm" onclick="exportSeasonalCSV()" title="Export seasonal summary to CSV">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                Export CSV
-              </button>
+              <div style="display:flex;gap:6px;align-items:center">
+                <button class="btn btn-secondary btn-sm view-toggle active" id="seasonal-view-comp" onclick="setSeasonalView('comp')">Competitors</button>
+                <button class="btn btn-secondary btn-sm view-toggle" id="seasonal-view-cat" onclick="setSeasonalView('cat')">By Category</button>
+                <button class="btn btn-secondary btn-sm" onclick="exportSeasonalCSV()" title="Export seasonal summary to CSV">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  CSV
+                </button>
+              </div>
             </div>
             <div class="table-wrap">
               <table id="seasonal-table">
@@ -621,10 +625,10 @@
             </div>
           </div>
 
-          <!-- Category season summary table -->
-          <div class="card" id="seasonal-category-card" style="margin-top:16px">
+          <!-- Category season summary (toggled by setSeasonalView) -->
+          <div class="card" id="seasonal-category-card" style="display:none;margin-top:0">
             <div class="card-header">
-              <div class="card-title">Season Price Summary by Category</div>
+              <div class="card-title">Season Price by Category</div>
               <div class="card-subtitle">Average market per-day ISK per car category (all competitors combined)</div>
             </div>
             <div class="table-wrap">
@@ -1072,6 +1076,10 @@
               </select>
             </div>
             <div id="fleet-sold-out-body" style="padding:0 16px 16px"></div>
+            <div id="fleet-absence-section" style="display:none;border-top:1px solid var(--border);padding:12px 16px 16px">
+              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-dim);margin-bottom:10px">Inferred Signals — Hertz · Avis · Holdur <span style="font-weight:400">(model absent from scrape results)</span></div>
+              <div id="fleet-absence-body" style="overflow-x:auto"></div>
+            </div>
           </div>
 
           <!-- Time-series chart -->
@@ -1114,16 +1122,7 @@
             </div>
           </div>
 
-          <!-- Absence-inferred alerts for Hertz/Avis/Holdur (Option 3) -->
-          <div class="card" id="fleet-absence-card" style="display:none;margin-top:16px">
-            <div class="card-header">
-              <div>
-                <div class="card-title">Inferred Sold-Out Signals</div>
-                <div class="card-subtitle">Hertz, Avis, Holdur — models absent from scrape results for a given month (weaker signal)</div>
-              </div>
-            </div>
-            <div id="fleet-absence-body" style="overflow-x:auto"></div>
-          </div>
+          <!-- Inferred signals: merged into sold-out card via JS divider -->
 
           <!-- Empty/no-data state -->
           <div id="fleet-empty" style="display:none;padding:60px 40px;text-align:center;color:var(--text-muted)">
@@ -1702,6 +1701,17 @@
             </div>
           </div>
 
+          <!-- Zero-Excess Package Comparison (merged from Deductibles tab) -->
+          <div class="card" style="margin-top:16px">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Zero-Excess Package Comparison</div>
+                <div class="card-subtitle">Daily price to eliminate all deductibles, by competitor</div>
+              </div>
+            </div>
+            <div id="zero-excess-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;padding:4px 16px 16px"></div>
+          </div>
+
           <!-- Review history -->
           <div class="card" style="margin-top:16px">
             <div class="card-header">
@@ -1747,13 +1757,6 @@
             </div>
           </div>
 
-          <div class="card" style="margin-top:16px">
-            <div class="card-header">
-              <div class="card-title">Zero-Excess Package Comparison</div>
-              <div class="card-subtitle">Daily price to eliminate all deductibles</div>
-            </div>
-            <div id="zero-excess-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;padding:4px 0"></div>
-          </div>
         </div>
 
         <!-- Disclaimer -->

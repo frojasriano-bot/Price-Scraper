@@ -428,98 +428,39 @@ async function refreshAllData() {
   btn.disabled = true;
   btn.style.opacity = '0.6';
   btn.style.cursor  = 'not-allowed';
+  msgEl.innerHTML = '<span style="margin-right:6px">⏳</span>Scraping latest rates from all competitors…';
 
-  // Full data refresh sequence — order matters (rates before alerts so
-  // alerts fire against fresh data; fleet calendar last as it's slowest)
-  const steps = [
-    {
-      label: 'Scraping current rates…',
-      url:   '/api/rates/scrape',
-      method: 'POST',
-      countField: ['scraped'],
-    },
-    {
-      label: 'Scraping 12-month seasonal anchors…',
-      url:   '/api/rates/scrape-seasonal',
-      method: 'POST',
-      countField: ['scraped'],
-    },
-    {
-      label: 'Scraping 26-week forward horizon…',
-      url:   '/api/rates/scrape-horizon',
-      method: 'POST',
-      countField: ['scraped'],
-    },
-    {
-      label: 'Polling near-term fleet availability…',
-      url:   '/api/fleet/poll',
-      method: 'POST',
-      countField: ['polled'],
-    },
-    {
-      label: 'Running 12-month fleet calendar sweep…',
-      url:   '/api/fleet/calendar/poll',
-      method: 'POST',
-      countField: ['calendar'],
-    },
-    {
-      label: 'Checking price alerts…',
-      url:   '/api/alerts/check',
-      method: 'POST',
-      countField: [],   // fire-and-forget; don't add to rate count
-    },
-  ];
+  // Use the current filter dates if set, otherwise use defaults
+  const pickup  = document.getElementById('filter-pickup')?.value  || defaultPickup();
+  const ret     = document.getElementById('filter-return')?.value  || defaultReturn();
+  const loc     = document.getElementById('filter-location')?.value || '';
+  const params  = new URLSearchParams({ pickup_date: pickup, return_date: ret });
+  if (loc) params.set('location', loc);
 
-  let totalRates = 0;
-  const errors   = [];
+  try {
+    const data = await apiFetch(`/api/rates/scrape?${params}`, { method: 'POST' }, 120000);
+    const n    = data.scraped ?? data.total_rates ?? 0;
+    msgEl.innerHTML = `<span style="margin-right:6px">✅</span>Scraped ${n} rate records. Reloading…`;
+    showToast(`Rates refreshed — ${n} records from ${data.competitors || '?'} competitors.`, 'success');
 
-  for (let i = 0; i < steps.length; i++) {
-    const step = steps[i];
-    msgEl.innerHTML =
-      `<span style="margin-right:6px">⏳</span>${step.label} <span style="opacity:.6">(${i + 1}/${steps.length})</span>`;
+    // Fire-and-forget alerts check (non-blocking)
+    apiFetch('/api/alerts/check', { method: 'POST' }, 20000).catch(() => {});
 
-    try {
-      const res = await fetch(step.url, {
-        method:  step.method,
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({}),
-      });
-      if (res.ok) {
-        const data = await res.json().catch(() => ({}));
-        for (const field of (step.countField || [])) {
-          totalRates += data[field] || 0;
-        }
-      } else {
-        errors.push(`step ${i + 1} (${res.status})`);
-      }
-    } catch (err) {
-      errors.push(`step ${i + 1} (network error)`);
-      console.warn(`refreshAllData step ${i + 1} failed:`, err);
-      // Always continue — a single scraper failure shouldn't block the rest
-    }
+    setTimeout(() => {
+      _staleDismissed = true;
+      const banner = document.getElementById('stale-banner');
+      if (banner) banner.style.display = 'none';
+      loadRates();
+      checkDataFreshness();
+    }, 1500);
+  } catch (e) {
+    msgEl.innerHTML = `<span style="margin-right:6px">❌</span>Scrape failed: ${escHtml(e.message)}`;
+    showToast(`Refresh failed: ${e.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.style.opacity = '';
+    btn.style.cursor  = '';
   }
-
-  // Re-enable button
-  btn.disabled = false;
-  btn.style.opacity = '';
-  btn.style.cursor  = '';
-
-  // Update topbar freshness badge immediately
-  checkDataFreshness();
-
-  const rateMsg  = totalRates ? `${totalRates.toLocaleString()} rate records updated.` : 'Data refreshed.';
-  const errorMsg = errors.length ? ` (${errors.length} step(s) had errors — check console)` : '';
-
-  msgEl.innerHTML = `<span style="margin-right:6px">✅</span>All scrapers complete! ${rateMsg}${errorMsg}`;
-  showToast(`Full refresh done. ${rateMsg}`, 'success');
-
-  // Dismiss banner after 4 s and reload active view
-  setTimeout(() => {
-    _staleDismissed = true;
-    const banner = document.getElementById('stale-banner');
-    if (banner) banner.style.display = 'none';
-    loadCurrentView();
-  }, 4000);
 }
 
 /** Reload data for the currently visible view */
@@ -932,6 +873,19 @@ const COMP_PALETTE = [
 
 function compColor(name, fallbackIndex = 0) {
   return BRAND_COLORS[name] || COMP_PALETTE[fallbackIndex % COMP_PALETTE.length];
+}
+
+function setSeasonalView(view) {
+  document.getElementById('seasonal-view-comp')?.classList.toggle('active', view === 'comp');
+  document.getElementById('seasonal-view-cat')?.classList.toggle('active', view === 'cat');
+  const compCard = document.getElementById('seasonal-summary-card');
+  const catCard  = document.getElementById('seasonal-category-card');
+  const subtitle = document.getElementById('seasonal-summary-subtitle');
+  if (compCard) compCard.style.display = view === 'comp' ? '' : 'none';
+  if (catCard)  catCard.style.display  = view === 'cat'  ? '' : 'none';
+  if (subtitle) subtitle.textContent   = view === 'cat'
+    ? 'Average market per-day ISK per car category (all competitors combined)'
+    : 'Average per-day ISK across all locations and categories';
 }
 
 async function loadSeasonal(force = false) {
@@ -2099,66 +2053,99 @@ function renderRateChart() {
   const rates = state.rates;
   if (!rates.length) return;
 
-  // Group by competitor, average price
-  const competitorMap = {};
+  const CATEGORIES = ['Economy', 'Compact', 'SUV', '4x4', 'Minivan'];
+
+  // Compute ISK/day for each rate
+  function daysBetween(a, b) {
+    return Math.max(1, (new Date(b) - new Date(a)) / 86400000);
+  }
+
+  // Build per-competitor, per-category price/day buckets
+  const compCatMap = {};
   rates.forEach(r => {
-    if (!competitorMap[r.competitor]) competitorMap[r.competitor] = [];
-    competitorMap[r.competitor].push(r.price_isk);
+    const days = daysBetween(r.pickup_date, r.return_date);
+    const perDay = Math.round(r.price_isk / days);
+    if (!compCatMap[r.competitor]) compCatMap[r.competitor] = {};
+    if (!compCatMap[r.competitor][r.car_category]) compCatMap[r.competitor][r.car_category] = [];
+    compCatMap[r.competitor][r.car_category].push(perDay);
   });
 
-  const fullLabels = Object.keys(competitorMap);
-  // Shorten labels for the x-axis — keep Go Car vs Go Iceland distinct
+  // Blue first, then alphabetical
+  const competitors = Object.keys(compCatMap).sort((a, b) => {
+    if (a === 'Blue Car Rental') return -1;
+    if (b === 'Blue Car Rental') return  1;
+    return a.localeCompare(b);
+  });
+
   const shortLabel = name => {
     if (name === 'Go Car Rental') return 'Go Car';
     if (name === 'Go Iceland')    return 'Go Iceland';
     return name.replace(' Car Rental', '').replace(' Iceland', '');
   };
-  const labels = fullLabels.map(shortLabel);
-  const data = fullLabels.map(c => Math.round(
-    competitorMap[c].reduce((a, b) => a + b, 0) / competitorMap[c].length
-  ));
 
-  const colors = fullLabels.map((name, i) => compColor(name, i));
+  const datasets = competitors.map((comp, i) => {
+    const color = compColor(comp, i);
+    const rawVals = CATEGORIES.map(cat => {
+      const arr = compCatMap[comp][cat];
+      if (!arr || !arr.length) return null;
+      return Math.round(arr.reduce((a, b) => a + b, 0) / arr.length);
+    });
+    return {
+      label:            shortLabel(comp),
+      fullLabel:        comp,
+      data:             rawVals.map(v => v ?? 0),
+      _rawVals:         rawVals,
+      borderColor:      color,
+      backgroundColor:  color + '1a',
+      borderWidth:      comp === 'Blue Car Rental' ? 3 : 1.5,
+      pointBackgroundColor: color,
+      pointRadius:      4,
+      pointHoverRadius: 6,
+    };
+  });
 
   if (state.rateChart) state.rateChart.destroy();
 
+  const isDark = document.body.classList.contains('dark-mode');
+  const gridColor  = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
+  const labelColor = isDark ? '#9ca3af' : '#374151';
+
   state.rateChart = new Chart(canvas, {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [{
-        label: 'Avg. Price (ISK)',
-        data,
-        backgroundColor: colors,
-        borderRadius: 6,
-        borderSkipped: false,
-      }],
-    },
+    type: 'radar',
+    data: { labels: CATEGORIES, datasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { display: false },
+        legend: {
+          display: true,
+          position: 'right',
+          labels: { boxWidth: 12, font: { size: 11 }, padding: 10, color: labelColor },
+        },
         tooltip: {
           callbacks: {
-            // Show full name in tooltip
-            title: items => fullLabels[items[0].dataIndex],
-            label: ctx => `  Avg: ${formatISK(ctx.raw)}`,
+            title: items => items[0].dataset.fullLabel,
+            label: ctx => {
+              const raw = ctx.dataset._rawVals[ctx.dataIndex];
+              if (raw == null) return `  ${CATEGORIES[ctx.dataIndex]}: no data`;
+              return `  ${CATEGORIES[ctx.dataIndex]}: ${formatISK(raw)}/day`;
+            },
           },
         },
       },
       scales: {
-        y: {
-          beginAtZero: false,
+        r: {
+          suggestedMin: 0,
           ticks: {
             callback: val => formatISK(val),
-            font: { size: 11 },
+            font: { size: 10 },
+            color: labelColor,
+            backdropColor: 'transparent',
+            maxTicksLimit: 5,
           },
-          grid: { color: '#f3f4f6' },
-        },
-        x: {
-          ticks: { font: { size: 12 } },
-          grid: { display: false },
+          grid:        { color: gridColor },
+          angleLines:  { color: gridColor },
+          pointLabels: { font: { size: 12, weight: '600' }, color: labelColor },
         },
       },
     },
@@ -5706,10 +5693,10 @@ async function loadFleetPressure() {
   emptyEl.style.display   = 'none';
   const soldOutCard  = document.getElementById('fleet-sold-out-card');
   const calendarCard = document.getElementById('fleet-calendar-card');
-  const absenceCard  = document.getElementById('fleet-absence-card');
-  if (soldOutCard)  soldOutCard.style.display  = 'none';
-  if (calendarCard) calendarCard.style.display = 'none';
-  if (absenceCard)  absenceCard.style.display  = 'none';
+  const absenceSection = document.getElementById('fleet-absence-section');
+  if (soldOutCard)    soldOutCard.style.display    = 'none';
+  if (calendarCard)   calendarCard.style.display   = 'none';
+  if (absenceSection) absenceSection.style.display = 'none';
 
   try {
     const days   = document.getElementById('fleet-days')?.value   || 30;
@@ -6200,9 +6187,9 @@ function showCalendarDetail(competitor, month) {
 // ── Option 3: Absence-inferred alerts ─────────────────────────────────────
 
 function renderFleetAbsence(records) {
-  const card = document.getElementById('fleet-absence-card');
-  const body = document.getElementById('fleet-absence-body');
-  if (!card || !records.length) { if (card) card.style.display = 'none'; return; }
+  const section = document.getElementById('fleet-absence-section');
+  const body    = document.getElementById('fleet-absence-body');
+  if (!section || !records.length) { if (section) section.style.display = 'none'; return; }
 
   // Group by competitor → pickup_month → car_name
   const byComp = {};
@@ -6261,8 +6248,10 @@ function renderFleetAbsence(records) {
   });
 
   html += '</tbody></table>';
+  // Remove the disclaimer row (now shown in section header)
+  html = html.replace(/<div style="padding:10px 16px 6px.*?<\/div>\s*/s, '');
   body.innerHTML = html;
-  card.style.display = '';
+  section.style.display = '';
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────
