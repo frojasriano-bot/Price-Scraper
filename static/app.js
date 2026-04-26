@@ -2021,16 +2021,8 @@ function updateStatusTiles(scraperStatus) {
     alertsCard.className       = 'stat-card stat-card--status status-green';
   }
 
-  // ── Shared: source badge + history dropdown ──────────────────────────────
+  // ── Shared: source badge ─────────────────────────────────────────────────
   setSourceBadge('rates-source-badge', state.ratesSource);
-
-  const histComp = document.getElementById('history-competitor');
-  if (histComp && rates.length) {
-    const current = histComp.value;
-    const comps = Array.from(new Set(rates.map(r => r.competitor))).sort();
-    histComp.innerHTML = '<option value="">All Competitors</option>' +
-      comps.map(c => `<option value="${c}"${c === current ? ' selected' : ''}>${c}</option>`).join('');
-  }
 }
 
 function renderExecutiveSummary() {
