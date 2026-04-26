@@ -1961,32 +1961,46 @@ function updateStatusTiles(scraperStatus) {
     }
   }
 
-  // ── Tile 3: Blue vs Market · Economy ────────────────────────────────────
-  const bluePctEl    = document.getElementById('tile-blue-pct');
-  const blueDetailEl = document.getElementById('tile-blue-detail');
-  const blueDot      = document.getElementById('tile-blue-dot');
-  const blueCard     = document.getElementById('tile-blue-pos');
-  const econRates    = rates.filter(r => r.car_category === 'Economy');
-  const blueEcon     = econRates.filter(r => r.competitor === 'Blue Rental');
-  const compEcon     = econRates.filter(r => r.competitor !== 'Blue Rental');
-  if (blueEcon.length && compEcon.length) {
-    const blueAvg = blueEcon.reduce((s, r) => s + r.price_isk, 0) / blueEcon.length;
-    const compAvg = compEcon.reduce((s, r) => s + r.price_isk, 0) / compEcon.length;
-    const diff    = ((blueAvg - compAvg) / compAvg) * 100;
-    const sign    = diff > 0 ? '+' : '';
-    bluePctEl.textContent    = `${sign}${diff.toFixed(1)}%`;
-    blueDetailEl.textContent = diff < 0
-      ? `Blue is cheaper by ${Math.abs(diff).toFixed(1)}%`
-      : diff > 0
-        ? `Blue is ${diff.toFixed(1)}% above market`
-        : 'Blue matches market';
-    const isWinning = diff <= 0;
-    blueDot.className  = `status-dot ${isWinning ? 'green' : diff > 10 ? 'red' : 'amber'}`;
-    blueCard.className = `stat-card stat-card--status ${isWinning ? 'status-green' : diff > 10 ? 'status-red' : 'status-amber'}`;
-  } else {
-    bluePctEl.textContent    = '—';
-    blueDetailEl.textContent = 'Need Economy rates to compare';
+  // ── Tile 3: Last Runs ────────────────────────────────────────────────────
+  const blueDot  = document.getElementById('tile-blue-dot');
+  const blueCard = document.getElementById('tile-blue-pos');
+  const lastRuns = scraperStatus?.last_runs || {};
+
+  function _fmtRunAge(isoStr) {
+    if (!isoStr) return '—';
+    const ageMin = Math.round((Date.now() - new Date(isoStr).getTime()) / 60000);
+    if (ageMin < 60)        return `${ageMin}m ago`;
+    if (ageMin < 1440)      return `${Math.round(ageMin / 60)}h ago`;
+    return `${Math.round(ageMin / 1440)}d ago`;
   }
+
+  const dailyRun    = lastRuns['manual']   || lastRuns['daily']    || null;
+  const horizonRun  = lastRuns['horizon']  || null;
+  const seasonalRun = lastRuns['seasonal'] || null;
+
+  const dailyEl    = document.getElementById('tile-run-daily');
+  const horizonEl  = document.getElementById('tile-run-horizon');
+  const seasonalEl = document.getElementById('tile-run-seasonal');
+
+  function _runRow(label, run) {
+    const age = _fmtRunAge(run?.at);
+    let rateStr = '';
+    if (run?.rates) {
+      const n = run.rates;
+      rateStr = ` · ${n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k' : n}`;
+    }
+    return `<span>${label}</span><span>${age}${rateStr}</span>`;
+  }
+  if (dailyEl)    dailyEl.innerHTML    = _runRow('Daily',    dailyRun);
+  if (horizonEl)  horizonEl.innerHTML  = _runRow('Horizon',  horizonRun);
+  if (seasonalEl) seasonalEl.innerHTML = _runRow('Seasonal', seasonalRun);
+
+  const anyStale = [dailyRun, horizonRun, seasonalRun].some(r => {
+    if (!r?.at) return true;
+    return (Date.now() - new Date(r.at).getTime()) > 48 * 3600000;
+  });
+  blueDot.className  = `status-dot ${anyStale ? 'amber' : 'green'}`;
+  blueCard.className = `stat-card stat-card--status ${anyStale ? 'status-amber' : 'status-green'}`;
 
   // ── Tile 4: Price Alerts ─────────────────────────────────────────────────
   const alertsValEl    = document.getElementById('tile-alerts-val');

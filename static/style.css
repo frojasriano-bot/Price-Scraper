@@ -507,6 +507,14 @@ body.dark-mode .topbar { background: rgba(9,18,48,0.75); }
   line-height: 1.3;
 }
 
+.tile-run-row {
+  font-family: var(--mono);
+  font-size: 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 /* Competitor summary mini-cards (booking window view) */
 .comp-summary-card {
   background: var(--card-bg);

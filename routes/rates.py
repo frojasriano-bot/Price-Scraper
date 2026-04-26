@@ -1129,6 +1129,17 @@ async def get_scraper_status():
         ) as cursor:
             log_rows = await cursor.fetchall()
 
+        # Latest run per trigger type — MAX(scraped_at) in SQLite pulls columns from that row
+        async with db.execute(
+            "SELECT trigger, MAX(scraped_at) as last_run, total_rates, competitors "
+            "FROM scrape_log GROUP BY trigger"
+        ) as cursor:
+            trigger_rows = await cursor.fetchall()
+    last_runs = {
+        r["trigger"]: {"at": r["last_run"], "rates": r["total_rates"], "competitors": r["competitors"]}
+        for r in trigger_rows
+    }
+
     live_set         = {r["competitor"] for r in rate_rows if r["row_count"] > 0}
     last_scraped_map = {r["competitor"]: r["last_scraped"] for r in rate_rows if r["last_scraped"]}
 
@@ -1173,7 +1184,7 @@ async def get_scraper_status():
 
     # Summary flag for the header badge
     unstable = [s["name"] for s in scrapers if s["reliability"] == "unstable"]
-    return {"scrapers": scrapers, "unstable_competitors": unstable}
+    return {"scrapers": scrapers, "unstable_competitors": unstable, "last_runs": last_runs}
 
 
 @router.get("/car-catalog")
