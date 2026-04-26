@@ -15,7 +15,8 @@ Confirmed in live testing (2026-04-21): 32 vehicles returned, prices in ISK.
 
 Location IDs (from JS bundle):
   4 = Keflavik Airport
-  3 = Hotel in Keflavik (treated as Reykjavik fallback)
+
+Go Iceland operates from Keflavik Airport only. Reykjavik is not supported.
 """
 
 from __future__ import annotations
@@ -31,7 +32,6 @@ GOICELAND_API_BASE = "https://goiceland-backend.orn-d86.workers.dev"
 
 GOICELAND_LOCATION_IDS: dict[str, int | None] = {
     "Keflavik Airport": 4,
-    "Reykjavik":        3,   # "Hotel in Keflavik" — nearest alternative
 }
 
 # ACRISS first letter → category (same mapping as blue_rental.py)
