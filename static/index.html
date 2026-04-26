@@ -1896,6 +1896,10 @@
 
               <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-top:16px;margin-bottom:4px;padding-bottom:4px;border-bottom:1px solid var(--border)">NOW</div>
               <dl style="margin:0">
+                <dt style="font-weight:600;margin-top:10px">Status Tiles</dt>
+                <dd style="margin:0 0 4px 0;color:var(--text-muted)">Four live operational tiles at the top of the dashboard: <strong>Last Scrape</strong> — age of the most recent rate snapshot with rate count; <strong>Scraper Health</strong> — how many of the 8 scrapers returned live data (amber if any are unstable); <strong>Last Runs</strong> — timestamp and rate count for the last Daily, Horizon, and Seasonal scrape runs; <strong>Price Alerts</strong> — count of models with detected price moves since the baseline. An amber warning strip appears below the filters if any scraper has been returning errors in recent runs.</dd>
+                <dt style="font-weight:600;margin-top:10px">Competitive Radar</dt>
+                <dd style="margin:0 0 4px 0;color:var(--text-muted)">Spider chart — one coloured polygon per competitor across five axes (Economy, Compact, SUV, 4x4, Minivan). Distance from centre = average ISK/day. Blue is rendered with a bold border. A companion table on the right shows exact k-ISK averages with ▼ green (cheapest) and ▲ red (priciest) per category column.</dd>
                 <dt style="font-weight:600;margin-top:10px">List View</dt>
                 <dd style="margin:0 0 4px 0;color:var(--text-muted)">All live rates in a sortable table. Change the date picker to trigger a fresh scrape. The Δ column shows price movement since the previous scrape.</dd>
                 <dt style="font-weight:600;margin-top:10px">Car Model Matrix</dt>
@@ -1918,7 +1922,7 @@
               <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-top:16px;margin-bottom:4px;padding-bottom:4px;border-bottom:1px solid var(--border)">SEASONAL</div>
               <dl style="margin:0">
                 <dt style="font-weight:600;margin-top:10px">Seasonal Analysis</dt>
-                <dd style="margin:0 0 4px 0;color:var(--text-muted)">Per-day pricing across the next 12 months (pickup on the 15th, 7-night stay). Three modes: line chart; <strong>History</strong> (how one month's price evolved across scrapes — clearest yield-management signal); and <strong>Gap Map</strong> — a heatmap showing Blue's price vs each individual competitor by model × month. Green = Blue charges more than that rival, red = Blue undercuts that rival. Switch granularity between By Category (5×12 grid) and By Model (per-model, per-competitor rows).</dd>
+                <dd style="margin:0 0 4px 0;color:var(--text-muted)">Per-day pricing across the next 12 months (pickup on the 15th, 7-night stay). Three modes: line chart; <strong>History</strong> (how one month's price evolved across scrapes — clearest yield-management signal); and <strong>Gap Map</strong> — a heatmap showing Blue's price vs each individual competitor by model × month. The Season Price Summary card has a <strong>Competitors / By Category</strong> toggle in the header — Competitors shows all rivals side-by-side across Low / Shoulder / High / Peak seasons; By Category shows the market average per car class across the same seasons.</dd>
               </dl>
 
               <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-top:16px;margin-bottom:4px;padding-bottom:4px;border-bottom:1px solid var(--border)">FORWARD</div>
@@ -1931,21 +1935,21 @@
 
               <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-top:16px;margin-bottom:4px;padding-bottom:4px;border-bottom:1px solid var(--border)">COMPETITIVE</div>
               <dl style="margin:0">
-                <dt style="font-weight:600;margin-top:10px">Win/Loss Scorecard</dt>
+                <dt style="font-weight:600;margin-top:10px">Pricing Actions (Win/Loss Scorecard)</dt>
                 <dd style="margin:0 0 4px 0;color:var(--text-muted)">
                   Head-to-head comparison of Blue's current prices vs every competitor, per canonical model (threshold ±5% by default). Four layers:<br>
-                  • <strong>Best Value Models</strong> — top 5 models where Blue has the strongest competitive advantage.<br>
-                  • <strong>Needs Attention</strong> — models where Blue is undercut by 2 or more competitors simultaneously.<br>
-                  • <strong>Win Rate by Category</strong> — heatmap grid (competitor × category); click any cell to drill into individual model comparisons.<br>
-                  • <strong>Price Scatter</strong> — Blue price vs competitor market average per model; dots below the diagonal = Blue is cheaper.
+                  • <strong>Risk Alerts</strong> — models where Blue is being undercut by 2+ competitors simultaneously.<br>
+                  • <strong>Raise Opportunities</strong> — models where Blue has strong pricing room above market.<br>
+                  • <strong>Category Position</strong> — per-category win rate strip.<br>
+                  • <strong>Price Scatter</strong> — Blue price vs competitor market average per model; dots below the diagonal = Blue is cheaper.<br>
+                  Use the <strong>Export CSV</strong> button to download per-model ISK/day vs every competitor with outcome labels (Blue cheaper / pricier / tied + margin %).
                 </dd>
                 <dt style="font-weight:600;margin-top:10px">Fleet Pressure</dt>
                 <dd style="margin:0 0 4px 0;color:var(--text-muted)">
                   Three layers of fleet intelligence covering all 8 competitors:<br>
                   • <strong>Availability Snapshot</strong> — Blue, Lotus, Lava &amp; Go Car Rental polled for real-time class availability across 1w / 2w / 4w forward windows. A red badge shows how many models are sold out; click <strong>Poll Now</strong> for an immediate refresh (auto-runs 09:00 + 21:00).<br>
-                  • <strong>Sold-Out Models panel</strong> — named list of every sold-out model per competitor and window, shown as red pills. Filter by window (1w / 2w / 4w).<br>
-                  • <strong>12-Month Calendar heatmap</strong> — competitor × month grid colour-coded by availability % (green = open, red = squeezed). Click any cell to see the sold-out model list for that month. Click <strong>Sweep 12 Months</strong> to refresh (auto-runs every Monday 08:30).<br>
-                  • <strong>Absence Alerts panel</strong> — inferred sold-out signals for Hertz, Avis &amp; Holdur. These scrapers only return available cars; if a model from the known catalog is missing for a given month, it's flagged as absent. Labelled as "weaker / inferred signal" — use alongside rate data for confirmation.
+                  • <strong>Sold-Out Models</strong> — named list of every sold-out model per competitor and window, shown as red pills. Filter by window (1w / 2w / 4w). Below a divider in the same card, <strong>Inferred Signals</strong> show Hertz, Avis &amp; Holdur models absent from scrape results for a given month — a weaker signal, clearly labelled as inferred.<br>
+                  • <strong>12-Month Calendar heatmap</strong> — competitor × month grid colour-coded by availability % (green = open, red = squeezed). Click any cell to see the sold-out model list for that month. Click <strong>Sweep 12 Months</strong> to refresh (auto-runs every Monday 08:30).
                 </dd>
               </dl>
             </div>

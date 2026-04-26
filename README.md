@@ -10,9 +10,9 @@ FastAPI backend · SQLite · APScheduler · Vanilla JS SPA · Chart.js
 
 | Tab | Description |
 |-----|-------------|
-| **Rate Intelligence** | Executive summary banner, live competitor rates, sortable table with per-competitor price-change arrows, bar chart, cross-competitor matrix, price history charts, seasonal analysis with history + gap map modes (category and model granularity), forward rate horizon (3M / 6M / 12M), price change timeline, booking window analysis, win/loss scorecard, CSV export |
-| **Insurance Comparison** | Coverage matrix, per-category zero-excess pricing (editable inline), company package cards, deductible comparison, Trigger Research + Mark Reviewed workflow with audit log |
-| **SEO Rank Tracker** | Keyword ranking history with previous rank + change delta via SerpAPI; 10 Iceland-specific keywords pre-seeded |
+| **Rate Intelligence** | Four live status tiles (Last Scrape, Scraper Health, Last Runs, Price Alerts); executive summary banner; sortable rate table; **Competitive Radar** spider chart (competitor polygons across 5 category axes, ISK/day) + companion summary table; cross-competitor matrix; price history; seasonal analysis; forward horizon; price changes; booking window; win/loss scorecard with CSV export |
+| **Insurance Comparison** | Coverage matrix, per-category zero-excess pricing (editable inline) + package comparison, company cards, deductible comparison, Trigger Research + Mark Reviewed workflow with audit log |
+| **SEO Rank Tracker** | Keyword ranking history with previous rank + change delta via SerpAPI; 5 Iceland car rental keywords pre-loaded |
 | **Settings** | Scraper status, schedule config, SerpAPI key, location management, car model mappings, Slack alerts, scrape history log, category audit |
 | **How to Use** | Step-by-step setup guide, automated schedule reference, view descriptions, and usage tips |
 
@@ -20,15 +20,16 @@ FastAPI backend · SQLite · APScheduler · Vanilla JS SPA · Chart.js
 
 | View | Description |
 |------|-------------|
+| **Competitive Radar** | Spider chart — one coloured polygon per competitor, five axes (Economy / Compact / SUV / 4x4 / Minivan), distance = average ISK/day. Blue is bold. Companion table on the right shows exact k-ISK averages with ▼ cheapest / ▲ priciest per category |
 | **List View** | Sortable table of all live rates per competitor + model, with per-day price and Δ vs previous scrape |
 | **Car Model Matrix** | Cross-competitor price grid per canonical model; green = cheapest, red = most expensive |
 | **Price History** | Time-series line charts per model grouped by category — shows how scraped prices have evolved over the past 7/14/30/90 days |
-| **Seasonal Analysis** | Per-day pricing across the next 12 months (15th anchor date, 7-night stay). Three modes: default chart; **History** to see how a future month evolved across weekly scrapes; **Gap Map** — a heatmap of Blue's price vs market average. Gap Map has two granularities: **By Category** (5 rows × 12 months) and **By Model** (every canonical model in the selected category × 12 months) |
+| **Seasonal Analysis** | Per-day pricing across the next 12 months (15th anchor date, 7-night stay). Three modes: default chart; **History** to see how a future month evolved across weekly scrapes; **Gap Map** heatmap. Toggle between **Competitors** view (all competitors × four seasons) and **By Category** view (market average per category × season) via the card header. |
 | **Forward Rates** | Up to 12 months of competitor pricing — horizon line chart + color-coded heatmap table with 3M / 6M / 12M range toggle; scrape-driven, no estimates. Select a model from the dropdown for per-model competitor lines |
 | **Price Changes** | Chronological activity feed of every meaningful competitor price move (≥5% by default). Filter by lookback window, category, and minimum change %. Select a specific model to view a line chart of its full scraped price history per competitor |
 | **Booking Window** | Pick any future pickup date to see how each competitor's price has changed across successive weekly scrapes as that date approaches — reveals early-bird vs last-minute pricing strategy. Model drill-down available |
-| **Win/Loss Scorecard** | Answers "where do we beat each competitor, and by how much?" Summary strip shows per-competitor win rate, W/T/L counts, and average margin. Category grid (competitor × category) colour-coded green/amber/red; click any cell to drill down to individual model matchups with exact ISK prices and margin % |
-| **Fleet Pressure** | Three layers of fleet intelligence. (1) **Availability snapshot** — Blue, Lotus, Lava, and Go Car Rental polled across 1w / 2w / 4w windows; red badge shows sold-out count per competitor. (2) **Sold-Out Models panel** — named model list as red pills, filterable by window. (3) **12-month calendar heatmap** — competitor × month grid coloured by availability %, clickable cells show sold-out models. Plus **Absence Alerts** for Hertz, Avis, Holdur: catalog models missing from scrape results are flagged as inferred sold-out signals (weaker signal, clearly labelled). |
+| **Win/Loss Scorecard** | Answers "where do we beat each competitor, and by how much?" Risk Alerts + Raise Opportunities panels; category position strip; price scatter chart. **Export CSV** button downloads per-model ISK/day vs every competitor with outcome labels. |
+| **Fleet Pressure** | (1) **Availability snapshot** — Blue, Lotus, Lava, Go Car Rental polled across 1w / 2w / 4w windows with sold-out counts. (2) **Sold-Out Models** — named red-pill list filterable by window; **Inferred Signals** (Hertz/Avis/Holdur absence from scrape) shown inline below a divider in the same card. (3) **12-month calendar heatmap** — competitor × month grid coloured by availability %. |
 
 ---
 
