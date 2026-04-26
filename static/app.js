@@ -2256,7 +2256,7 @@ function renderRadarTable(compCatMap, competitors, CATEGORIES, prevCompCatMap = 
   const container = document.getElementById('radar-table-container');
   if (!container) return;
 
-  // Compute per-category min/max for colour coding
+  // Per-category min/max for cell tinting
   const catMin = {}, catMax = {};
   CATEGORIES.forEach(cat => {
     const vals = competitors.map(c => {
@@ -2273,12 +2273,20 @@ function renderRadarTable(compCatMap, competitors, CATEGORIES, prevCompCatMap = 
     return name.replace(' Car Rental', '').replace(' Iceland', '');
   };
 
-  // Column headers
-  let html = `<table style="border-collapse:collapse;width:100%;font-size:11.5px">
+  // Date context line
+  const pickup = document.getElementById('filter-pickup')?.value;
+  const ret    = document.getElementById('filter-return')?.value;
+  const dateCtx = (pickup && ret)
+    ? `<div style="font-size:10.5px;color:var(--text-dim);margin-bottom:8px;font-style:italic">
+         Avg ISK/day &nbsp;·&nbsp; ${formatDate(pickup)} – ${formatDate(ret)}
+       </div>`
+    : '';
+
+  let html = `${dateCtx}<table style="border-collapse:collapse;width:100%;font-size:11.5px">
     <thead>
       <tr>
-        <th style="text-align:left;padding:5px 8px;border-bottom:2px solid var(--border);white-space:nowrap;color:var(--text-dim);font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.08em">Competitor</th>
-        ${CATEGORIES.map(c => `<th style="text-align:right;padding:5px 6px;border-bottom:2px solid var(--border);color:var(--text-dim);font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.08em;white-space:nowrap">${c}</th>`).join('')}
+        <th style="text-align:left;padding:4px 8px 6px;border-bottom:2px solid var(--border);white-space:nowrap;color:var(--text-dim);font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.08em"></th>
+        ${CATEGORIES.map(c => `<th style="text-align:right;padding:4px 6px 6px;border-bottom:2px solid var(--border);color:var(--text-dim);font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.08em;white-space:nowrap">${c}</th>`).join('')}
       </tr>
     </thead><tbody>`;
 
@@ -2297,44 +2305,34 @@ function renderRadarTable(compCatMap, competitors, CATEGORIES, prevCompCatMap = 
     CATEGORIES.forEach(cat => {
       const arr = compCatMap[comp]?.[cat];
       const val = arr?.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
-      let cellStyle = 'text-align:right;padding:5px 6px;border-bottom:1px solid var(--border);font-variant-numeric:tabular-nums;';
-      let badge = '';
+
       if (val == null) {
-        html += `<td style="${cellStyle}color:var(--text-dim)">—</td>`;
+        html += `<td style="text-align:right;padding:5px 6px;border-bottom:1px solid var(--border);color:var(--text-dim)">—</td>`;
         return;
       }
-      if (val === catMin[cat] && catMin[cat] !== catMax[cat]) {
-        cellStyle += 'color:#15803d;font-weight:700;';
-        badge = ' <span style="font-size:9px;opacity:.7">▼</span>';
-      } else if (val === catMax[cat] && catMin[cat] !== catMax[cat]) {
-        cellStyle += 'color:#b91c1c;font-weight:700;';
-        badge = ' <span style="font-size:9px;opacity:.7">▲</span>';
-      } else {
-        cellStyle += 'color:var(--text);';
-      }
+
+      // Cell tinting: faint green bg = cheapest, faint red bg = priciest
+      const isCheapest = val === catMin[cat] && catMin[cat] !== catMax[cat];
+      const isPriciest = val === catMax[cat] && catMin[cat] !== catMax[cat];
+      const cellBg   = isCheapest ? 'background:rgba(21,128,61,.12);'
+                     : isPriciest ? 'background:rgba(185,28,28,.10);' : '';
+      const textColor = isCheapest ? 'color:#15803d;font-weight:700;'
+                      : isPriciest ? 'color:#b91c1c;font-weight:700;'
+                      : 'color:var(--text);';
+      const cellStyle = `text-align:right;padding:5px 6px;border-bottom:1px solid var(--border);font-variant-numeric:tabular-nums;${cellBg}${textColor}`;
+
       const k = Math.round(val / 1000);
-
-      // Delta vs previous scrape
-      let deltaTag = '';
-      if (prevCompCatMap && prevCompCatMap[comp]?.[cat]?.length) {
-        const prevArr = prevCompCatMap[comp][cat];
-        const prevVal = Math.round(prevArr.reduce((a, b) => a + b, 0) / prevArr.length);
-        const diffPct = Math.round((val - prevVal) / prevVal * 100);
-        if (diffPct > 1) {
-          deltaTag = `<span style="font-size:9px;color:#ef4444;margin-left:2px">↑${diffPct}%</span>`;
-        } else if (diffPct < -1) {
-          deltaTag = `<span style="font-size:9px;color:#16a34a;margin-left:2px">↓${Math.abs(diffPct)}%</span>`;
-        }
-      }
-
-      html += `<td style="${cellStyle}" title="${formatISK(val)}/day">${k}k${badge}${deltaTag}</td>`;
+      html += `<td style="${cellStyle}" title="${formatISK(val)}/day">${k}k</td>`;
     });
     html += '</tr>';
   });
 
   html += `</tbody>
     <tfoot>
-      <tr><td colspan="${CATEGORIES.length + 1}" style="padding:6px 8px 2px;font-size:10px;color:var(--text-dim)">ISK/day avg · <span style="color:#15803d">▼ cheapest</span> · <span style="color:#b91c1c">▲ priciest</span>${state.priceChangesAvailable ? ' · <span style="color:#16a34a">↓</span>/<span style="color:#ef4444">↑</span> vs prev scrape' : ''}</td></tr>
+      <tr><td colspan="${CATEGORIES.length + 1}" style="padding:7px 8px 2px;font-size:10px;color:var(--text-dim)">
+        <span style="display:inline-block;width:10px;height:10px;background:rgba(21,128,61,.2);border-radius:2px;vertical-align:middle;margin-right:3px"></span>cheapest &nbsp;
+        <span style="display:inline-block;width:10px;height:10px;background:rgba(185,28,28,.15);border-radius:2px;vertical-align:middle;margin-right:3px"></span>priciest
+      </td></tr>
     </tfoot>
   </table>`;
 
