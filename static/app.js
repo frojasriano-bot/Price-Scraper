@@ -1527,7 +1527,7 @@ async function loadRates() {
     state.priceChangesAvailable = changesData.available || false;
     renderRatesTable();
     renderRateChart();
-    updateRateStats();
+    updateStatusTiles(scraperStatus);
     renderExecutiveSummary();
     updateScraperWarning(scraperStatus);
     // Reset matrix so it reloads with new filters if active
@@ -1905,25 +1905,111 @@ function renderMatrix() {
   </table>`;
 }
 
-function updateRateStats() {
+function updateStatusTiles(scraperStatus) {
   const rates = state.rates;
-  if (!rates.length) return;
 
-  const prices = rates.map(r => r.price_isk);
-  const minPrice = Math.min(...prices);
-  const maxPrice = Math.max(...prices);
-  const avgPrice = Math.round(prices.reduce((a, b) => a + b, 0) / prices.length);
-  const cheapest = rates.find(r => r.price_isk === minPrice);
+  // ── Tile 1: Last Scrape ──────────────────────────────────────────────────
+  const scrapeAgeEl   = document.getElementById('tile-scrape-age');
+  const scrapeDetailEl = document.getElementById('tile-scrape-detail');
+  const scrapeDot     = document.getElementById('tile-scrape-dot');
+  const scrapeCard    = document.getElementById('tile-last-scrape');
+  if (scraperStatus && scraperStatus.scrapers) {
+    const timestamps = scraperStatus.scrapers
+      .map(s => s.last_scraped ? new Date(s.last_scraped).getTime() : 0)
+      .filter(t => t > 0);
+    if (timestamps.length) {
+      const latest = new Date(Math.max(...timestamps));
+      const ageMs  = Date.now() - latest.getTime();
+      const ageMin = Math.round(ageMs / 60000);
+      let ageStr;
+      if (ageMin < 60)       ageStr = `${ageMin}m ago`;
+      else if (ageMin < 1440) ageStr = `${Math.round(ageMin / 60)}h ago`;
+      else                   ageStr = `${Math.round(ageMin / 1440)}d ago`;
+      scrapeAgeEl.textContent   = ageStr;
+      const isStale = ageMin > 120;
+      scrapeDot.className       = `status-dot ${isStale ? 'amber' : 'green'}`;
+      scrapeCard.className      = `stat-card stat-card--status ${isStale ? 'status-amber' : 'status-green'}`;
+      scrapeDetailEl.textContent = `${rates.length} rates loaded · ${latest.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`;
+    } else {
+      scrapeAgeEl.textContent    = 'No data';
+      scrapeDetailEl.textContent = 'Run a scrape to populate';
+    }
+  }
 
-  document.getElementById('stat-min-price').textContent = formatISK(minPrice);
-  document.getElementById('stat-max-price').textContent = formatISK(maxPrice);
-  document.getElementById('stat-avg-price').textContent = formatISK(avgPrice);
-  document.getElementById('stat-cheapest').textContent = cheapest ? cheapest.competitor : '—';
-  document.getElementById('stat-competitors').textContent = new Set(rates.map(r => r.competitor)).size;
+  // ── Tile 2: Scraper Health ───────────────────────────────────────────────
+  const healthValEl    = document.getElementById('tile-health-val');
+  const healthDetailEl = document.getElementById('tile-health-detail');
+  const healthDot      = document.getElementById('tile-health-dot');
+  const healthCard     = document.getElementById('tile-health');
+  if (scraperStatus && scraperStatus.scrapers) {
+    const total  = scraperStatus.scrapers.length;
+    const live   = scraperStatus.scrapers.filter(s => s.source === 'live').length;
+    const unstable = scraperStatus.unstable_competitors || [];
+    healthValEl.textContent = `${live} / ${total}`;
+    if (live === total) {
+      healthDot.className      = 'status-dot green';
+      healthCard.className     = 'stat-card stat-card--status status-green';
+      healthDetailEl.textContent = 'All scrapers live';
+    } else if (unstable.length) {
+      healthDot.className      = 'status-dot amber';
+      healthCard.className     = 'stat-card stat-card--status status-amber';
+      healthDetailEl.textContent = `Issues: ${unstable.join(', ')}`;
+    } else {
+      healthDot.className      = 'status-dot red';
+      healthCard.className     = 'stat-card stat-card--status status-red';
+      healthDetailEl.textContent = `${total - live} scraper(s) down`;
+    }
+  }
 
+  // ── Tile 3: Blue vs Market · Economy ────────────────────────────────────
+  const bluePctEl    = document.getElementById('tile-blue-pct');
+  const blueDetailEl = document.getElementById('tile-blue-detail');
+  const blueDot      = document.getElementById('tile-blue-dot');
+  const blueCard     = document.getElementById('tile-blue-pos');
+  const econRates    = rates.filter(r => r.car_category === 'Economy');
+  const blueEcon     = econRates.filter(r => r.competitor === 'Blue Rental');
+  const compEcon     = econRates.filter(r => r.competitor !== 'Blue Rental');
+  if (blueEcon.length && compEcon.length) {
+    const blueAvg = blueEcon.reduce((s, r) => s + r.price_isk, 0) / blueEcon.length;
+    const compAvg = compEcon.reduce((s, r) => s + r.price_isk, 0) / compEcon.length;
+    const diff    = ((blueAvg - compAvg) / compAvg) * 100;
+    const sign    = diff > 0 ? '+' : '';
+    bluePctEl.textContent    = `${sign}${diff.toFixed(1)}%`;
+    blueDetailEl.textContent = diff < 0
+      ? `Blue is cheaper by ${Math.abs(diff).toFixed(1)}%`
+      : diff > 0
+        ? `Blue is ${diff.toFixed(1)}% above market`
+        : 'Blue matches market';
+    const isWinning = diff <= 0;
+    blueDot.className  = `status-dot ${isWinning ? 'green' : diff > 10 ? 'red' : 'amber'}`;
+    blueCard.className = `stat-card stat-card--status ${isWinning ? 'status-green' : diff > 10 ? 'status-red' : 'status-amber'}`;
+  } else {
+    bluePctEl.textContent    = '—';
+    blueDetailEl.textContent = 'Need Economy rates to compare';
+  }
+
+  // ── Tile 4: Price Alerts ─────────────────────────────────────────────────
+  const alertsValEl    = document.getElementById('tile-alerts-val');
+  const alertsDetailEl = document.getElementById('tile-alerts-detail');
+  const alertsDot      = document.getElementById('tile-alerts-dot');
+  const alertsCard     = document.getElementById('tile-alerts');
+  const changes        = state.priceChanges || {};
+  const changedCount   = Object.values(changes).filter(c => c && (c.delta_pct ?? 0) !== 0).length;
+  if (state.priceChangesAvailable && changedCount > 0) {
+    alertsValEl.textContent    = String(changedCount);
+    alertsDetailEl.textContent = `${changedCount} model${changedCount > 1 ? 's' : ''} with price moves`;
+    alertsDot.className        = 'status-dot amber';
+    alertsCard.className       = 'stat-card stat-card--status status-amber';
+  } else {
+    alertsValEl.textContent    = state.priceChangesAvailable ? '0' : '—';
+    alertsDetailEl.textContent = state.priceChangesAvailable ? 'No price moves detected' : 'Need baseline data';
+    alertsDot.className        = 'status-dot green';
+    alertsCard.className       = 'stat-card stat-card--status status-green';
+  }
+
+  // ── Shared: source badge + history dropdown ──────────────────────────────
   setSourceBadge('rates-source-badge', state.ratesSource);
 
-  // Populate history competitor dropdown from loaded rates
   const histComp = document.getElementById('history-competitor');
   if (histComp && rates.length) {
     const current = histComp.value;
