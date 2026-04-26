@@ -23,6 +23,7 @@ rates.db
 ### Other
 .pytest_cache/
 *.log
+*.zip
 
 ### Git (sandbox workaround)
 .git_data/

@@ -272,6 +272,13 @@
         <!-- LIST VIEW: Chart on top, full-width table below -->
         <div id="view-list">
 
+          <!-- Scraper health warning — shown when any competitor has been unstable -->
+          <div id="scraper-warning-strip" style="display:none;background:rgba(234,179,8,.12);border:1px solid rgba(234,179,8,.4);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:var(--text);display:none;align-items:center;gap:8px">
+            <span style="font-size:15px">⚠️</span>
+            <span id="scraper-warning-text"></span>
+            <a onclick="switchTab('settings')" style="margin-left:auto;cursor:pointer;color:#2563eb;font-weight:600;white-space:nowrap;text-decoration:none">View in Settings →</a>
+          </div>
+
           <!-- Bar chart — full width, fixed height -->
           <div class="card">
             <div class="card-header">
@@ -896,6 +903,14 @@
 
           <!-- Pricing Action Board (hidden until data loaded) -->
           <div id="pab-content" style="display:none">
+
+            <!-- Export bar -->
+            <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+              <button class="btn btn-secondary btn-sm" onclick="exportWinLossCSV()" title="Export full model comparison as CSV">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Export CSV
+              </button>
+            </div>
 
             <!-- 3-tile KPI summary -->
             <div id="pab-summary-strip" style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px"></div>

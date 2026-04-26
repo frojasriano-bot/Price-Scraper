@@ -1,8 +1,8 @@
-fastapi
-uvicorn[standard]
-httpx
-beautifulsoup4
-aiosqlite
-apscheduler
-python-dotenv
-lxml
+fastapi==0.135.2
+uvicorn[standard]==0.42.0
+httpx==0.28.1
+beautifulsoup4==4.14.3
+aiosqlite==0.22.1
+apscheduler==3.11.2
+python-dotenv==1.2.1
+lxml==6.0.2

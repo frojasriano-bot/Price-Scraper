@@ -22,6 +22,21 @@ function setSourceBadge(id, source) {
   });
 }
 
+function updateScraperWarning(statusData) {
+  const strip = document.getElementById('scraper-warning-strip');
+  const textEl = document.getElementById('scraper-warning-text');
+  if (!strip || !textEl) return;
+  const unstable = statusData?.unstable_competitors || [];
+  if (!unstable.length) {
+    strip.style.display = 'none';
+    return;
+  }
+  const names = unstable.join(', ');
+  const plural = unstable.length === 1 ? 'scraper has' : 'scrapers have';
+  textEl.textContent = `${names} ${plural} produced errors in recent runs — data may be stale or estimated. Check Settings → Tracked Competitors for details.`;
+  strip.style.display = 'flex';
+}
+
 // ── Theme ──────────────────────────────────────────────────────────────────
 function toggleTheme() {
   const isDark = document.body.classList.toggle('dark-mode');
@@ -1498,10 +1513,11 @@ async function loadRates() {
     if (location) deltaParams.set('location', location);
     if (category) deltaParams.set('category', category);
 
-    const [ratesData, deltasData, changesData] = await Promise.all([
+    const [ratesData, deltasData, changesData, scraperStatus] = await Promise.all([
       apiFetch(`/api/rates?${params}`),
       apiFetch(`/api/rates/deltas?${deltaParams}`).catch(() => ({ deltas: {}, available: false })),
       apiFetch(`/api/rates/price-changes?${deltaParams}`).catch(() => ({ changes: {}, available: false })),
+      apiFetch('/api/rates/scraper-status').catch(() => null),
     ]);
     state.rates               = ratesData.rates || [];
     state.ratesSource         = ratesData.source;
@@ -1513,6 +1529,7 @@ async function loadRates() {
     renderRateChart();
     updateRateStats();
     renderExecutiveSummary();
+    updateScraperWarning(scraperStatus);
     // Reset matrix so it reloads with new filters if active
     state.matrix = null;
     if (state.ratesView === 'matrix') loadMatrix();
@@ -5099,6 +5116,31 @@ function escHtml(str) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function exportWinLossCSV() {
+  if (!_wlData || !_wlData.models || !_wlData.models.length) {
+    return showToast('No Win/Loss data to export. Load the scorecard first.', 'error');
+  }
+  const competitors = _wlData.competitors || [...new Set(_wlData.models.flatMap(m => Object.keys(m.vs)))];
+  const headers = ['Model', 'Category', 'Blue ISK/day',
+    ...competitors.flatMap(c => [`${c} ISK/day`, `vs ${c}`])
+  ];
+  const rows = _wlData.models.map(m => {
+    const days = 3; // scrape window is today+7 to today+10 (3 nights)
+    const bluePerDay = m.blue_price_isk ? Math.round(m.blue_price_isk / days) : '';
+    const compCols = competitors.flatMap(c => {
+      const v = m.vs[c];
+      if (!v) return ['', ''];
+      const compPerDay = v.price_isk ? Math.round(v.price_isk / days) : '';
+      const outcome = v.outcome === 'win' ? 'Blue cheaper' : v.outcome === 'loss' ? 'Blue pricier' : 'Tied';
+      const margin = v.margin_pct != null ? `${v.margin_pct > 0 ? '+' : ''}${v.margin_pct.toFixed(1)}%` : '';
+      return [compPerDay, margin ? `${outcome} (${margin})` : outcome];
+    });
+    return [m.canonical_name, m.category, bluePerDay, ...compCols];
+  });
+  downloadCSV(`win_loss_${new Date().toISOString().slice(0, 10)}.csv`, [headers, ...rows]);
+  showToast(`Exported Win/Loss data — ${rows.length} models`, 'success');
 }
 
 // ── Win/Loss Scorecard ─────────────────────────────────────────────────────
