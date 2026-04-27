@@ -2193,18 +2193,21 @@ function renderRateChart() {
 
   if (state.rateChart) state.rateChart.destroy();
 
-  // Dynamic scale floor — zoom in to where the data actually lives.
+  // Dynamic scale — zoom in to where the data actually lives.
   // Collect all real (non-null, non-zero) values from solid datasets only.
   const allDataVals = datasets
     .filter(d => !d._isGhost)
     .flatMap(d => d._rawVals.filter(v => v != null && v > 0));
   const dataMin = allDataVals.length ? Math.min(...allDataVals) : 0;
   const dataMax = allDataVals.length ? Math.max(...allDataVals) : 0;
-  // Floor = 70 % of min, snapped to nearest 1 000 ISK; only lift from 0 when
-  // the range is comfortably above it (avoids weird floors on mock/thin data).
+  // Floor = 80% of min, snapped to nearest 1k; ceiling = 115% of max, snapped
+  // to nearest 5k. Both ensure the polygons fill the chart without cropping.
   const scaleFloor = dataMin > 3000
-    ? Math.floor(dataMin * 0.70 / 1000) * 1000
+    ? Math.floor(dataMin * 0.80 / 1000) * 1000
     : 0;
+  const scaleCeil = dataMax > 0
+    ? Math.ceil(dataMax * 1.15 / 5000) * 5000
+    : undefined;
 
   const isDark = document.body.classList.contains('dark-mode');
   const gridColor  = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
@@ -2243,6 +2246,8 @@ function renderRateChart() {
       scales: {
         r: {
           min: scaleFloor,
+          min: scaleFloor,
+          max: scaleCeil,
           ticks: {
             callback: val => val === scaleFloor ? '' : formatISK(val),
             font: { size: 10 },
