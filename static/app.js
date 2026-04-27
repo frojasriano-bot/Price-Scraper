@@ -4571,7 +4571,9 @@ function renderTimeline(events, modelFilter = '') {
       const color    = compColor(ev.competitor);
       const arrow    = isUp ? '↑' : '↓';
       const pctStr   = (isUp ? '+' : '') + ev.change_pct.toFixed(1) + '%';
-      const pctColor = isUp ? '#dc2626' : '#16a34a';
+      // Competitor UP = Blue relatively cheaper = good for Blue → green
+      // Competitor DOWN = Blue relatively pricier = risk for Blue → red
+      const pctColor = isUp ? '#16a34a' : '#dc2626';
       const cat      = ev.car_category;
 
       // Blue market rank badge
@@ -4712,7 +4714,8 @@ function renderTimelineModelChart(events, model) {
       const netPct  = ((last.curr_per_day / first.prev_per_day) - 1) * 100;
       const isUp    = netPct > 0;
       const trend   = Math.abs(netPct) < 1 ? 'Stable' : (isUp ? `↑ +${netPct.toFixed(1)}%` : `↓ ${netPct.toFixed(1)}%`);
-      const tColor  = Math.abs(netPct) < 1 ? '#6b7280' : isUp ? '#dc2626' : '#16a34a';
+      // Competitor UP = good for Blue (green), DOWN = risk (red)
+      const tColor  = Math.abs(netPct) < 1 ? '#6b7280' : isUp ? '#16a34a' : '#dc2626';
       return `<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px 16px">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
           <div style="width:10px;height:10px;border-radius:50%;background:${compColor(comp, i)};flex-shrink:0"></div>
@@ -4884,7 +4887,8 @@ function renderBookingChart(data, pickupDate) {
       const isUp = pct > 0;
       const color = compColor(comp, i);
       const trend = pct === 0 ? 'Stable' : (isUp ? `↑ +${pct}% since first scrape` : `↓ ${pct}% since first scrape`);
-      const trendColor = pct === 0 ? '#6b7280' : isUp ? '#dc2626' : '#16a34a';
+      // Competitor UP = good for Blue (green), DOWN = risk (red)
+      const trendColor = pct === 0 ? '#6b7280' : isUp ? '#16a34a' : '#dc2626';
       return `<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px 16px">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
           <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0"></div>
