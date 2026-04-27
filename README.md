@@ -10,7 +10,7 @@ FastAPI backend · SQLite · APScheduler · Vanilla JS SPA · Chart.js
 
 | Tab | Description |
 |-----|-------------|
-| **Rate Intelligence** | Four live status tiles (Last Scrape, Scraper Health, Last Runs, Price Alerts); executive summary banner; sortable rate table; **Competitive Radar** spider chart (competitor polygons across 5 category axes, ISK/day) + companion summary table; cross-competitor matrix; price history; seasonal analysis; forward horizon; price changes; booking window; win/loss scorecard with CSV export |
+| **Rate Intelligence** | Four live status tiles (Last Scrape, Scraper Health, Last Runs, Price Alerts); per-competitor freshness strip; executive summary banner; sortable rate table; **Competitive Radar** spider chart with ghost polygons (prev scrape) + companion table; cross-competitor matrix; price history; seasonal analysis; forward horizon; price changes; booking window; win/loss scorecard with CSV export |
 | **Insurance Comparison** | Coverage matrix, per-category zero-excess pricing (editable inline) + package comparison, company cards, deductible comparison, Trigger Research + Mark Reviewed workflow with audit log |
 | **SEO Rank Tracker** | Keyword ranking history with previous rank + change delta via SerpAPI; 5 Iceland car rental keywords pre-loaded |
 | **Settings** | Scraper status, schedule config, SerpAPI key, location management, car model mappings, Slack alerts, scrape history log, category audit |
@@ -20,7 +20,7 @@ FastAPI backend · SQLite · APScheduler · Vanilla JS SPA · Chart.js
 
 | View | Description |
 |------|-------------|
-| **Competitive Radar** | Spider chart — one coloured polygon per competitor, five axes (Economy / Compact / SUV / 4x4 / Minivan), distance = average ISK/day. Blue is bold. Companion table on the right shows exact k-ISK averages with ▼ cheapest / ▲ priciest per category |
+| **Competitive Radar** | Spider chart — one solid polygon per competitor (five axes, distance = average ISK/day); a faint dashed **ghost polygon** shows each competitor's position from the previous scrape so movement is immediately visible. Scale auto-fits to the data range (floor ≈ 80 % of cheapest value, ceiling ≈ 115 % of priciest). Companion table on the right shows clean k-ISK averages with green cell tint = cheapest, red = priciest per category column, plus a date-range context line. **Freshness strip** above the rates table shows per-competitor last-scraped age with amber (> 2 h) and red (> 12 h) stale indicators. |
 | **List View** | Sortable table of all live rates per competitor + model, with per-day price and Δ vs previous scrape |
 | **Car Model Matrix** | Cross-competitor price grid per canonical model; green = cheapest, red = most expensive |
 | **Price History** | Time-series line charts per model grouped by category — shows how scraped prices have evolved over the past 7/14/30/90 days |
