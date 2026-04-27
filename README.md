@@ -317,8 +317,8 @@ A 5×12 grid: 5 car categories (rows) × 12 future months (columns). Uses the sa
 A per-model, per-competitor breakdown for the selected category. Each row is one canonical model × one competitor, showing Blue's exact gap % versus that specific company across all 12 anchor months. Fetches from `GET /api/rates/seasonal/gap-by-model?category=`. More actionable than the category view — reveals whether pricing pressure comes from one specific rival or the whole market.
 
 **Cell colour scale (both views):**
-- **Green** = Blue is more expensive than the competitor (Blue charges a premium over that rival)
-- **Red** = Blue is cheaper than the competitor (Blue undercuts that rival)
+- **Green** = Blue is cheaper than the competitor (Blue undercuts that rival)
+- **Red** = Blue is more expensive than the competitor (Blue charges a premium over that rival)
 - **Neutral** = within ±3% of the competitor's price
 
 **Special states:**

@@ -3886,16 +3886,16 @@ function gapCellStyle(pct) {
 
   // Discrete tiers — avoids muddy RGBA arithmetic
   if (pct > 0) {
-    // Blue more expensive → green tint (good for Blue)
-    if (abs < 10)  return { bg: isDark ? 'rgba(34,197,94,0.18)'  : 'rgba(22,163,74,0.12)', text: isDark ? '#86efac' : '#166534', label };
-    if (abs < 20)  return { bg: isDark ? 'rgba(34,197,94,0.30)'  : 'rgba(22,163,74,0.22)', text: isDark ? '#4ade80' : '#15803d', label };
-    return          { bg: isDark ? 'rgba(34,197,94,0.44)'  : 'rgba(22,163,74,0.32)', text: isDark ? '#bbf7d0' : '#14532d', label };
+    // Blue more expensive than market → red (Blue is losing on price)
+    if (abs < 10)  return { bg: isDark ? 'rgba(239,68,68,0.18)'  : 'rgba(220,38,38,0.10)', text: isDark ? '#fca5a5' : '#991b1b', label };
+    if (abs < 20)  return { bg: isDark ? 'rgba(239,68,68,0.30)'  : 'rgba(220,38,38,0.20)', text: isDark ? '#f87171' : '#b91c1c', label };
+    return          { bg: isDark ? 'rgba(239,68,68,0.45)'  : 'rgba(220,38,38,0.32)', text: isDark ? '#fecaca' : '#7f1d1d', label };
   }
 
-  // Blue cheaper → red tint (competitor undercuts us)
-  if (abs < 10)  return { bg: isDark ? 'rgba(239,68,68,0.18)'  : 'rgba(220,38,38,0.10)', text: isDark ? '#fca5a5' : '#991b1b', label };
-  if (abs < 20)  return { bg: isDark ? 'rgba(239,68,68,0.30)'  : 'rgba(220,38,38,0.20)', text: isDark ? '#f87171' : '#b91c1c', label };
-  return          { bg: isDark ? 'rgba(239,68,68,0.45)'  : 'rgba(220,38,38,0.32)', text: isDark ? '#fecaca' : '#7f1d1d', label };
+  // Blue cheaper than market → green (Blue is competitive)
+  if (abs < 10)  return { bg: isDark ? 'rgba(34,197,94,0.18)'  : 'rgba(22,163,74,0.12)', text: isDark ? '#86efac' : '#166534', label };
+  if (abs < 20)  return { bg: isDark ? 'rgba(34,197,94,0.30)'  : 'rgba(22,163,74,0.22)', text: isDark ? '#4ade80' : '#15803d', label };
+  return          { bg: isDark ? 'rgba(34,197,94,0.44)'  : 'rgba(22,163,74,0.32)', text: isDark ? '#bbf7d0' : '#14532d', label };
 }
 
 /**
@@ -3911,8 +3911,8 @@ function setHeatmapGranularity(mode) {
   const sub = document.getElementById('heatmap-subtitle');
   if (sub) {
     sub.innerHTML = mode === 'model'
-      ? `How Blue's per-day price compares to the market average for each car model. <span style="color:#16a34a;font-weight:600">Green = Blue is more expensive</span> &nbsp;·&nbsp; <span style="color:#dc2626;font-weight:600">Red = Blue is cheaper</span>`
-      : `How Blue's per-day price compares to the market average, by category × month. <span style="color:#16a34a;font-weight:600">Green = Blue is more expensive</span> &nbsp;·&nbsp; <span style="color:#dc2626;font-weight:600">Red = Blue is cheaper</span>`;
+      ? `How Blue's per-day price compares to the market average for each car model. <span style="color:#16a34a;font-weight:600">Green = Blue is cheaper</span> &nbsp;·&nbsp; <span style="color:#dc2626;font-weight:600">Red = Blue is more expensive</span>`
+      : `How Blue's per-day price compares to the market average, by category × month. <span style="color:#16a34a;font-weight:600">Green = Blue is cheaper</span> &nbsp;·&nbsp; <span style="color:#dc2626;font-weight:600">Red = Blue is more expensive</span>`;
   }
 
   if (mode === 'category') {
