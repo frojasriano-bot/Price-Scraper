@@ -958,7 +958,7 @@ async function scrapeSeasonalAnchors() {
   if (loadingEl) loadingEl.style.display = 'flex';
 
   try {
-    const data = await apiFetch('/api/rates/scrape-seasonal', { method: 'POST' });
+    const data = await apiFetch('/api/rates/scrape-seasonal', { method: 'POST' }, 360000); // 6 min — 12 months × 8 scrapers
     const skipNote = (data.skipped_months?.length)
       ? ` (${data.skipped_months.join(', ')} skipped — 15th already passed)`
       : '';
@@ -2364,7 +2364,7 @@ async function triggerScrape() {
     const params = new URLSearchParams({ pickup_date: pickup, return_date: ret });
     if (location) params.set('location', location);
 
-    const data = await apiFetch(`/api/rates/scrape?${params}`, { method: 'POST' });
+    const data = await apiFetch(`/api/rates/scrape?${params}`, { method: 'POST' }, 120000); // 2 min — 8 scrapers single window
     showToast(`Scraped ${data.scraped} rate records from ${data.competitors} competitors.`, 'success');
     await loadRates();
     loadSchedulerStatus();
@@ -5152,7 +5152,7 @@ async function scrapeHorizon() {
   showToast(`Scraping horizon rates (${rangeLabel})… this may take a few minutes`, 'info', 120000);
   try {
     params.set('weeks', String(scrapeWeeks));
-    const result = await apiFetch(`/api/rates/scrape-horizon?${params}`, { method: 'POST' });
+    const result = await apiFetch(`/api/rates/scrape-horizon?${params}`, { method: 'POST' }, 600000); // 10 min — up to 52 weeks × 8 scrapers
     showToast(
       `Scraped ${result.scraped} rates across ${result.weeks_scraped} weeks in ${result.duration_seconds}s`,
       'success',
